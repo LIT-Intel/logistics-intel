@@ -1,8 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Linkedin, Loader2, Mail, RefreshCw, Send, Sparkles } from "lucide-react";
+import { CheckCircle2, Linkedin, Loader2, Mail, RefreshCw, Send, Sparkles, Trash2, XCircle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import {
   approveAndSendLinkedIn,
+  cancelLinkedInOutreach,
+  deleteLinkedInOutreach,
+  dismissLinkedInOutreach,
   draftLinkedInOutreach,
   listUnipileAccounts,
   startUnipileLinkedIn,
@@ -37,7 +40,7 @@ export default function LinkedInApprovalQueue({ campaignId }: { campaignId: stri
       setConnected(accountRows.some((a) => a.status === "OK" && a.use_for_campaigns));
       setRecipients((recipientsResult.data || []) as Recipient[]);
       setSteps((stepsResult.data || []) as Step[]);
-      setActions((actionsResult.data || []) as LinkedInOutreachAction[]);
+      setActions(((actionsResult.data || []) as LinkedInOutreachAction[]).filter((action) => action.metadata?.hidden_in_lead_crm !== true));
     } catch (e: any) { setError(e?.message || "Could not load LinkedIn approvals"); }
     finally { setLoading(false); }
   }
@@ -67,7 +70,7 @@ export default function LinkedInApprovalQueue({ campaignId }: { campaignId: stri
     } catch (e: any) { setError(e?.message || "Could not connect LinkedIn"); }
   }
 
-  async function createDraft(recipient: Recipient, step: Step) {
+  async function createDraft(recipient: Recipient, step: Step, regenerate = false) {
     if (!recipient.linkedin_url) return;
     setBusyId(recipient.id); setError(null);
     try {
@@ -77,9 +80,31 @@ export default function LinkedInApprovalQueue({ campaignId }: { campaignId: stri
         linkedinUrl: recipient.linkedin_url,
         actionType: step.step_type === "linkedin_message" ? "message" : "invite",
         angle: step.body || undefined,
+        regenerate,
       });
       setActions((prev) => [action, ...prev.filter((a) => a.id !== action.id)]);
     } catch (e: any) { setError(e?.message || "Could not create LinkedIn draft"); }
+    finally { setBusyId(null); }
+  }
+
+  async function cancelAction(action: LinkedInOutreachAction, recipientId: string) {
+    if (!window.confirm("Cancel this unsent LinkedIn action?")) return;
+    setBusyId(recipientId); setError(null);
+    try {
+      await cancelLinkedInOutreach(action.id);
+      setActions((prev) => prev.map((item) => item.id === action.id ? { ...item, status: "cancelled" } : item));
+    } catch (e: any) { setError(e?.message || "Could not cancel LinkedIn action"); }
+    finally { setBusyId(null); }
+  }
+
+  async function removeAction(action: LinkedInOutreachAction, recipientId: string) {
+    const unsent = action.status === "cancelled" || action.status === "failed";
+    if (!window.confirm(unsent ? "Delete this unsent draft permanently?" : "Remove this test from the campaign view? Delivery audit data will be retained.")) return;
+    setBusyId(recipientId); setError(null);
+    try {
+      if (unsent) await deleteLinkedInOutreach(action.id); else await dismissLinkedInOutreach(action.id);
+      setActions((prev) => prev.filter((item) => item.id !== action.id));
+    } catch (e: any) { setError(e?.message || "Could not remove LinkedIn action"); }
     finally { setBusyId(null); }
   }
 
@@ -130,11 +155,13 @@ export default function LinkedInApprovalQueue({ campaignId }: { campaignId: stri
       ) : (
         <div className="mt-4 divide-y divide-slate-100 rounded-lg border border-slate-200">
           {recipients.map((recipient) => {
+            const recipientActions = actions.filter((item) => item.campaign_contact_id === recipient.id);
             const nextStep = steps.find((step) => {
               const prior = latestByRecipientStep.get(`${recipient.id}:${step.id}`);
               return !prior || !["sent", "replied"].includes(prior.status);
             });
-            const action = nextStep ? latestByRecipientStep.get(`${recipient.id}:${nextStep.id}`) : undefined;
+            const action = nextStep ? latestByRecipientStep.get(`${recipient.id}:${nextStep.id}`) : recipientActions[0];
+            const actionStep = action?.campaign_step_id ? steps.find((step) => step.id === action.campaign_step_id) : nextStep;
             const busy = busyId === recipient.id;
             return (
               <div key={recipient.id} className="flex flex-col gap-2 px-3 py-3 md:flex-row md:items-center">
@@ -148,6 +175,7 @@ export default function LinkedInApprovalQueue({ campaignId }: { campaignId: stri
                   <div className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
                     {nextStep ? `Step ${nextStep.step_order}: ${nextStep.step_type.replaceAll("_", " ")}` : "LinkedIn sequence complete"}
                   </div>
+                  {recipientActions.length > 1 ? <div className="mt-1 text-[10px] text-slate-400">{recipientActions.length} LinkedIn actions retained in campaign history</div> : null}
                   {action?.status === "pending_approval" ? (
                     <div className="mt-2">
                     {Array.isArray(action.metadata?.draft_options) ? <div className="mb-2 grid gap-1.5 sm:grid-cols-2 xl:grid-cols-5">{action.metadata.draft_options.map((option) => <button key={option.tone} type="button" onClick={() => setActions((prev) => prev.map((a) => a.id === action.id ? { ...a, message: option.message, agent_rationale: option.rationale } : a))} className={`rounded-lg border p-2 text-left ${option.message === action.message ? "border-blue-500 bg-blue-50" : "border-slate-200 bg-white hover:border-blue-200"}`}><div className="text-[9px] font-bold uppercase tracking-wide text-blue-700">{option.tone}</div><div className="mt-1 text-[10.5px] leading-4 text-slate-700">{option.message}</div></button>)}</div> : null}
@@ -161,7 +189,15 @@ export default function LinkedInApprovalQueue({ campaignId }: { campaignId: stri
                 <div className="flex shrink-0 items-center gap-2">
                   {action?.status === "pending_approval" ? (
                     <><button type="button" disabled={busy || !action.message.trim()} onClick={() => void saveDraft(action, recipient.id)} className="rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-50">Save edits</button>
-                    <button type="button" disabled={busy || !action.message.trim()} onClick={() => void approve(action, recipient.id)} className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-50"><Send className="h-3 w-3" /> Approve &amp; send</button></>
+                    <button type="button" disabled={busy || !actionStep} onClick={() => actionStep && void createDraft(recipient, actionStep, true)} className="rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-50">5 new options</button>
+                    <button type="button" disabled={busy || !action.message.trim()} onClick={() => void approve(action, recipient.id)} className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-50"><Send className="h-3 w-3" /> Approve &amp; send</button>
+                    <button type="button" disabled={busy} onClick={() => void cancelAction(action, recipient.id)} className="inline-flex items-center gap-1 rounded-md border border-amber-200 px-2.5 py-1.5 text-xs font-semibold text-amber-700 disabled:opacity-50"><XCircle className="h-3 w-3" /> Cancel</button></>
+                  ) : action?.status === "sent" || action?.status === "replied" ? (
+                    <><button type="button" disabled={busy || !actionStep} onClick={() => actionStep && void createDraft(recipient, actionStep, true)} className="rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-blue-700 disabled:opacity-50">Create editable 5-option draft</button>
+                    <button type="button" disabled={busy} onClick={() => void removeAction(action, recipient.id)} className="inline-flex items-center gap-1 rounded-md border border-rose-200 px-2.5 py-1.5 text-xs font-semibold text-rose-700 disabled:opacity-50"><Trash2 className="h-3 w-3" /> Remove</button></>
+                  ) : action?.status === "cancelled" || action?.status === "failed" ? (
+                    <><button type="button" disabled={busy || !actionStep} onClick={() => actionStep && void createDraft(recipient, actionStep, true)} className="rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-blue-700 disabled:opacity-50">Redraft 5 options</button>
+                    <button type="button" disabled={busy} onClick={() => void removeAction(action, recipient.id)} className="inline-flex items-center gap-1 rounded-md border border-rose-200 px-2.5 py-1.5 text-xs font-semibold text-rose-700 disabled:opacity-50"><Trash2 className="h-3 w-3" /> Delete</button></>
                   ) : !nextStep ? (
                     <span title={action?.provider_event_id || action?.provider_chat_id || "Provider accepted"} className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700"><CheckCircle2 className="h-3 w-3" /> Provider accepted</span>
                   ) : (
