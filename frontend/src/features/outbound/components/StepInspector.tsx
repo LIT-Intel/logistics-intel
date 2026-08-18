@@ -123,7 +123,7 @@ export function StepInspector({
               ? "Wait between steps"
               : isLinkedIn
               ? "AI draft · human approval · sent through LinkedIn"
-              : "Manual task — sequenced for the rep"}
+              : "Rep-owned call task · tracked in the sequence"}
           </div>
         </div>
       </div>
@@ -286,7 +286,7 @@ export function StepInspector({
 
         {isLinkedInOrCall ? (
           <>
-            <Field label="Task title">
+            <Field label={isLinkedIn ? "Touch title" : "Task title"}>
               <input
                 value={step.title}
                 onChange={(e) => onUpdate({ title: e.target.value })}
@@ -301,12 +301,12 @@ export function StepInspector({
                 style={{ fontFamily: fontBody }}
               />
             </Field>
-            <Field label="Description / script">
+            <Field label={isLinkedIn ? "Message direction" : "Description / script"}>
               <textarea
                 rows={6}
                 value={step.description}
                 onChange={(e) => onUpdate({ description: e.target.value })}
-                placeholder="What the rep should do or say. Variables OK."
+                placeholder={isLinkedIn ? "Give the outreach agent a natural angle or write the message direction. Variables are supported." : "What the rep should do or say. Variables are supported."}
                 className={inputClass(true)}
                 style={{ fontFamily: fontBody, lineHeight: 1.55 }}
               />
@@ -317,8 +317,8 @@ export function StepInspector({
               style={{ fontFamily: fontBody }}
             >
               {step.kind === "call"
-                ? "Call steps are saved as manual tasks for the assigned rep."
-                : "LinkedIn steps are saved as manual tasks — no automation runs from this step."}
+                ? "The assigned rep completes this call; its outcome stays visible in campaign activity."
+                : "The outreach agent creates a recipient-specific draft. A person reviews it in Communications before Unipile sends it."}
             </div>
           </>
         ) : null}

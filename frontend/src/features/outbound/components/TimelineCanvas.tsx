@@ -195,8 +195,8 @@ function EmptyTimeline({
         className="max-w-md text-[11px] text-slate-500"
         style={{ fontFamily: fontBody }}
       >
-        Add the first step. Email is the most common opener; LinkedIn invites and call tasks
-        are saved as manual tasks for your reps.
+        Add the first step. Email sends through the connected mailbox; LinkedIn drafts enter
+        the approval queue and send through the connected LinkedIn account.
       </div>
       <div className="flex flex-wrap items-center justify-center gap-1.5">
         <button

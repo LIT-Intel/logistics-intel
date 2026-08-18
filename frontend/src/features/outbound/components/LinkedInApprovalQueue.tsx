@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Linkedin, Loader2, RefreshCw, Send, Sparkles } from "lucide-react";
+import { CheckCircle2, Linkedin, Loader2, Mail, RefreshCw, Send, Sparkles } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import {
   approveAndSendLinkedIn,
@@ -10,7 +10,7 @@ import {
   type LinkedInOutreachAction,
 } from "@/api/outreach";
 
-type Recipient = { id: string; display_name: string | null; email: string; linkedin_url: string | null };
+type Recipient = { id: string; display_name: string | null; email: string; linkedin_url: string | null; status: string | null; last_error: string | null };
 type Step = { id: string; step_order: number; step_type: string; body: string | null };
 
 export default function LinkedInApprovalQueue({ campaignId }: { campaignId: string }) {
@@ -27,7 +27,7 @@ export default function LinkedInApprovalQueue({ campaignId }: { campaignId: stri
     try {
       const [accountRows, recipientsResult, stepsResult, actionsResult] = await Promise.all([
         listUnipileAccounts(undefined, "campaigns"),
-        supabase.from("lit_campaign_contacts").select("id,display_name,email,linkedin_url").eq("campaign_id", campaignId).order("created_at").limit(100),
+        supabase.from("lit_campaign_contacts").select("id,display_name,email,linkedin_url,status,last_error").eq("campaign_id", campaignId).order("created_at").limit(100),
         supabase.from("lit_campaign_steps").select("id,step_order,step_type,body").eq("campaign_id", campaignId).in("step_type", ["linkedin", "linkedin_invite", "linkedin_message"]).order("step_order"),
         supabase.from("lit_linkedin_outreach_actions").select("*").eq("campaign_id", campaignId).order("created_at", { ascending: false }),
       ]);
@@ -141,6 +141,10 @@ export default function LinkedInApprovalQueue({ campaignId }: { campaignId: stri
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-xs font-bold text-slate-900">{recipient.display_name || recipient.email}</div>
                   <div className="truncate text-[11px] text-slate-500">{recipient.linkedin_url || "LinkedIn URL missing — enrich or edit this contact"}</div>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600"><Mail className="h-2.5 w-2.5" /> Email · {recipient.status || "queued"}</span>
+                    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${action?.status === "replied" ? "bg-emerald-50 text-emerald-700" : action?.status === "failed" ? "bg-rose-50 text-rose-700" : action?.status === "pending_approval" ? "bg-amber-50 text-amber-700" : "bg-blue-50 text-blue-700"}`}><Linkedin className="h-2.5 w-2.5" /> LinkedIn · {action?.status?.replaceAll("_", " ") || (recipient.linkedin_url ? "not drafted" : "profile missing")}</span>
+                  </div>
                   <div className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
                     {nextStep ? `Step ${nextStep.step_order}: ${nextStep.step_type.replaceAll("_", " ")}` : "LinkedIn sequence complete"}
                   </div>

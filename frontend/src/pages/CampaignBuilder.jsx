@@ -77,8 +77,8 @@ function labelFor(acc) {
 // writes, so the user never ends up with a corrupt half-saved draft.
 //
 // All paths use existing channel + step_type columns on lit_campaign_steps.
-// LinkedIn / call / wait persist as planned manual tasks. Test send and
-// Launch remain disabled until the dispatcher ships.
+// LinkedIn steps persist as approval-gated Unipile actions. Call steps remain
+// rep-owned tasks; wait steps only control sequence timing.
 
 function uid() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -439,6 +439,7 @@ export default function CampaignBuilder() {
   const [createTemplateOpen, setCreateTemplateOpen] = useState(false);
   const [createPersonaOpen, setCreatePersonaOpen] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
+  const [workspaceTab, setWorkspaceTab] = useState("sequence");
   // CR P1-5: activity timeline fetch is gated on drawer open. The drawer
   // starts closed and most users save → leave without opening it, so the
   // RPC-and-200-event payload only matters once they click the Activity
@@ -1440,15 +1441,44 @@ export default function CampaignBuilder() {
         anchor={scheduledStartAt ? Date.parse(scheduledStartAt) : undefined}
       />
 
+      <div className="flex shrink-0 items-center gap-1 border-b border-slate-200 bg-white px-4 pt-2">
+        {[
+          ["sequence", "Sequence"],
+          ["communications", "Communications"],
+        ].map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setWorkspaceTab(id)}
+            className={`border-b-2 px-3 py-2 text-[12px] font-semibold transition ${workspaceTab === id ? "border-blue-600 text-blue-700" : "border-transparent text-slate-500 hover:text-slate-800"}`}
+            style={{ fontFamily: fontDisplay }}
+          >
+            {label}
+          </button>
+        ))}
+        {editId ? (
+          <a href={`/app/inbox?campaign_id=${encodeURIComponent(editId)}`} className="ml-auto px-2 py-2 text-[11px] font-semibold text-blue-700 hover:underline">
+            Open Communication Center
+          </a>
+        ) : null}
+      </div>
+
       {/* Sub-project O — Exit conditions. Only meaningful for saved campaigns
           (i.e. editing an existing campaign) because the panel needs a
           campaignId to write exit_overrides back to lit_campaigns. */}
-      {editId ? (
+      {editId && workspaceTab === "sequence" ? (
         <div style={{ padding: "0 16px" }}>
           <ExitConditionsPanel campaignId={editId} />
         </div>
       ) : null}
-      {editId ? <LinkedInApprovalQueue campaignId={editId} /> : null}
+      {workspaceTab === "communications" ? (
+        editId ? <LinkedInApprovalQueue campaignId={editId} /> : (
+          <div className="mx-4 my-4 rounded-xl border border-dashed border-slate-300 bg-white px-5 py-8 text-center">
+            <div className="text-sm font-bold text-slate-900">Save this campaign to open Communications</div>
+            <div className="mt-1 text-xs text-slate-500">Recipient channel status and LinkedIn approval actions appear here after the campaign has an ID.</div>
+          </div>
+        )
+      ) : null}
 
       {error || campaignError ? (
         <div
@@ -1482,7 +1512,7 @@ export default function CampaignBuilder() {
             page itself is the primary scroll surface.
           PersonaPanel hidden under lg; audience picker reachable via the
           top-bar Recipients button on tablets and phones. */}
-      <div className="grid grid-cols-1 items-start md:grid-cols-[1fr_340px] lg:grid-cols-[260px_1fr_340px]">
+      {workspaceTab === "sequence" ? <div className="grid grid-cols-1 items-start md:grid-cols-[1fr_340px] lg:grid-cols-[260px_1fr_340px]">
         <div className="hidden lg:block lg:sticky lg:top-2 lg:self-start lg:max-h-[calc(100vh-1rem)] lg:overflow-y-auto">
           <PersonaPanel
             audienceCount={selectedIds.size + manualEmails.length}
@@ -1529,7 +1559,7 @@ export default function CampaignBuilder() {
             activityLoading={activityLoading}
           />
         </div>
-      </div>
+      </div> : null}
 
       <AudiencePickerDrawer
         open={audienceOpen}

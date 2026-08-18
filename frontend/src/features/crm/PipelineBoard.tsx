@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, Clock, CheckSquare } from "lucide-react";
+import { Loader2, Plus, Clock, CheckSquare, Linkedin } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
 import { useToast } from "@/components/ui/use-toast";
 import {
@@ -111,6 +112,7 @@ export default function PipelineBoard({ viewAsUserId = "" }: { viewAsUserId?: st
   const [dragOverStage, setDragOverStage] = useState<string | null>(null);
   // Deal id currently playing the muted "lost" dim-pulse (cleared after the animation).
   const [lostPulseId, setLostPulseId] = useState<string | null>(null);
+  const [linkedinPending, setLinkedinPending] = useState(0);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -134,6 +136,14 @@ export default function PipelineBoard({ viewAsUserId = "" }: { viewAsUserId?: st
   useEffect(() => {
     reload();
   }, [reload]);
+
+  useEffect(() => {
+    let cancelled = false;
+    supabase.from("lit_linkedin_outreach_actions").select("id", { count: "exact", head: true })
+      .eq("status", "pending_approval")
+      .then(({ count }) => { if (!cancelled) setLinkedinPending(count || 0); });
+    return () => { cancelled = true; };
+  }, []);
 
   const dealsByStage = useMemo(() => {
     const map: Record<string, DealCard[]> = {};
@@ -225,10 +235,16 @@ export default function PipelineBoard({ viewAsUserId = "" }: { viewAsUserId?: st
           <div style={{ fontFamily: FONT_HEAD, fontSize: 10, fontWeight: 700, color: mode === "dark" ? "#A5B4FC" : "#6366F1", letterSpacing: "0.24em", textTransform: "uppercase" }}>Pipeline</div>
           <div style={{ fontFamily: FONT_HEAD, fontSize: 18, fontWeight: 700, color: theme.heading, letterSpacing: "-0.02em" }}>Deals board</div>
         </div>
-        <button onClick={() => setCreating(true)} disabled={!stages.length} style={primaryBtn(theme)}>
-          <Plus style={{ width: 15, height: 15 }} />
-          New deal
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <a href="/app/inbox?channel=linkedin" style={{ ...secondaryBtn(theme), display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none" }} title="Open LinkedIn conversations and pending campaign actions">
+            <Linkedin style={{ width: 14, height: 14, color: "#0A66C2" }} />
+            LinkedIn activity{linkedinPending ? ` · ${linkedinPending} pending` : ""}
+          </a>
+          <button onClick={() => setCreating(true)} disabled={!stages.length} style={primaryBtn(theme)}>
+            <Plus style={{ width: 15, height: 15 }} />
+            New deal
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -492,6 +508,20 @@ function primaryBtn(theme: CrmThemeTokens): React.CSSProperties {
     color: "#FFFFFF",
     fontFamily: FONT_HEAD,
     fontSize: 13,
+    fontWeight: 600,
+    cursor: "pointer",
+  };
+}
+
+function secondaryBtn(theme: CrmThemeTokens): React.CSSProperties {
+  return {
+    padding: "7px 11px",
+    borderRadius: 9,
+    border: `1px solid ${theme.border}`,
+    background: theme.panel,
+    color: theme.textMuted,
+    fontFamily: FONT_HEAD,
+    fontSize: 12,
     fontWeight: 600,
     cursor: "pointer",
   };

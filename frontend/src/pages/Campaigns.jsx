@@ -101,7 +101,7 @@ function PageHeader({ onNewCampaign, onOpenAnalytics, onOpenInbox }) {
           title="Open the campaign inbox to read replies and continue conversations"
         >
           <Inbox className="h-2.5 w-2.5" />
-          Inbox
+          Communications
         </button>
         <button
           type="button"

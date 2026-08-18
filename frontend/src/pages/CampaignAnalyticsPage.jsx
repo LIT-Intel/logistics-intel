@@ -14,6 +14,7 @@ import {
   RefreshCw,
   Reply,
   Send,
+  Linkedin,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
@@ -28,6 +29,9 @@ const RANGE_OPTIONS = [
 
 const EVENT_LABEL = {
   sent: { label: 'Sent', color: '#1d4ed8', bg: '#DBEAFE', Icon: Send },
+  invitation_sent: { label: 'LinkedIn invite sent', color: '#0A66C2', bg: '#E8F3FF', Icon: Linkedin },
+  connection_accepted: { label: 'LinkedIn connection accepted', color: '#0f766e', bg: '#CCFBF1', Icon: Linkedin },
+  approval_required: { label: 'LinkedIn approval required', color: '#b45309', bg: '#FEF3C7', Icon: Linkedin },
   opened: { label: 'Opened', color: '#15803d', bg: '#DCFCE7', Icon: MailOpen },
   clicked: { label: 'Clicked', color: '#7c3aed', bg: '#EDE9FE', Icon: MousePointer },
   replied: { label: 'Replied', color: '#b45309', bg: '#FEF3C7', Icon: Reply },
@@ -182,7 +186,7 @@ export default function CampaignAnalyticsPage() {
   }, [orgId, rangeId, refreshTick]);
 
   const totals = useMemo(() => {
-    const counts = { sent: 0, opened: 0, clicked: 0, replied: 0, meetings: 0, bounced: 0, send_failed: 0, suppressed: 0 };
+    const counts = { sent: 0, opened: 0, clicked: 0, replied: 0, meetings: 0, bounced: 0, send_failed: 0, suppressed: 0, linkedinSent: 0, linkedinAccepted: 0, linkedinPending: 0 };
     const openKeys = new Set();
     const clickKeys = new Set();
     const replyKeys = new Set();
@@ -191,6 +195,9 @@ export default function CampaignAnalyticsPage() {
 
     for (const e of events) {
       if (e.event_type === 'sent') counts.sent += 1;
+      if (e.channel === 'linkedin' && (e.event_type === 'sent' || e.event_type === 'invitation_sent')) counts.linkedinSent += 1;
+      if (e.channel === 'linkedin' && e.event_type === 'connection_accepted') counts.linkedinAccepted += 1;
+      if (e.channel === 'linkedin' && e.event_type === 'approval_required') counts.linkedinPending += 1;
       if (e.event_type === 'send_failed') counts.send_failed += 1;
       if (e.event_type === 'suppressed') counts.suppressed += 1;
       if (e.event_type === 'opened') openKeys.add(metricKey(e));
@@ -351,6 +358,9 @@ export default function CampaignAnalyticsPage() {
               <Chip>{activeCampaigns} active campaign{activeCampaigns === 1 ? '' : 's'}</Chip>
               <Chip>{perCampaign.length} total</Chip>
               <Chip>{totals.meetings} meeting{totals.meetings === 1 ? '' : 's'} booked</Chip>
+              <Chip tone='blue'>{totals.linkedinSent} LinkedIn sent</Chip>
+              <Chip>{totals.linkedinAccepted} connections accepted</Chip>
+              {totals.linkedinPending > 0 ? <Chip>{totals.linkedinPending} awaiting LinkedIn approval</Chip> : null}
               {nextScheduledAt ? <Chip tone='blue'>Next send {fmtAbsolute(nextScheduledAt)}</Chip> : null}
               {totals.failed > 0 ? <Chip tone='rose'>{totals.failed} send failure{totals.failed === 1 ? '' : 's'}</Chip> : null}
               {totals.suppressed > 0 ? <Chip>{totals.suppressed} suppressed</Chip> : null}

@@ -189,6 +189,29 @@ async function dispatch(auth: any, actionId: string) {
         body: { action_id: action.id, message: action.message }, actor_user_id: auth.user.id, source: "linkedin",
       });
     }
+    if (action.campaign_contact_id && action.campaign_step_id) {
+      const { data: currentStep } = await auth.admin.from("lit_campaign_steps")
+        .select("step_order").eq("id", action.campaign_step_id).maybeSingle();
+      let nextStep: any = null;
+      if (currentStep) {
+        const { data } = await auth.admin.from("lit_campaign_steps")
+          .select("id,channel,step_type,delay_days,delay_hours,delay_minutes")
+          .eq("campaign_id", action.campaign_id).gt("step_order", currentStep.step_order)
+          .order("step_order", { ascending: true }).limit(1).maybeSingle();
+        nextStep = data;
+      }
+      const nextIsWait = nextStep && (nextStep.channel === "wait" || nextStep.step_type === "wait");
+      const delayMs = nextStep && !nextIsWait
+        ? ((Number(nextStep.delay_days) || 0) * 86_400_000 + (Number(nextStep.delay_hours) || 0) * 3_600_000 + (Number(nextStep.delay_minutes) || 0) * 60_000)
+        : 0;
+      await auth.admin.from("lit_campaign_contacts").update({
+        current_step_id: action.campaign_step_id,
+        next_send_at: nextStep ? new Date(Date.now() + delayMs).toISOString() : null,
+        status: nextStep ? "active" : "completed",
+        last_error: null,
+        updated_at: sentAt,
+      }).eq("id", action.campaign_contact_id);
+    }
     return json({ ok: true, action: sent });
   } catch (error) {
     const failedAt = new Date().toISOString();

@@ -581,8 +581,34 @@ serve(async (req) => {
         continue;
       }
 
-      // 2d. Non-email steps (linkedin / call) become manual tasks. Advance
-      //     and write an outreach_history row so the rep sees the task.
+      // 2d. LinkedIn steps pause at the human approval boundary. The Campaign
+      //     Communications tab creates/edits the recipient-specific draft and
+      //     Unipile advances the recipient only after the approved send lands.
+      if (step.channel === "linkedin") {
+        await admin.from("lit_outreach_history").insert({
+          user_id: r.user_id,
+          campaign_id: r.campaign_id,
+          campaign_step_id: step.id,
+          company_id: r.company_id,
+          contact_id: r.contact_id,
+          channel: step.channel,
+          event_type: "approval_required",
+          status: "pending_approval",
+          subject: step.subject,
+          provider: null,
+          occurred_at: new Date().toISOString(),
+          metadata: { recipient_email: r.email, step_type: step.step_type, campaign_contact_id: r.id },
+        });
+        await admin.from("lit_campaign_contacts").update({
+          next_send_at: null,
+          last_error: null,
+          updated_at: new Date().toISOString(),
+        }).eq("id", r.id);
+        summary.advanced += 1;
+        continue;
+      }
+
+      // Calls remain rep-owned sequence work and advance after being surfaced.
       if (step.channel !== "email") {
         await admin.from("lit_outreach_history").insert({
           user_id: r.user_id,
@@ -591,7 +617,7 @@ serve(async (req) => {
           company_id: r.company_id,
           contact_id: r.contact_id,
           channel: step.channel,
-          event_type: "task_queued",
+          event_type: "rep_action_queued",
           status: "queued",
           subject: step.subject,
           provider: null,

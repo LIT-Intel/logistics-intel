@@ -231,7 +231,7 @@ export function PreviewModal({
                     </article>
                   );
                 }
-                // linkedin / call rendered as a manual task card
+                // LinkedIn renders as an approval-gated touch; calls remain rep tasks.
                 const title = applyVariables(s.title, SAMPLE_VARS);
                 const description = applyVariables(s.description, SAMPLE_VARS);
                 return (
@@ -256,7 +256,7 @@ export function PreviewModal({
                         className="ml-auto text-[11px] text-slate-400"
                         style={{ fontFamily: fontBody }}
                       >
-                        Manual task — for the assigned rep
+                        {s.kind === "call" ? "Rep-owned call task" : "Draft → review → send via LinkedIn"}
                       </span>
                     </header>
                     <div className="px-3 py-2.5">

@@ -18,6 +18,8 @@ import {
   Link2,
   Loader2,
   Mail,
+  Linkedin,
+  MessageSquare,
   RefreshCw,
   RemoveFormatting,
   Search,
@@ -67,6 +69,7 @@ export default function InboxPage() {
   const [statusFilter, setStatusFilter] = useState("all"); // 'all' | 'unread'
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState(null);
+  const [channel, setChannel] = useState(searchParams.get("channel") === "linkedin" ? "linkedin" : "email");
 
   const refreshThreads = useCallback(async () => {
     if (!orgId) return;
@@ -137,14 +140,14 @@ export default function InboxPage() {
           </button>
           <div>
             <div className="flex items-center gap-2 text-[15px] font-bold text-[#0F172A]">
-              <Inbox className="h-4 w-4 text-blue-600" />
-              Inbox
+              <MessageSquare className="h-4 w-4 text-blue-600" />
+              Communication Center
             </div>
             <div className="text-[11px] text-slate-500">
-              Email conversations from your connected mailboxes. Replies thread back into the campaign.
+              Email and LinkedIn conversations in one workspace, tied back to campaigns and pipeline activity.
             </div>
           </div>
-          <button
+          {channel === "email" ? <button
             type="button"
             onClick={handleSync}
             disabled={syncing}
@@ -152,10 +155,19 @@ export default function InboxPage() {
           >
             {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
             {syncing ? "Syncing…" : "Sync mailbox"}
+          </button> : null}
+        </div>
+
+        <div className="mb-3 inline-flex rounded-lg border border-slate-200 bg-white p-1">
+          <button type="button" onClick={() => setChannel("email")} className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-semibold ${channel === "email" ? "bg-blue-50 text-blue-700" : "text-slate-500 hover:text-slate-800"}`}>
+            <Mail className="h-3.5 w-3.5" /> Email
+          </button>
+          <button type="button" onClick={() => setChannel("linkedin")} className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-semibold ${channel === "linkedin" ? "bg-blue-50 text-[#0A66C2]" : "text-slate-500 hover:text-slate-800"}`}>
+            <Linkedin className="h-3.5 w-3.5" /> LinkedIn
           </button>
         </div>
 
-        {syncError && (
+        {channel === "email" && syncError && (
           <div className="mb-3 flex items-start gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-700">
             <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <div>
@@ -165,7 +177,9 @@ export default function InboxPage() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-[360px_minmax(0,1fr)]">
+        {channel === "linkedin" ? (
+          <LinkedInCommunicationCenter campaignFilter={campaignFilter} contactFilter={contactFilter} />
+        ) : <div className="grid grid-cols-1 gap-4 md:grid-cols-[360px_minmax(0,1fr)]">
           {/* Thread list */}
           <div className="rounded-xl border border-slate-200 bg-white">
             <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-3 py-2.5">
@@ -224,7 +238,68 @@ export default function InboxPage() {
               <EmptyDetail />
             )}
           </div>
+        </div>}
+      </div>
+    </div>
+  );
+}
+
+function LinkedInCommunicationCenter({ campaignFilter, contactFilter }) {
+  const [threads, setThreads] = useState([]);
+  const [selectedId, setSelectedId] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const loadThreads = useCallback(async () => {
+    setLoading(true); setError(null);
+    try {
+      let q = supabase.from("lit_linkedin_threads")
+        .select("id,subject,participants,last_message_at,unread_count,campaign_id,lead_id,contact_id,metadata")
+        .order("last_message_at", { ascending: false, nullsFirst: false }).limit(200);
+      if (campaignFilter) q = q.eq("campaign_id", campaignFilter);
+      if (contactFilter) q = q.eq("contact_id", contactFilter);
+      const { data, error: queryError } = await q;
+      if (queryError) throw queryError;
+      setThreads(data || []);
+      setSelectedId((current) => current || data?.[0]?.id || null);
+    } catch (e) { setError(e?.message || "Couldn't load LinkedIn conversations"); }
+    finally { setLoading(false); }
+  }, [campaignFilter, contactFilter]);
+
+  useEffect(() => { void loadThreads(); }, [loadThreads]);
+  useEffect(() => {
+    if (!selectedId) { setMessages([]); return; }
+    let cancelled = false;
+    supabase.from("lit_linkedin_messages").select("*").eq("thread_id", selectedId)
+      .order("message_date", { ascending: true })
+      .then(({ data, error: queryError }) => {
+        if (cancelled) return;
+        if (queryError) setError(queryError.message); else setMessages(data || []);
+      });
+    return () => { cancelled = true; };
+  }, [selectedId]);
+
+  if (loading) return <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-8 text-xs text-slate-500"><Loader2 className="h-4 w-4 animate-spin" /> Loading LinkedIn conversations…</div>;
+  if (error) return <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-xs text-rose-700">{error}</div>;
+
+  return (
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-[360px_minmax(0,1fr)]">
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2.5">
+          <div className="text-xs font-bold text-slate-900">LinkedIn conversations</div>
+          <button type="button" onClick={() => void loadThreads()} className="rounded-md border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-50" title="Refresh LinkedIn webhook activity"><RefreshCw className="h-3 w-3" /></button>
         </div>
+        {threads.length === 0 ? <div className="p-6 text-center text-xs text-slate-500">No LinkedIn conversations yet. Sent invitations and messages appear here when Unipile reports activity.</div> : threads.map((thread) => {
+          const person = (thread.participants || [])[0] || {};
+          return <button key={thread.id} type="button" onClick={() => setSelectedId(thread.id)} className={`flex w-full items-start gap-2 border-b border-slate-100 px-3 py-3 text-left ${selectedId === thread.id ? "bg-blue-50/60" : "hover:bg-slate-50"}`}>
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#0A66C2] text-[10px] font-bold text-white">{initials(person.name || person.display_name || "LI")}</div>
+            <div className="min-w-0 flex-1"><div className="truncate text-xs font-bold text-slate-900">{person.name || person.display_name || thread.subject || "LinkedIn contact"}</div><div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-slate-400"><span>{formatRelative(thread.last_message_at)}</span>{thread.campaign_id ? <span className="rounded-full bg-violet-50 px-1.5 py-0.5 font-semibold text-violet-700">Campaign</span> : null}{thread.lead_id ? <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 font-semibold text-emerald-700">Lead CRM</span> : null}{thread.unread_count > 0 ? <span className="ml-auto rounded-full bg-blue-600 px-1.5 text-white">{thread.unread_count}</span> : null}</div></div>
+          </button>;
+        })}
+      </div>
+      <div className="min-h-[60vh] rounded-xl border border-slate-200 bg-white">
+        {!selectedId ? <EmptyDetail /> : <div className="flex h-full flex-col"><div className="border-b border-slate-100 px-5 py-3"><div className="flex items-center gap-2 text-sm font-bold text-slate-900"><Linkedin className="h-4 w-4 text-[#0A66C2]" /> LinkedIn thread</div><div className="mt-1 text-[11px] text-slate-500">Statuses update from Unipile webhooks. Replies pause the recipient's remaining campaign steps.</div></div><div className="flex-1 space-y-3 p-5">{messages.length === 0 ? <div className="rounded-md border border-dashed border-slate-200 p-6 text-center text-xs text-slate-500">Waiting for the first provider message event.</div> : messages.map((message) => <div key={message.id} className={`max-w-[80%] rounded-xl px-3 py-2.5 ${message.direction === "outbound" ? "ml-auto bg-blue-600 text-white" : "border border-slate-200 bg-slate-50 text-slate-800"}`}><div className="whitespace-pre-wrap text-[12px] leading-relaxed">{message.body_text || "(empty message)"}</div><div className={`mt-1 text-[9px] ${message.direction === "outbound" ? "text-blue-100" : "text-slate-400"}`}>{message.message_date ? new Date(message.message_date).toLocaleString() : ""}</div></div>)}</div><div className="border-t border-slate-100 bg-slate-50 px-4 py-3 text-[11px] text-slate-500">New outbound LinkedIn touches are drafted and approved from the campaign Communications tab or Lead CRM communication panel.</div></div>}
       </div>
     </div>
   );
