@@ -5,7 +5,14 @@ export type UnipileConfig = {
 };
 
 function cleanBaseUrl(value: string): string {
-  return value.trim().replace(/\/+$/, "").replace(/\/api\/v1$/i, "");
+  const trimmed = value.trim();
+  const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  const cleaned = withProtocol.replace(/\/+$/, "").replace(/\/api\/v1$/i, "");
+  const parsed = new URL(cleaned);
+  if (parsed.protocol !== "https:" && parsed.hostname !== "localhost") {
+    throw new Error("Unipile DSN must use HTTPS");
+  }
+  return parsed.toString().replace(/\/$/, "");
 }
 
 /**
@@ -44,7 +51,13 @@ export function getUnipileConfig(): UnipileConfig {
   if (!apiKey || !baseUrl) {
     throw new Error("Unipile is not configured: Unipile_API and DSN are required");
   }
-  return { apiKey, baseUrl: cleanBaseUrl(baseUrl), webhookSecret: webhookSecret || undefined };
+  let normalizedBaseUrl = "";
+  try {
+    normalizedBaseUrl = cleanBaseUrl(baseUrl);
+  } catch {
+    throw new Error("Unipile DSN is invalid. Use the API URL shown in the Unipile dashboard, for example https://api1.unipile.com:12345");
+  }
+  return { apiKey, baseUrl: normalizedBaseUrl, webhookSecret: webhookSecret || undefined };
 }
 
 export async function unipileRequest<T = Record<string, unknown>>(
