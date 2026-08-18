@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, Globe2, Layers, X } from "lucide-react";
+import { ArrowRight, Globe2, Layers, Maximize2, Minimize2, Sparkles, X } from "lucide-react";
 import GlobeCanvas, { type GlobeLane } from "@/components/GlobeCanvas";
 import LaneMap, { type LaneMapLaneColor } from "@/components/LaneMap";
 import LaneViewToggle from "@/components/LaneViewToggle";
@@ -9,6 +9,7 @@ import { formatLaneShort, resolveEndpoint } from "@/lib/laneGlobe";
 import { laneRegionColor } from "@/lib/laneRegions";
 import LitFlag from "@/components/ui/LitFlag";
 import { usePulseCoach, useWorkspaceLanes } from "./PulseCoachWidget";
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 // Responsive globe sizing: clamp to a sensible band so it scales
 // down on tablet (where the panel is narrow) and scales up on
@@ -34,17 +35,22 @@ const GLOBE_MAX = 460;
  *  - Coach nudges with `lane_focus` highlight the matching lane
  */
 
-type Mode = "volume" | "concentration";
+type Mode = "volume" | "concentration" | "opportunity" | "whitespace" | "risk";
 
 const MODE_OPTIONS: { id: Mode; label: string }[] = [
   { id: "volume", label: "By volume" },
   { id: "concentration", label: "By concentration" },
+  { id: "opportunity", label: "Opportunity score" },
+  { id: "whitespace", label: "Coverage gaps" },
+  { id: "risk", label: "Concentration risk" },
 ];
 
 export default function WorkspaceLanesGlobe() {
-  const { lanes, loading } = useWorkspaceLanes();
+  const { lanes, months, loading } = useWorkspaceLanes();
   const { highlightedLane, highlightLane } = usePulseCoach();
   const [mode, setMode] = useState<Mode>("volume");
+  const [expanded, setExpanded] = useState(false);
+  const [monthlyOpen, setMonthlyOpen] = useState(false);
   // Sticky selection for the "so-what" panel — set by clicking a row or a
   // globe arc, survives hover churn, cleared via the panel's ✕ or an
   // open-ocean click on the globe.
@@ -82,6 +88,12 @@ export default function WorkspaceLanesGlobe() {
         }
         return b.shipments_total - a.shipments_total;
       });
+    } else if (mode === "opportunity") {
+      copy.sort((a, b) => (b.shipments_total * Math.log2(b.account_count + 2)) - (a.shipments_total * Math.log2(a.account_count + 2)));
+    } else if (mode === "whitespace") {
+      copy.sort((a, b) => (b.shipments_total / Math.max(1, b.account_count)) - (a.shipments_total / Math.max(1, a.account_count)));
+    } else if (mode === "risk") {
+      copy.sort((a, b) => (b.shipments_total / Math.max(1, b.account_count * b.account_count)) - (a.shipments_total / Math.max(1, a.account_count * a.account_count)));
     } else {
       copy.sort((a, b) => b.shipments_total - a.shipments_total);
     }
@@ -164,7 +176,7 @@ export default function WorkspaceLanesGlobe() {
   );
 
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+    <div className={expanded ? "fixed inset-0 z-[1000] overflow-auto bg-white" : "overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"}>
       {/* header */}
       <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 border-b border-slate-100 px-3 py-2 md:px-4 md:py-2.5">
         <div className="flex min-w-0 items-center gap-2">
@@ -197,8 +209,18 @@ export default function WorkspaceLanesGlobe() {
           ))}
           <div className="ml-1 hidden h-3 w-px bg-slate-200 sm:block" aria-hidden />
           <LaneViewToggle mode={viewMode} onChange={setViewMode} />
+          <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("lit:pulse-coach-open", { detail: { surface: "workspace-map", mode } }))} className="font-display inline-flex items-center gap-1 rounded-md border border-cyan-200 bg-cyan-50 px-2 py-0.5 text-[10px] font-semibold text-slate-800"><Sparkles className="h-3 w-3 text-cyan-600" />Pulse Coach</button>
+          <button type="button" onClick={() => setMonthlyOpen((v) => !v)} className="font-display rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600">{monthlyOpen ? "Hide monthly" : "Monthly trend"}</button>
+          <button type="button" onClick={() => setExpanded((v) => !v)} aria-label={expanded ? "Exit full screen map" : "Open full screen map"} className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">{expanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}</button>
         </div>
       </div>
+
+      {monthlyOpen && (
+        <div className="border-b border-slate-100 bg-slate-50/60 px-4 py-3">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2"><div><div className="font-display text-[11px] font-bold text-slate-900">Workspace shipment seasonality</div><div className="font-body text-[10px] text-slate-500">All saved companies · use peaks to time prospecting, staffing, and capacity conversations</div></div><span className="rounded-full bg-blue-50 px-2 py-1 text-[10px] font-semibold text-blue-700">{months.length >= 3 ? `Seasonality score ${Math.min(99, Math.round((Math.max(...months.map((m) => m.shipments)) / Math.max(1, months.reduce((s,m) => s+m.shipments,0)/months.length)) * 55))}` : "History building"}</span></div>
+          <div className="h-36"><ResponsiveContainer width="100%" height="100%"><BarChart data={months}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="month" fontSize={9} /><YAxis fontSize={9} width={36} /><Tooltip /><Bar dataKey="shipments" fill="#2563EB" radius={[3,3,0,0]} /></BarChart></ResponsiveContainer></div>
+        </div>
+      )}
 
       {/* body */}
       {empty ? (
@@ -368,6 +390,7 @@ export default function WorkspaceLanesGlobe() {
                       {l.account_count}{" "}
                       {l.account_count === 1 ? "account" : "accts"}
                     </div>
+                    <div className="font-mono text-[9px] font-semibold text-blue-600">Score {Math.min(99, Math.round(35 + Math.log10(Math.max(1, l.shipments_total)) * 12 + Math.min(20, l.account_count * 2)))}</div>
                   </div>
                 </button>
               );

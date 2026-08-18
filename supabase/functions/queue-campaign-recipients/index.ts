@@ -70,6 +70,7 @@ serve(async (req) => {
   const requestManualEmails: Array<any> = Array.isArray(body?.manual_emails)
     ? body.manual_emails
     : [];
+  const restartCompleted = body?.restart_completed === true;
 
   const admin = createClient(supabaseUrl, serviceKey);
 
@@ -289,6 +290,52 @@ serve(async (req) => {
     .select("id");
   if (insertErr) return json({ ok: false, error: insertErr.message }, 500);
 
+  const insertedCount = inserted?.length ?? 0;
+  const emails = rows.map((row) => row.email);
+  const { data: existingRows } = emails.length
+    ? await admin.from("lit_campaign_contacts")
+        .select("id,email,status,suppressed_reason")
+        .eq("campaign_id", campaignId)
+        .in("email", emails)
+    : { data: [] as any[] };
+  const terminal = (existingRows ?? []).filter((row: any) =>
+    ["completed", "failed", "skipped", "cancelled"].includes(String(row.status))
+  );
+  let restarted = 0;
+  if (restartCompleted && terminal.length > 0) {
+    const restartableIds = terminal
+      .filter((row: any) => !row.suppressed_reason)
+      .map((row: any) => row.id);
+    if (restartableIds.length > 0) {
+      const { data: resetRows, error: resetErr } = await admin
+        .from("lit_campaign_contacts")
+        .update({
+          status: "pending",
+          current_step_id: null,
+          next_step_order: 1,
+          next_send_at: firstSendAtIso,
+          last_sent_at: null,
+          last_error: null,
+          updated_at: now,
+        })
+        .in("id", restartableIds)
+        .select("id");
+      if (resetErr) return json({ ok: false, error: resetErr.message }, 500);
+      restarted = resetRows?.length ?? 0;
+    }
+  }
+
+  if (insertedCount === 0 && restarted === 0) {
+    return json({
+      ok: false,
+      error: terminal.length > 0 ? "existing_recipients_finished" : "no_new_recipients",
+      queued: 0,
+      skipped: terminal.length,
+      restartable: terminal.filter((row: any) => !row.suppressed_reason).length,
+      suppressed: terminal.filter((row: any) => row.suppressed_reason).length,
+    });
+  }
+
   // 7. Persist manual recipients onto the campaign so re-launch works
   //    without resending them in the request body. Flip status to active.
   const newMetrics = {
@@ -305,7 +352,8 @@ serve(async (req) => {
     Math.max(0, requestManualEmails.length - fromManual.length);
   return json({
     ok: true,
-    queued: inserted?.length ?? rows.length,
+    queued: insertedCount + restarted,
+    restarted,
     skipped: totalSkipped,
     errors: [],
   });

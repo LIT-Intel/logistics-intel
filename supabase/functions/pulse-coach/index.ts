@@ -461,6 +461,26 @@ Deno.serve(async (req: Request) => {
       });
 
     const workspaceLanes = aggregateLanes(saved);
+    const rollupIds = saved.map((c) => String(c.source_company_key || "").replace(/^company\//i, "").toLowerCase()).filter(Boolean);
+    const workspaceMonths: Array<{ month: string; shipments: number; teu: number }> = [];
+    if (rollupIds.length > 0) {
+      const start = new Date();
+      start.setUTCMonth(start.getUTCMonth() - 11, 1);
+      const { data: monthRows, error: monthErr } = await supabase.from("lit_company_lane_months")
+        .select("month,shipments,teu").in("company_id", rollupIds.slice(0, 200))
+        .gte("month", start.toISOString().slice(0, 10));
+      if (monthErr) log.warn("workspace_months_query_failed", { err: monthErr.message });
+      const byMonth = new Map<string, { shipments: number; teu: number }>();
+      for (const row of monthRows || []) {
+        const key = String(row.month || "").slice(0, 7);
+        if (!key) continue;
+        const current = byMonth.get(key) || { shipments: 0, teu: 0 };
+        current.shipments += Number(row.shipments) || 0;
+        current.teu += Number(row.teu) || 0;
+        byMonth.set(key, current);
+      }
+      for (const [month, value] of [...byMonth.entries()].sort(([a], [b]) => a.localeCompare(b))) workspaceMonths.push({ month, ...value });
+    }
 
     // Per-request observability (2026-08-14): one structured line that
     // answers "why is this user's lane map empty?" without a redeploy —
@@ -550,6 +570,7 @@ Deno.serve(async (req: Request) => {
         ok: true,
         nudges: fallbackNudge(saved.length, drafts),
         workspace_lanes: workspaceLanes,
+        workspace_months: workspaceMonths,
         source: "fallback",
       });
     }
@@ -598,6 +619,7 @@ Deno.serve(async (req: Request) => {
         ok: true,
         nudges: fallbackNudge(saved.length, drafts),
         workspace_lanes: workspaceLanes,
+        workspace_months: workspaceMonths,
         source: "fallback_openai_error",
         error: oaiData?.error?.message || `OpenAI ${oaiRes.status}`,
       });
@@ -633,6 +655,7 @@ Deno.serve(async (req: Request) => {
                 .length,
             ),
       workspace_lanes: workspaceLanes,
+      workspace_months: workspaceMonths,
       source: nudges.length > 0 ? "openai" : "fallback_empty",
       stats: {
         saved: saved.length,

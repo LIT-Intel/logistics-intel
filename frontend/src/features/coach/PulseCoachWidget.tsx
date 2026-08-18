@@ -509,6 +509,16 @@ export function PulseCoachFloating() {
   const firstRunEvaluated = useRef(false);
 
   useEffect(() => {
+    const openCoach = () => {
+      setFirstRun(false);
+      setOpen(true);
+      refresh();
+    };
+    window.addEventListener("lit:pulse-coach-open", openCoach);
+    return () => window.removeEventListener("lit:pulse-coach-open", openCoach);
+  }, [refresh]);
+
+  useEffect(() => {
     if (firstRunEvaluated.current) return;
     if (typeof window === "undefined") return;
     if (!user?.id) return; // wait for auth to resolve
@@ -581,7 +591,7 @@ export function PulseCoachFloating() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="fixed bottom-6 right-6 z-30 flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-700 shadow-[0_12px_32px_rgba(15,23,42,0.25)] transition hover:scale-105"
+        className="fixed bottom-6 right-6 z-[1100] flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-700 shadow-[0_12px_32px_rgba(15,23,42,0.25)] transition hover:scale-105"
         style={{ background: "linear-gradient(135deg,#0F172A,#1E293B)" }}
         aria-label="Open Pulse Coach"
       >
@@ -602,7 +612,7 @@ export function PulseCoachFloating() {
     <div
       onMouseEnter={() => setHovering(true)}
       onMouseLeave={() => setHovering(false)}
-      className="fixed bottom-6 right-6 z-30 w-[340px] max-w-[calc(100vw-32px)] overflow-hidden rounded-2xl border shadow-[0_24px_60px_rgba(15,23,42,0.35)]"
+      className="fixed bottom-6 right-6 z-[1100] w-[340px] max-w-[calc(100vw-32px)] overflow-hidden rounded-2xl border shadow-[0_24px_60px_rgba(15,23,42,0.35)]"
       style={{
         background: "linear-gradient(160deg,#0F172A 0%,#1E293B 100%)",
         borderColor: "rgba(255,255,255,0.08)",
@@ -1186,8 +1196,9 @@ function NudgeCard({
 
 export function useWorkspaceLanes(): {
   lanes: WorkspaceLane[];
+  months: Array<{ month: string; shipments: number; teu: number }>;
   loading: boolean;
 } {
   const { result, loading } = usePulseCoach();
-  return { lanes: result?.workspace_lanes || [], loading };
+  return { lanes: result?.workspace_lanes || [], months: result?.workspace_months || [], loading };
 }

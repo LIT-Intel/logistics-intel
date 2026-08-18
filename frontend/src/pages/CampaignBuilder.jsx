@@ -121,6 +121,14 @@ function seedStepsFromPlay(play) {
       step.delayDays = firstNonWait ? 0 : 2;
       firstNonWait = false;
     }
+    const copy = play.stepCopy?.[i];
+    if (copy) {
+      step.subject = copy.subject || "";
+      step.body = copy.body || "";
+      step.title = copy.title || "";
+      step.description = copy.description || "";
+      if (Number.isFinite(copy.delayDays)) step.delayDays = copy.delayDays;
+    }
     out.push(step);
   }
   return out;
@@ -1134,6 +1142,19 @@ export default function CampaignBuilder() {
         setSuccess(
           `Launched · ${res.queued} recipient${res.queued === 1 ? "" : "s"} queued${skippedTotal ? ` (${skippedTotal} skipped${rejectedManual.length ? `, ${rejectedManual.length} from invalid manual emails` : ""})` : ""}.`,
         );
+        setTimeout(() => navigate("/app/campaigns/analytics"), 800);
+      } else if (res.error === "existing_recipients_finished" && res.restartable > 0) {
+        const restart = window.confirm(`This campaign has no new recipients. ${res.restartable} recipient${res.restartable === 1 ? " has" : "s have"} already finished this sequence. Restart them from step 1?${res.suppressed ? ` ${res.suppressed} suppressed recipient${res.suppressed === 1 ? " will" : "s will"} remain excluded.` : ""}`);
+        if (!restart) {
+          setError("Launch cancelled — add new recipients or confirm restarting completed recipients.");
+          return;
+        }
+        const restarted = await launchCampaign(editId, validManual, true);
+        if (!restarted.ok) {
+          setError(`Launch failed — ${restarted.error}`);
+          return;
+        }
+        setSuccess(`Launched · ${restarted.queued} recipient${restarted.queued === 1 ? "" : "s"} restarted from step 1.`);
         setTimeout(() => navigate("/app/campaigns/analytics"), 800);
       } else {
         setError(`Launch failed — ${res.error}`);

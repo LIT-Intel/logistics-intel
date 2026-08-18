@@ -26,6 +26,26 @@ Rules:
 - Do not say "I'd be interested", "I'd love to learn", "pick your brain", "connect and explore synergies", or "would you be open to connecting?"
 - The five options must vary in framing, not merely swap adjectives. A human selects and may edit one before sending.`;
 
+function naturalFallbacks(actionType: "invite" | "message", name: string, company: string | null) {
+  const first = String(name || "there").trim().split(/\s+/)[0] || "there";
+  const co = company ? String(company).trim() : "your team";
+  const invite = [
+    ["simple", `Hi ${first} — came across ${co} and thought it made sense to connect.`],
+    ["warm", `Hi ${first}, I work around freight and logistics too. Thought I'd say hello and connect.`],
+    ["peer", `Hi ${first} — always useful to know good people in the freight space. Happy to connect.`],
+    ["curious", `Hi ${first}, ${co} caught my attention while I was looking at the market. Thought I'd connect.`],
+    ["direct", `Hi ${first} — quick introduction from one logistics person to another. Let's connect.`],
+  ];
+  const message = [
+    ["simple", `Thanks for connecting, ${first}. What kind of freight is getting most of your attention right now?`],
+    ["warm", `Good to connect, ${first}. I spend a lot of time looking at lane activity and always enjoy comparing notes with people in the space.`],
+    ["peer", `Thanks, ${first}. I'm curious what you're seeing in the market lately—steady demand, or more week-to-week swings?`],
+    ["curious", `Glad we connected, ${first}. Is there one lane or market your team is watching more closely this quarter?`],
+    ["direct", `Thanks for connecting, ${first}. If a lane ever needs a second set of eyes, I'm happy to share what I'm seeing.`],
+  ];
+  return (actionType === "invite" ? invite : message).map(([tone, text]) => ({ tone, message: text, rationale: "Short, natural, low-pressure opener." }));
+}
+
 type Target = {
   orgId: string;
   leadId: string | null;
@@ -282,7 +302,11 @@ Deno.serve(async (req) => {
       const result = await withTrace("lit_linkedin_outreach_draft", async () => run(agent, JSON.stringify(context)));
       const draft = result.finalOutput;
       if (!draft?.options?.length) throw new Error("Outreach agent returned no draft options");
-      const options = draft.options.map((option) => ({ ...option, message: option.message.trim() }));
+      const rawOptions = draft.options.map((option) => ({ ...option, message: option.message.trim() }));
+      const blocked = /would you be open|learn how you|pick your brain|synerg|revolution|game-changing|unlock/i;
+      const options = rawOptions.length === 5 && rawOptions.every((option) => option.message && !blocked.test(option.message))
+        ? rawOptions
+        : naturalFallbacks(actionType, target.name, target.company);
       if (actionType === "invite" && options.some((option) => option.message.length > 200)) return json({ ok: false, code: "DRAFT_TOO_LONG", error: "Agent invitation draft exceeded 200 characters" }, 502);
       const selected = options[0];
       const draftRow = {

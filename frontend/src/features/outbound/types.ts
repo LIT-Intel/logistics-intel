@@ -62,6 +62,7 @@ export interface Play {
   desc: string;
   channels: ChannelKind[];
   steps: number;
+  stepCopy?: Array<{ subject?: string; body?: string; title?: string; description?: string; delayDays?: number }>;
   badge?: "Top performer" | "Best reply rate" | "Highest meeting rate" | "Best multichannel reply rate";
 }
 

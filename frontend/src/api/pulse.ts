@@ -43,6 +43,7 @@ export type PulseCoachResult = {
   ok: boolean;
   nudges: CoachNudge[];
   workspace_lanes: WorkspaceLane[];
+  workspace_months?: Array<{ month: string; shipments: number; teu: number }>;
   source?: string;
   setupRequired?: boolean;
   error?: string;
