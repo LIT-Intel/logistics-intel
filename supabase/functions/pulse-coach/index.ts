@@ -460,14 +460,19 @@ Deno.serve(async (req: Request) => {
         return true;
       });
 
-    const workspaceLanes = aggregateLanes(saved);
+    let workspaceLanes = aggregateLanes(saved);
     const rollupIds = saved.map((c) => String(c.source_company_key || "").replace(/^company\//i, "").toLowerCase()).filter(Boolean);
     const workspaceMonths: Array<{ month: string; shipments: number; teu: number }> = [];
+    const workspaceLaneMonths: Array<{ key: string; from_label: string; to_label: string; month: string; shipments: number; teu: number; account_count: number }> = [];
     if (rollupIds.length > 0) {
       const start = new Date();
-      start.setUTCMonth(start.getUTCMonth() - 11, 1);
+      // Keep 24 months so the workspace map can calculate a real trailing
+      // 12-month comparison instead of displaying a heuristic score.
+      start.setUTCMonth(start.getUTCMonth() - 23, 1);
+      const currentStart = new Date();
+      currentStart.setUTCMonth(currentStart.getUTCMonth() - 11, 1);
       const { data: monthRows, error: monthErr } = await supabase.from("lit_company_lane_months")
-        .select("month,shipments,teu").in("company_id", rollupIds.slice(0, 200))
+        .select("company_id,origin_country,dest_country,month,shipments,teu").in("company_id", rollupIds.slice(0, 200))
         .gte("month", start.toISOString().slice(0, 10));
       if (monthErr) log.warn("workspace_months_query_failed", { err: monthErr.message });
       const byMonth = new Map<string, { shipments: number; teu: number }>();
@@ -480,6 +485,44 @@ Deno.serve(async (req: Request) => {
         byMonth.set(key, current);
       }
       for (const [month, value] of [...byMonth.entries()].sort(([a], [b]) => a.localeCompare(b))) workspaceMonths.push({ month, ...value });
+
+      const byLaneMonth = new Map<string, { key: string; from_label: string; to_label: string; month: string; shipments: number; teu: number; companies: Set<string> }>();
+      const byLane = new Map<string, { key: string; from_label: string; to_label: string; shipments_total: number; companies: Set<string> }>();
+      for (const row of monthRows || []) {
+        const from = String(row.origin_country || "").trim();
+        const to = String(row.dest_country || "").trim();
+        const month = String(row.month || "").slice(0, 7);
+        if (!from || !to || !month) continue;
+        const key = `${from.toLowerCase()}::${to.toLowerCase()}`;
+        const bucketKey = `${key}::${month}`;
+        const current = byLaneMonth.get(bucketKey) || { key, from_label: from, to_label: to, month, shipments: 0, teu: 0, companies: new Set<string>() };
+        current.shipments += Number(row.shipments) || 0;
+        current.teu += Number(row.teu) || 0;
+        current.companies.add(String(row.company_id || ""));
+        byLaneMonth.set(bucketKey, current);
+        if (month >= currentStart.toISOString().slice(0, 7)) {
+          const lane = byLane.get(key) || { key, from_label: from, to_label: to, shipments_total: 0, companies: new Set<string>() };
+          lane.shipments_total += Number(row.shipments) || 0;
+          lane.companies.add(String(row.company_id || ""));
+          byLane.set(key, lane);
+        }
+      }
+      for (const value of [...byLaneMonth.values()].sort((a, b) => a.month.localeCompare(b.month) || a.key.localeCompare(b.key))) {
+        workspaceLaneMonths.push({ key: value.key, from_label: value.from_label, to_label: value.to_label, month: value.month, shipments: value.shipments, teu: value.teu, account_count: value.companies.size });
+      }
+      const nameByRollupId = new Map(saved.map((company) => [String(company.source_company_key || "").replace(/^company\//i, "").toLowerCase(), company.name]));
+      const realLanes = [...byLane.values()]
+        .map((lane) => ({
+          key: lane.key,
+          from_label: lane.from_label,
+          to_label: lane.to_label,
+          account_count: lane.companies.size,
+          account_names: [...lane.companies].map((id) => nameByRollupId.get(id)).filter(Boolean).slice(0, 5) as string[],
+          shipments_total: lane.shipments_total,
+        }))
+        .sort((a, b) => b.shipments_total - a.shipments_total)
+        .slice(0, 20);
+      if (realLanes.length > 0) workspaceLanes = realLanes;
     }
 
     // Per-request observability (2026-08-14): one structured line that
@@ -571,6 +614,7 @@ Deno.serve(async (req: Request) => {
         nudges: fallbackNudge(saved.length, drafts),
         workspace_lanes: workspaceLanes,
         workspace_months: workspaceMonths,
+        workspace_lane_months: workspaceLaneMonths,
         source: "fallback",
       });
     }
@@ -620,6 +664,7 @@ Deno.serve(async (req: Request) => {
         nudges: fallbackNudge(saved.length, drafts),
         workspace_lanes: workspaceLanes,
         workspace_months: workspaceMonths,
+        workspace_lane_months: workspaceLaneMonths,
         source: "fallback_openai_error",
         error: oaiData?.error?.message || `OpenAI ${oaiRes.status}`,
       });
@@ -656,6 +701,7 @@ Deno.serve(async (req: Request) => {
             ),
       workspace_lanes: workspaceLanes,
       workspace_months: workspaceMonths,
+      workspace_lane_months: workspaceLaneMonths,
       source: nudges.length > 0 ? "openai" : "fallback_empty",
       stats: {
         saved: saved.length,

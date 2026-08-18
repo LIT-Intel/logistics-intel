@@ -44,6 +44,15 @@ export type PulseCoachResult = {
   nudges: CoachNudge[];
   workspace_lanes: WorkspaceLane[];
   workspace_months?: Array<{ month: string; shipments: number; teu: number }>;
+  workspace_lane_months?: Array<{
+    key: string;
+    from_label: string;
+    to_label: string;
+    month: string;
+    shipments: number;
+    teu: number;
+    account_count: number;
+  }>;
   source?: string;
   setupRequired?: boolean;
   error?: string;

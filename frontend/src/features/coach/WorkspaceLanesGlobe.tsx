@@ -46,7 +46,7 @@ const MODE_OPTIONS: { id: Mode; label: string }[] = [
 ];
 
 export default function WorkspaceLanesGlobe() {
-  const { lanes, months, loading } = useWorkspaceLanes();
+  const { lanes, months, laneMonths, loading } = useWorkspaceLanes();
   const { highlightedLane, highlightLane } = usePulseCoach();
   const [mode, setMode] = useState<Mode>("volume");
   const [expanded, setExpanded] = useState(false);
@@ -79,26 +79,67 @@ export default function WorkspaceLanesGlobe() {
     return () => ro.disconnect();
   }, []);
 
+  const laneMetrics = useMemo(() => {
+    const grouped = new Map<string, typeof laneMonths>();
+    for (const row of laneMonths) {
+      const key = `${row.from_label.trim().toLowerCase()}::${row.to_label.trim().toLowerCase()}`;
+      const bucket = grouped.get(key) || [];
+      bucket.push(row);
+      grouped.set(key, bucket);
+    }
+    const result = new Map<string, { current: number; prior: number; yoy: number | null; latest: string | null }>();
+    for (const lane of lanes) {
+      const key = `${lane.from_label.trim().toLowerCase()}::${lane.to_label.trim().toLowerCase()}`;
+      const rows = (grouped.get(key) || []).slice().sort((a, b) => a.month.localeCompare(b.month));
+      const currentRows = rows.slice(-12);
+      const priorRows = rows.slice(-24, -12);
+      const current = currentRows.reduce((sum, row) => sum + Number(row.shipments || 0), 0);
+      const prior = priorRows.reduce((sum, row) => sum + Number(row.shipments || 0), 0);
+      result.set(lane.key, {
+        current,
+        prior,
+        yoy: prior > 0 ? ((current - prior) / prior) * 100 : null,
+        latest: rows.at(-1)?.month || null,
+      });
+    }
+    return result;
+  }, [lanes, laneMonths]);
+
+  const workspaceMonths12 = useMemo(() => months.slice(-12), [months]);
+  const workspacePeakRatio = useMemo(() => {
+    const values = workspaceMonths12.map((row) => Number(row.shipments) || 0).filter((value) => value > 0);
+    if (values.length < 3) return null;
+    const average = values.reduce((sum, value) => sum + value, 0) / values.length;
+    return average > 0 ? Math.max(...values) / average : null;
+  }, [workspaceMonths12]);
+
   const sorted = useMemo(() => {
     const copy = [...lanes];
+    const volumes = copy.map((lane) => laneMetrics.get(lane.key)?.current || lane.shipments_total).sort((a, b) => a - b);
+    const medianVolume = volumes[Math.floor(volumes.length / 2)] || 0;
+    let eligible = copy;
     if (mode === "concentration") {
-      copy.sort((a, b) => {
+      eligible = copy.filter((lane) => lane.account_count >= 2);
+      eligible.sort((a, b) => {
         if (b.account_count !== a.account_count) {
           return b.account_count - a.account_count;
         }
-        return b.shipments_total - a.shipments_total;
+        return (laneMetrics.get(b.key)?.current || b.shipments_total) - (laneMetrics.get(a.key)?.current || a.shipments_total);
       });
     } else if (mode === "opportunity") {
-      copy.sort((a, b) => (b.shipments_total * Math.log2(b.account_count + 2)) - (a.shipments_total * Math.log2(a.account_count + 2)));
+      eligible = copy.filter((lane) => (laneMetrics.get(lane.key)?.yoy ?? -Infinity) > 0);
+      eligible.sort((a, b) => (laneMetrics.get(b.key)?.yoy || 0) - (laneMetrics.get(a.key)?.yoy || 0));
     } else if (mode === "whitespace") {
-      copy.sort((a, b) => (b.shipments_total / Math.max(1, b.account_count)) - (a.shipments_total / Math.max(1, a.account_count)));
+      eligible = copy.filter((lane) => lane.account_count <= 1 && (laneMetrics.get(lane.key)?.current || lane.shipments_total) >= medianVolume);
+      eligible.sort((a, b) => ((laneMetrics.get(b.key)?.current || b.shipments_total) / Math.max(1, b.account_count)) - ((laneMetrics.get(a.key)?.current || a.shipments_total) / Math.max(1, a.account_count)));
     } else if (mode === "risk") {
-      copy.sort((a, b) => (b.shipments_total / Math.max(1, b.account_count * b.account_count)) - (a.shipments_total / Math.max(1, a.account_count * a.account_count)));
+      eligible = copy.filter((lane) => lane.account_count === 1 && (laneMetrics.get(lane.key)?.current || lane.shipments_total) >= medianVolume);
+      eligible.sort((a, b) => (laneMetrics.get(b.key)?.current || b.shipments_total) - (laneMetrics.get(a.key)?.current || a.shipments_total));
     } else {
-      copy.sort((a, b) => b.shipments_total - a.shipments_total);
+      eligible.sort((a, b) => (laneMetrics.get(b.key)?.current || b.shipments_total) - (laneMetrics.get(a.key)?.current || a.shipments_total));
     }
-    return copy.slice(0, 8);
-  }, [lanes, mode]);
+    return eligible.slice(0, 8);
+  }, [lanes, mode, laneMetrics]);
 
   const globeLanes: GlobeLane[] = useMemo(() => {
     const out: GlobeLane[] = [];
@@ -113,11 +154,11 @@ export default function WorkspaceLanesGlobe() {
         coords: [fromMeta.coords, toMeta.coords],
         fromMeta,
         toMeta,
-        shipments: l.shipments_total,
+        shipments: laneMetrics.get(l.key)?.current || l.shipments_total,
       });
     }
     return out;
-  }, [sorted]);
+  }, [sorted, laneMetrics]);
 
   // Origin-region lane colors — one record drives the map lines AND the
   // lane list's rank chips (deterministic, keyed by lane key). Mirrors
@@ -171,7 +212,7 @@ export default function WorkspaceLanesGlobe() {
     ? sorted.find((l) => l.key === stickyKey) ?? null
     : null;
   const workspaceShipTotal = sorted.reduce(
-    (s, l) => s + (l.shipments_total || 0),
+    (s, l) => s + (laneMetrics.get(l.key)?.current || l.shipments_total || 0),
     0,
   );
 
@@ -217,8 +258,8 @@ export default function WorkspaceLanesGlobe() {
 
       {monthlyOpen && (
         <div className="border-b border-slate-100 bg-slate-50/60 px-4 py-3">
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2"><div><div className="font-display text-[11px] font-bold text-slate-900">Workspace shipment seasonality</div><div className="font-body text-[10px] text-slate-500">All saved companies · use peaks to time prospecting, staffing, and capacity conversations</div></div><span className="rounded-full bg-blue-50 px-2 py-1 text-[10px] font-semibold text-blue-700">{months.length >= 3 ? `Seasonality score ${Math.min(99, Math.round((Math.max(...months.map((m) => m.shipments)) / Math.max(1, months.reduce((s,m) => s+m.shipments,0)/months.length)) * 55))}` : "History building"}</span></div>
-          <div className="h-36"><ResponsiveContainer width="100%" height="100%"><BarChart data={months}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="month" fontSize={9} /><YAxis fontSize={9} width={36} /><Tooltip /><Bar dataKey="shipments" fill="#2563EB" radius={[3,3,0,0]} /></BarChart></ResponsiveContainer></div>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2"><div><div className="font-display text-[11px] font-bold text-slate-900">Workspace shipment seasonality</div><div className="font-body text-[10px] text-slate-500">All saved companies · actual trailing-12-month shipment totals</div></div><span className="rounded-full bg-blue-50 px-2 py-1 text-[10px] font-semibold text-blue-700">{workspacePeakRatio == null ? "History building" : `Peak month is ${workspacePeakRatio.toFixed(2)}× average`}</span></div>
+          <div className="h-36"><ResponsiveContainer width="100%" height="100%"><BarChart data={workspaceMonths12}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="month" fontSize={9} /><YAxis fontSize={9} width={36} /><Tooltip /><Bar dataKey="shipments" fill="#2563EB" radius={[3,3,0,0]} /></BarChart></ResponsiveContainer></div>
         </div>
       )}
 
@@ -226,10 +267,12 @@ export default function WorkspaceLanesGlobe() {
       {empty ? (
         <div className="px-6 py-10 text-center">
           <p className="font-display text-[12px] font-semibold text-slate-700">
-            No trade lanes yet.
+            {lanes.length === 0 ? "No trade lanes yet." : "No lanes match this real-data filter."}
           </p>
           <p className="font-body mt-1 text-[11px] text-slate-500">
-            Save a company with shipment history to fill the globe.
+            {lanes.length === 0
+              ? "Save a company with shipment history to fill the globe."
+              : "Choose another view. This filter never substitutes modeled or synthetic lanes."}
           </p>
         </div>
       ) : (
@@ -384,13 +427,17 @@ export default function WorkspaceLanesGlobe() {
                   })()}
                   <div className="text-right">
                     <div className="font-mono text-[11.5px] font-bold text-slate-900">
-                      {l.shipments_total.toLocaleString()}
+                      {(laneMetrics.get(l.key)?.current || l.shipments_total).toLocaleString()}
                     </div>
                     <div className="font-body text-[10px] text-slate-500">
                       {l.account_count}{" "}
                       {l.account_count === 1 ? "account" : "accts"}
                     </div>
-                    <div className="font-mono text-[9px] font-semibold text-blue-600">Score {Math.min(99, Math.round(35 + Math.log10(Math.max(1, l.shipments_total)) * 12 + Math.min(20, l.account_count * 2)))}</div>
+                    <div className="font-mono text-[9px] font-semibold text-blue-600">
+                      {laneMetrics.get(l.key)?.yoy == null
+                        ? "YoY · history building"
+                        : `YoY ${laneMetrics.get(l.key)!.yoy! >= 0 ? "+" : ""}${laneMetrics.get(l.key)!.yoy!.toFixed(1)}%`}
+                    </div>
                   </div>
                 </button>
               );

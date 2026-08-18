@@ -4190,7 +4190,46 @@ function TradeLanesMapDialog({
     return [...s].sort();
   }, [ranked]);
 
-  const volumeCutoff = ranked[Math.max(0, Math.floor(ranked.length * 0.25) - 1)]?.shipments || 0;
+  const realMetricsByPair = useMemo(() => {
+    type Metric = { current: number; prior: number; yoy: number | null; peakRatio: number | null; latest: Date | null; months: number; score: number };
+    const staged = new Map<string, Omit<Metric, "score">>();
+    let maxCurrent = 0;
+    for (const pair of ranked) {
+      const entries = Object.entries(laneMonthsByPair?.get(pair.pairKey) || {})
+        .map(([month, shipments]) => ({ month, shipments: Number(shipments) || 0 }))
+        .filter((row) => /^\d{4}-\d{2}$/.test(row.month))
+        .sort((a, b) => a.month.localeCompare(b.month));
+      const currentRows = entries.slice(-12);
+      const priorRows = entries.slice(-24, -12);
+      const current = currentRows.reduce((sum, row) => sum + row.shipments, 0);
+      const prior = priorRows.reduce((sum, row) => sum + row.shipments, 0);
+      const activeValues = currentRows.map((row) => row.shipments).filter((value) => value > 0);
+      const average = activeValues.length ? activeValues.reduce((sum, value) => sum + value, 0) / activeValues.length : 0;
+      const latestKey = entries.at(-1)?.month;
+      const latestDate = latestKey ? new Date(`${latestKey}-01T00:00:00Z`) : null;
+      maxCurrent = Math.max(maxCurrent, current);
+      staged.set(pair.pairKey, {
+        current,
+        prior,
+        yoy: prior > 0 ? ((current - prior) / prior) * 100 : null,
+        peakRatio: average > 0 && activeValues.length >= 3 ? Math.max(...activeValues) / average : null,
+        latest: latestDate && !Number.isNaN(latestDate.getTime()) ? latestDate : null,
+        months: entries.length,
+      });
+    }
+    const result = new Map<string, Metric>();
+    const now = new Date();
+    for (const [key, metric] of staged) {
+      const ageMonths = metric.latest ? Math.max(0, (now.getUTCFullYear() - metric.latest.getUTCFullYear()) * 12 + now.getUTCMonth() - metric.latest.getUTCMonth()) : 99;
+      const volumePoints = maxCurrent > 0 ? (metric.current / maxCurrent) * 50 : 0;
+      const growthPoints = metric.yoy == null ? 0 : Math.max(0, Math.min(30, metric.yoy * 0.6));
+      const recencyPoints = ageMonths <= 1 ? 20 : ageMonths <= 3 ? 12 : ageMonths <= 6 ? 6 : 0;
+      result.set(key, { ...metric, score: Math.round(volumePoints + growthPoints + recencyPoints) });
+    }
+    return result;
+  }, [ranked, laneMonthsByPair]);
+
+  const volumeCutoff = ranked[Math.max(0, Math.ceil(ranked.length * 0.25) - 1)]?.shipments || 0;
   const filtered = useMemo(
     () => ranked.filter(
         (p: any) =>
@@ -4198,14 +4237,27 @@ function TradeLanesMapDialog({
           (!modeFilter || String(p?.mode || "") === modeFilter) &&
           (Number(p?.shipments) || 0) >= minShipments &&
           (strategyFilter === "all" ||
-            (strategyFilter === "growth" && Number(perLaneYoy?.get(p.pairKey) || 0) > 0) ||
+            (strategyFilter === "growth" && (realMetricsByPair.get(p.pairKey)?.yoy ?? -Infinity) > 0) ||
             (strategyFilter === "priority" && Number(p?.shipments || 0) >= Number(volumeCutoff || 0)) ||
-            (strategyFilter === "recent" && (() => { const d = lastActivityByPair.get(p.pairKey); return !!d && Date.now() - d.getTime() <= 120 * 86400000; })()) ||
-            (strategyFilter === "seasonal" && (() => { const values = Object.values(laneMonthsByPair?.get(p.pairKey) || {}).map(Number).filter(Boolean); if (values.length < 3) return false; const avg = values.reduce((a,b) => a+b,0)/values.length; return Math.max(...values) >= avg * 1.35; })()) ||
-            (strategyFilter === "whitespace" && Number(p?.shipments || 0) < Number(volumeCutoff || 0) && Number(perLaneYoy?.get(p.pairKey) || 0) > 0)),
+            (strategyFilter === "recent" && (() => { const d = realMetricsByPair.get(p.pairKey)?.latest || lastActivityByPair.get(p.pairKey); return !!d && Date.now() - d.getTime() <= 120 * 86400000; })()) ||
+            (strategyFilter === "seasonal" && (realMetricsByPair.get(p.pairKey)?.peakRatio ?? 0) >= 1.35) ||
+            (strategyFilter === "whitespace" && Number(p?.shipments || 0) < Number(volumeCutoff || 0) && (realMetricsByPair.get(p.pairKey)?.yoy ?? -Infinity) > 0)),
       ),
-    [ranked, originFilter, modeFilter, minShipments, strategyFilter, perLaneYoy, volumeCutoff, lastActivityByPair, laneMonthsByPair],
+    [ranked, originFilter, modeFilter, minShipments, strategyFilter, volumeCutoff, lastActivityByPair, realMetricsByPair],
   );
+
+  const strategyCounts = useMemo(() => {
+    const matches = (id: string, p: any) => {
+      const metric = realMetricsByPair.get(p.pairKey);
+      if (id === "priority") return Number(p.shipments || 0) >= Number(volumeCutoff || 0);
+      if (id === "growth") return (metric?.yoy ?? -Infinity) > 0;
+      if (id === "seasonal") return (metric?.peakRatio ?? 0) >= 1.35;
+      if (id === "recent") return !!metric?.latest && Date.now() - metric.latest.getTime() <= 120 * 86400000;
+      if (id === "whitespace") return Number(p.shipments || 0) < Number(volumeCutoff || 0) && (metric?.yoy ?? -Infinity) > 0;
+      return true;
+    };
+    return new Map(["all", "priority", "growth", "seasonal", "recent", "whitespace"].map((id) => [id, ranked.filter((p: any) => matches(id, p)).length]));
+  }, [ranked, realMetricsByPair, volumeCutoff]);
 
   const totalShipments = useMemo(
     () =>
@@ -4487,7 +4539,7 @@ function TradeLanesMapDialog({
         <span className="mx-1 h-4 w-px shrink-0 bg-slate-200" />
         <span className="font-display shrink-0 text-[9.5px] font-bold uppercase tracking-wide text-slate-400">Executive view</span>
         {[["all","All"],["priority","Priority lanes"],["growth","Growth"],["seasonal","Seasonality"],["recent","Recent activity"],["whitespace","Whitespace"]].map(([id,label]) => (
-          <button key={id} type="button" className={chipClass(strategyFilter === id)} onClick={() => setStrategyFilter(id)}>{label}</button>
+          <button key={id} type="button" className={chipClass(strategyFilter === id)} onClick={() => setStrategyFilter(id)}>{label} ({strategyCounts.get(id) || 0})</button>
         ))}
         <button type="button" className={chipClass(analysisOpen)} onClick={() => setAnalysisOpen((v) => !v)}><LineChartIcon className="h-3 w-3" />Monthly chart</button>
         <button type="button" className={chipClass(false)} onClick={() => window.dispatchEvent(new CustomEvent("lit:pulse-coach-open", { detail: { surface: "company-map", lane: selPair?.pairKey || null } }))}><Sparkles className="h-3 w-3" />Ask Pulse</button>
@@ -4495,7 +4547,7 @@ function TradeLanesMapDialog({
 
       {analysisOpen && (
         <div className="shrink-0 border-b border-slate-200 bg-white px-4 py-3">
-          <div className="mb-2 flex items-center justify-between"><div><div className="font-display text-[11px] font-bold text-slate-900">Monthly shipment pattern</div><div className="font-body text-[10px] text-slate-500">{selPair ? "Selected lane · use seasonality to time outreach and capacity conversations" : "Select a lane to view its monthly history"}</div></div>{selPair && <span className="rounded-full bg-blue-50 px-2 py-1 text-[10px] font-semibold text-blue-700">Opportunity score {Math.min(99, Math.round(45 + (Number(selPair.shipments || 0) / Math.max(1, Number(ranked[0]?.shipments || 1))) * 40 + Math.max(0, Number(perLaneYoy?.get(selPair.pairKey) || 0)) / 5))}</span>}</div>
+          <div className="mb-2 flex items-center justify-between"><div><div className="font-display text-[11px] font-bold text-slate-900">Monthly shipment pattern</div><div className="font-body text-[10px] text-slate-500">{selPair ? "Selected lane · actual monthly shipment rollups" : "Select a lane to view its monthly history"}</div></div>{selPair && realMetricsByPair.get(selPair.pairKey) && <span title="Score formula: 50 points from relative 12-month volume, 30 from positive YoY momentum, and 20 from shipment recency." className="rounded-full bg-blue-50 px-2 py-1 text-[10px] font-semibold text-blue-700">Data score {realMetricsByPair.get(selPair.pairKey)!.score}/100 · {realMetricsByPair.get(selPair.pairKey)!.yoy == null ? "YoY unavailable" : `YoY ${realMetricsByPair.get(selPair.pairKey)!.yoy! >= 0 ? "+" : ""}${realMetricsByPair.get(selPair.pairKey)!.yoy!.toFixed(1)}%`}</span>}</div>
           <div className="h-32">
             <ResponsiveContainer width="100%" height="100%"><BarChart data={monthlyChartData}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="month" fontSize={9} /><YAxis fontSize={9} width={32} /><Tooltip /><Bar dataKey="shipments" fill="#2563EB" radius={[3,3,0,0]} /></BarChart></ResponsiveContainer>
           </div>

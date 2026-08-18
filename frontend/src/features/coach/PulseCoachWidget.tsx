@@ -79,8 +79,8 @@ const PulseCoachContext = createContext<PulseCoachContextValue | null>(null);
 // A's workspace_lanes (and nudges referencing A's accounts) were visible
 // to User B until the 30-min TTL expired. The unscoped v1 key is purged
 // on mount below.
-const CACHE_KEY_PREFIX = "lit.pulse_coach.cache.v2.";
-const LEGACY_CACHE_KEYS = ["lit.pulse_coach.cache.v1"];
+const CACHE_KEY_PREFIX = "lit.pulse_coach.cache.v3.";
+const LEGACY_CACHE_KEYS = ["lit.pulse_coach.cache.v1", "lit.pulse_coach.cache.v2."];
 const CACHE_TTL_MS = 30 * 60 * 1000;
 
 type CacheRow = { at: number; result: PulseCoachResult };
@@ -119,7 +119,9 @@ function writeCacheFor(
 function purgeLegacyCaches() {
   if (typeof window === "undefined") return;
   try {
-    for (const k of LEGACY_CACHE_KEYS) window.localStorage.removeItem(k);
+    for (const k of Object.keys(window.localStorage)) {
+      if (LEGACY_CACHE_KEYS.some((legacy) => k === legacy || k.startsWith(legacy))) window.localStorage.removeItem(k);
+    }
   } catch (_) {
     // ignore
   }
@@ -1197,8 +1199,14 @@ function NudgeCard({
 export function useWorkspaceLanes(): {
   lanes: WorkspaceLane[];
   months: Array<{ month: string; shipments: number; teu: number }>;
+  laneMonths: NonNullable<PulseCoachResult["workspace_lane_months"]>;
   loading: boolean;
 } {
   const { result, loading } = usePulseCoach();
-  return { lanes: result?.workspace_lanes || [], months: result?.workspace_months || [], loading };
+  return {
+    lanes: result?.workspace_lanes || [],
+    months: result?.workspace_months || [],
+    laneMonths: result?.workspace_lane_months || [],
+    loading,
+  };
 }
