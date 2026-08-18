@@ -71,10 +71,10 @@ export function StepInspector({
   const meta = CHANNEL[step.kind];
   const isEmail = step.kind === "email";
   const isWait = step.kind === "wait";
-  const isLinkedInOrCall =
+  const isLinkedIn =
     step.kind === "linkedin_invite" ||
-    step.kind === "linkedin_message" ||
-    step.kind === "call";
+    step.kind === "linkedin_message";
+  const isLinkedInOrCall = isLinkedIn || step.kind === "call";
 
   const insertVariable = (variable: string) => {
     if (isEmail) {
@@ -121,6 +121,8 @@ export function StepInspector({
               ? "Compose · Schedule"
               : isWait
               ? "Wait between steps"
+              : isLinkedIn
+              ? "AI draft · human approval · sent through LinkedIn"
               : "Manual task — sequenced for the rep"}
           </div>
         </div>

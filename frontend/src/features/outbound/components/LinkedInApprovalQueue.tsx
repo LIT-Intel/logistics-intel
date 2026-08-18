@@ -52,6 +52,12 @@ export default function LinkedInApprovalQueue({ campaignId }: { campaignId: stri
     }
     return map;
   }, [actions]);
+  const summary = useMemo(() => ({
+    ready: actions.filter((a) => a.status === "pending_approval").length,
+    sent: actions.filter((a) => a.status === "sent" || a.status === "replied").length,
+    missing: recipients.filter((r) => !r.linkedin_url).length,
+    replied: actions.filter((a) => a.status === "replied").length,
+  }), [actions, recipients]);
 
   if (!loading && steps.length === 0) return null;
   async function connect() {
@@ -109,6 +115,16 @@ export default function LinkedInApprovalQueue({ campaignId }: { campaignId: stri
         </div>
       </div>
       {error ? <div className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">{error}</div> : null}
+      {!loading ? (
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {[
+            ["Awaiting approval", summary.ready, "text-amber-700 bg-amber-50"],
+            ["Sent", summary.sent, "text-blue-700 bg-blue-50"],
+            ["Replies", summary.replied, "text-emerald-700 bg-emerald-50"],
+            ["Missing LinkedIn URL", summary.missing, "text-rose-700 bg-rose-50"],
+          ].map(([label, value, tone]) => <div key={String(label)} className={`rounded-lg px-3 py-2 ${tone}`}><div className="text-lg font-bold">{value}</div><div className="text-[10px] font-semibold uppercase tracking-wide">{label}</div></div>)}
+        </div>
+      ) : null}
       {loading ? <div className="mt-4 flex items-center gap-2 text-xs text-slate-500"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading recipients…</div> : recipients.length === 0 ? (
         <div className="mt-4 text-xs text-slate-500">No enrolled campaign recipients yet.</div>
       ) : (

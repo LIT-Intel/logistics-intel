@@ -44,7 +44,7 @@ Deno.serve(async (req) => {
   if (!session) return json({ ok: false }, 403);
 
   try {
-    const { data: existing } = await admin.from("lit_unipile_accounts").select("id,org_id")
+    const { data: existing } = await admin.from("lit_unipile_accounts").select("id,org_id,use_for_campaigns,use_for_lead_crm")
       .eq("unipile_account_id", remoteAccountId).maybeSingle();
     if (existing && existing.org_id !== session.org_id) {
       throw new Error("This LinkedIn account is already connected to another workspace");
@@ -59,8 +59,8 @@ Deno.serve(async (req) => {
       unipile_account_id: remoteAccountId,
       provider: "LINKEDIN",
       status: "OK",
-      use_for_campaigns: session.purpose === "campaigns",
-      use_for_lead_crm: session.purpose === "lead_crm",
+      use_for_campaigns: Boolean(existing?.use_for_campaigns) || session.purpose === "campaigns",
+      use_for_lead_crm: Boolean(existing?.use_for_lead_crm) || session.purpose === "lead_crm",
       connected_at: connectedAt,
       last_synced_at: connectedAt,
       metadata: { callback_status: callbackStatus },
