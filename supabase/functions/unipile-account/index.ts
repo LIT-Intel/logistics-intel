@@ -118,7 +118,14 @@ Deno.serve(async (req) => {
 
     return json({ ok: false, code: "UNKNOWN_ACTION", error: "Unknown action" }, 400);
   } catch (error) {
-    console.error("unipile-account failed", error instanceof Error ? error.message : "unknown");
-    return json({ ok: false, code: "UNIPILE_ACCOUNT_ERROR", error: error instanceof Error ? error.message : "Unipile account operation failed" }, 502);
+    const upstreamStatus = Number((error as { status?: number })?.status || 0);
+    const message = error instanceof Error ? error.message : "Unipile account operation failed";
+    const code = upstreamStatus === 401 || upstreamStatus === 403
+      ? "UNIPILE_CREDENTIALS_REJECTED"
+      : upstreamStatus === 422 || upstreamStatus === 400
+      ? "UNIPILE_REQUEST_REJECTED"
+      : "UNIPILE_ACCOUNT_ERROR";
+    console.error("unipile-account failed", JSON.stringify({ code, upstreamStatus, message }));
+    return json({ ok: false, code, error: message }, upstreamStatus >= 400 && upstreamStatus < 500 ? upstreamStatus : 502);
   }
 });
