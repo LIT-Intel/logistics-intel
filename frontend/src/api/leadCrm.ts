@@ -161,7 +161,29 @@ export async function saveLeadContacts(
         : updated.reason || "Contact saved, but could not make it the primary contact.",
     );
   }
+  if (primary.linkedin_url) {
+    const { error: linkedinError } = await supabase.rpc("lit_leadcrm_primary_linkedin", {
+      p_lead_id: leadId,
+      p_contact_id: primary.id,
+    });
+    if (linkedinError) throw new Error(`Contact saved, but LinkedIn could not be linked: ${linkedinError.message}`);
+  }
   return { saved: rows.length, primaryUpdated: true };
+}
+
+/** Resolve the primary saved contact's LinkedIn URL for Lead CRM outreach. */
+export async function getLeadLinkedInUrl(leadId: string): Promise<string | null> {
+  try {
+    const { data, error } = await supabase.rpc("lit_leadcrm_primary_linkedin", {
+      p_lead_id: leadId,
+      p_contact_id: null,
+    });
+    if (error) return null;
+    const row = (Array.isArray(data) ? data[0] : data) as any;
+    return typeof row?.linkedin_url === "string" ? row.linkedin_url : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Result of the enrich edge function. */

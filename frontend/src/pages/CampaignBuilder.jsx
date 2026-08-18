@@ -28,6 +28,7 @@ import { fetchCampaignMetricsBatch } from "@/features/outbound/api/campaignMetri
 import { ScheduleStrip } from "@/features/outbound/components/ScheduleStrip";
 import { LaunchSchedulePicker } from "@/features/outbound/components/LaunchSchedulePicker";
 import ExitConditionsPanel from "@/features/outbound/components/ExitConditionsPanel";
+import LinkedInApprovalQueue from "@/features/outbound/components/LinkedInApprovalQueue";
 import { PersonaPanel } from "@/features/outbound/components/PersonaPanel";
 import { TimelineCanvas } from "@/features/outbound/components/TimelineCanvas";
 import { StepInspector } from "@/features/outbound/components/StepInspector";
@@ -1447,6 +1448,7 @@ export default function CampaignBuilder() {
           <ExitConditionsPanel campaignId={editId} />
         </div>
       ) : null}
+      {editId ? <LinkedInApprovalQueue campaignId={editId} /> : null}
 
       {error || campaignError ? (
         <div

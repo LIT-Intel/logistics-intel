@@ -27,6 +27,9 @@ import {
   ExternalLink,
   Plus,
   AlertTriangle,
+  Linkedin,
+  UserPlus,
+  CheckCircle2,
 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import {
@@ -44,7 +47,18 @@ import {
   getCalConfig,
   setCalUrl,
   logCallBookingOpened,
+  getLeadLinkedInUrl,
 } from "@/api/leadCrm";
+import {
+  approveAndSendLinkedIn,
+  draftLinkedInOutreach,
+  listLinkedInOutreach,
+  listUnipileAccounts,
+  startUnipileLinkedIn,
+  updateLinkedInDraft,
+  type LinkedInOutreachAction,
+  type UnipileAccount,
+} from "@/api/outreach";
 import { FONT_HEAD, FONT_BODY, asText, formatRelative, leadDisplayName } from "./leadCrmFormat";
 
 // Local style atoms (mirror the drawer's visual language).
@@ -161,10 +175,149 @@ export default function LeadCommunicationPanel({
         toast={toast}
       />
       <ThreadsBlock lead={lead} />
+      <LinkedInBlock lead={lead} onLogged={onLogged} toast={toast} />
       <DemoInviteBlock lead={lead} email={email} hasEmail={hasEmail} onLogged={onLogged} toast={toast} />
       <CampaignBlock lead={lead} hasEmail={hasEmail} onLogged={onLogged} toast={toast} />
       <BookCallBlock lead={lead} email={email} onLogged={onLogged} toast={toast} />
     </div>
+  );
+}
+
+function LinkedInBlock({
+  lead,
+  onLogged,
+  toast,
+}: {
+  lead: Lead;
+  onLogged: () => void;
+  toast: ReturnType<typeof useToast>["toast"];
+}) {
+  const [linkedinUrl, setLinkedinUrl] = useState("");
+  const [accounts, setAccounts] = useState<UnipileAccount[]>([]);
+  const [actions, setActions] = useState<LinkedInOutreachAction[]>([]);
+  const [actionType, setActionType] = useState<"invite" | "message">("invite");
+  const [angle, setAngle] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    const url = linkedinUrl || await getLeadLinkedInUrl(lead.id) || "";
+    if (!linkedinUrl && url) setLinkedinUrl(url);
+    const [connected, history] = await Promise.all([
+      listUnipileAccounts(undefined, "lead_crm").catch(() => []),
+      url ? listLinkedInOutreach({ leadId: lead.id, linkedinUrl: url }).catch(() => []) : Promise.resolve([]),
+    ]);
+    setAccounts(connected.filter((a) => a.status === "OK" && a.use_for_lead_crm));
+    setActions(history);
+    setLoading(false);
+  }
+
+  useEffect(() => { void load(); }, [lead.id]);
+
+  async function connect() {
+    setBusy(true);
+    try {
+      const result = await startUnipileLinkedIn({ purpose: "lead_crm", returnUrl: "/app/lead-crm" });
+      window.location.assign(result.url);
+    } catch (e: any) {
+      toast({ title: "Could not connect LinkedIn", description: asText(e?.message), variant: "destructive" });
+      setBusy(false);
+    }
+  }
+
+  async function draft() {
+    if (!linkedinUrl.trim() || busy) return;
+    setBusy(true);
+    try {
+      const action = await draftLinkedInOutreach({
+        leadId: lead.id,
+        linkedinUrl: linkedinUrl.trim(),
+        actionType,
+        accountId: accounts[0]?.id,
+        angle: angle.trim() || undefined,
+      });
+      setActions((prev) => [action, ...prev.filter((a) => a.id !== action.id)]);
+      toast({ title: "Draft ready for review" });
+    } catch (e: any) {
+      toast({ title: "Could not create draft", description: asText(e?.message), variant: "destructive" });
+    } finally { setBusy(false); }
+  }
+
+  async function approve(action: LinkedInOutreachAction) {
+    if (busy || !window.confirm(`Approve and send this LinkedIn ${action.action_type}?`)) return;
+    setBusy(true);
+    try {
+      const sent = await approveAndSendLinkedIn(action.id);
+      setActions((prev) => [sent, ...prev.filter((a) => a.id !== sent.id)]);
+      toast({ title: action.action_type === "invite" ? "Connection request sent" : "LinkedIn message sent" });
+      onLogged();
+    } catch (e: any) {
+      toast({ title: "LinkedIn send stopped", description: asText(e?.message), variant: "destructive" });
+      await load();
+    } finally { setBusy(false); }
+  }
+
+  async function saveDraft(action: LinkedInOutreachAction) {
+    setBusy(true);
+    try {
+      const updated = await updateLinkedInDraft(action.id, action.message);
+      setActions((prev) => [updated, ...prev.filter((a) => a.id !== updated.id)]);
+      toast({ title: "LinkedIn draft updated" });
+    } catch (e: any) {
+      toast({ title: "Could not update draft", description: asText(e?.message), variant: "destructive" });
+    } finally { setBusy(false); }
+  }
+
+  const latest = actions[0];
+  return (
+    <Section title="LinkedIn" icon={<Linkedin style={{ width: 13, height: 13, color: "#0A66C2" }} />}>
+      <Hint>Agent-written outreach always pauses for your approval. Qualification, deduplication, and daily account limits are checked before delivery.</Hint>
+      <input value={linkedinUrl} onChange={(e) => setLinkedinUrl(e.target.value)} placeholder="https://linkedin.com/in/contact" style={inputStyle} />
+      {loading ? (
+        <div style={{ display: "flex", gap: 8, alignItems: "center", color: "#94a3b8", fontFamily: FONT_BODY, fontSize: 12 }}><Loader2 style={spinIcon} /> Checking LinkedIn…</div>
+      ) : accounts.length === 0 ? (
+        <button onClick={connect} disabled={busy} style={{ ...primaryBtn, alignSelf: "flex-start" }}><Linkedin style={{ width: 14, height: 14 }} /> Connect LinkedIn</button>
+      ) : (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "140px 1fr", gap: 8 }}>
+            <select value={actionType} onChange={(e) => setActionType(e.target.value as "invite" | "message")} style={inputStyle}>
+              <option value="invite">Connection request</option>
+              <option value="message">Message</option>
+            </select>
+            <input value={angle} onChange={(e) => setAngle(e.target.value)} placeholder="Optional context or angle" style={inputStyle} />
+          </div>
+          <button onClick={draft} disabled={busy || !linkedinUrl.trim()} style={{ ...ghostBtn, alignSelf: "flex-start", opacity: !linkedinUrl.trim() ? 0.5 : 1 }}>
+            {busy ? <Loader2 style={spinIcon} /> : <UserPlus style={{ width: 14, height: 14 }} />} Draft with outreach agent
+          </button>
+        </>
+      )}
+      {latest ? (
+        <div style={{ border: "1px solid #DBEAFE", background: "#F8FAFF", borderRadius: 10, padding: 11 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 7 }}>
+            {latest.status === "sent" || latest.status === "replied" ? <CheckCircle2 style={{ width: 13, height: 13, color: "#16A34A" }} /> : <Linkedin style={{ width: 13, height: 13, color: "#0A66C2" }} />}
+            <span style={{ fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700, color: "#334155", textTransform: "uppercase" }}>{latest.status.replaceAll("_", " ")}</span>
+          </div>
+          {latest.status === "pending_approval" ? (
+            <textarea
+              value={latest.message}
+              onChange={(e) => setActions((prev) => prev.map((a) => a.id === latest.id ? { ...a, message: e.target.value } : a))}
+              rows={4}
+              maxLength={latest.action_type === "invite" ? 280 : 1000}
+              style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5 }}
+            />
+          ) : <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, lineHeight: 1.55, color: "#0F172A", whiteSpace: "pre-wrap" }}>{latest.message}</div>}
+          {latest.agent_rationale ? <div style={{ fontFamily: FONT_BODY, fontSize: 10.5, color: "#94A3B8", marginTop: 7 }}>Why this draft: {latest.agent_rationale}</div> : null}
+          {latest.last_error ? <Hint warn>{latest.last_error}</Hint> : null}
+          {latest.status === "pending_approval" ? (
+            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+              <button onClick={() => saveDraft(latest)} disabled={busy || !latest.message.trim()} style={ghostBtn}>Save edits</button>
+              <button onClick={() => approve(latest)} disabled={busy || !latest.message.trim()} style={primaryBtn}><Send style={{ width: 13, height: 13 }} /> Approve &amp; send</button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </Section>
   );
 }
 
