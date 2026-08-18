@@ -32,6 +32,7 @@ import {
   CheckCircle2,
   Trash2,
   XCircle,
+  HelpCircle,
 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import {
@@ -66,6 +67,7 @@ import {
   type UnipileAccount,
 } from "@/api/outreach";
 import { FONT_HEAD, FONT_BODY, asText, formatRelative, leadDisplayName } from "./leadCrmFormat";
+import { LinkedInSenderBadge, LinkedInStatusBadge, linkedInContactState } from "@/components/linkedin/LinkedInStatusBadge";
 
 // Local style atoms (mirror the drawer's visual language).
 const inputStyle: React.CSSProperties = {
@@ -240,16 +242,16 @@ function LinkedInBlock({
     }
   }
 
-  async function draft(regenerate = false) {
+  async function draft(regenerate = false, actionTypeOverride?: "invite" | "message", angleOverride?: string) {
     if (!linkedinUrl.trim() || busy) return;
     setBusy(true);
     try {
       const action = await draftLinkedInOutreach({
         leadId: lead.id,
         linkedinUrl: linkedinUrl.trim(),
-        actionType,
+        actionType: actionTypeOverride || actionType,
         accountId: accounts[0]?.id,
-        angle: angle.trim() || undefined,
+        angle: angleOverride || angle.trim() || undefined,
         regenerate,
       });
       setActions((prev) => [action, ...prev.filter((a) => a.id !== action.id)]);
@@ -333,6 +335,8 @@ function LinkedInBlock({
   return (
     <Section title="LinkedIn" icon={<Linkedin style={{ width: 13, height: 13, color: "#0A66C2" }} />}>
       <Hint>Agent-written outreach always pauses for your approval. Qualification, deduplication, and daily account limits are checked before delivery.</Hint>
+      {!loading ? <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}><LinkedInSenderBadge connected={accounts.length > 0} />{latest ? <LinkedInStatusBadge action={latest} /> : null}</div> : null}
+      <div style={{ display: "flex", gap: 5, alignItems: "flex-start", color: "#64748B", fontFamily: FONT_BODY, fontSize: 10, lineHeight: 1.4 }}><HelpCircle style={{ width: 12, height: 12, flexShrink: 0, marginTop: 1, color: "#0A66C2" }} />Invitation pending means wait. Connected means you can send a LinkedIn message. Message sent means LinkedIn accepted delivery.</div>
       <input value={linkedinUrl} onChange={(e) => setLinkedinUrl(e.target.value)} placeholder="https://linkedin.com/in/contact" style={inputStyle} />
       {loading ? (
         <div style={{ display: "flex", gap: 8, alignItems: "center", color: "#94a3b8", fontFamily: FONT_BODY, fontSize: 12 }}><Loader2 style={spinIcon} /> Checking LinkedIn…</div>
@@ -366,6 +370,7 @@ function LinkedInBlock({
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 7 }}>
             {latest.status === "sent" || latest.status === "replied" ? <CheckCircle2 style={{ width: 13, height: 13, color: "#16A34A" }} /> : <Linkedin style={{ width: 13, height: 13, color: "#0A66C2" }} />}
             <span style={{ fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700, color: "#334155", textTransform: "uppercase" }}>{latest.status.replaceAll("_", " ")}</span>
+            <LinkedInStatusBadge action={latest} compact />
           </div>
           {latest.status === "pending_approval" ? (
             <>
@@ -409,6 +414,7 @@ function LinkedInBlock({
             <div style={{ marginTop: 10 }}><button onClick={() => deleteAction(latest)} disabled={busy} style={{ ...ghostBtn, color: "#BE123C" }}><Trash2 style={{ width: 13, height: 13 }} /> Delete unsent draft</button></div>
           ) : latest.status === "sent" || latest.status === "replied" ? (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
+              {linkedInContactState(latest).key === "connected" || linkedInContactState(latest).key === "replied" ? <button onClick={() => { const nextAngle = "Continue the conversation naturally. Keep it short and low-pressure."; setActionType("message"); setAngle(nextAngle); void draft(true, "message", nextAngle); }} disabled={busy} style={primaryBtn}><Send style={{ width: 13, height: 13 }} /> Draft LinkedIn message</button> : null}
               <button onClick={() => draft(true)} disabled={busy} style={ghostBtn}>Create editable 5-option draft</button>
               <button onClick={() => dismissAction(latest)} disabled={busy} style={{ ...ghostBtn, color: "#BE123C" }}><Trash2 style={{ width: 13, height: 13 }} /> Remove from view</button>
             </div>

@@ -11,8 +11,10 @@
  */
 
 import { useEffect, useState, useCallback } from "react";
-import { Inbox, Linkedin, Mail, RefreshCw } from "lucide-react";
+import { HelpCircle, Inbox, Linkedin, Mail, MessageCircle, RefreshCw } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { listUnipileAccounts } from "@/api/outreach";
+import { LinkedInSenderBadge, LinkedInStatusBadge, linkedInContactState } from "@/components/linkedin/LinkedInStatusBadge";
 
 type ConversationType = "direct" | "campaign" | "reply";
 
@@ -49,6 +51,7 @@ type LinkedInAction = {
   contact_id: string | null;
   provider_event_id: string | null;
   provider_chat_id: string | null;
+  metadata: Record<string, unknown> | null;
   last_message_at: string;
   unread_count: number;
   channel: "linkedin_action";
@@ -87,6 +90,7 @@ export default function CompanyInboxTab({
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [linkedinSenderConnected, setLinkedinSenderConnected] = useState(false);
 
   // lit_email_threads.company_id is a UUID column — when the route id is
   // a slug like "company/foo" the query crashes with
@@ -131,7 +135,7 @@ export default function CompanyInboxTab({
             .order("last_message_at", { ascending: false, nullsFirst: false })
             .limit(50),
           supabase.from("lit_linkedin_outreach_actions")
-            .select("id, recipient_name, message, status, action_type, sent_at, created_at, contact_id, provider_event_id, provider_chat_id")
+            .select("id, recipient_name, message, status, action_type, sent_at, created_at, contact_id, provider_event_id, provider_chat_id, metadata")
             .in("contact_id", contactIds)
             .order("created_at", { ascending: false })
             .limit(50),
@@ -165,6 +169,12 @@ export default function CompanyInboxTab({
     };
   }, [loadThreads]);
 
+  useEffect(() => {
+    listUnipileAccounts(undefined, "campaigns")
+      .then((accounts) => setLinkedinSenderConnected(accounts.length > 0))
+      .catch(() => setLinkedinSenderConnected(false));
+  }, []);
+
   // "Sync now" — invoke the sync-inbox edge fn with the caller's user JWT.
   // The function syncs the caller's own connected mailboxes, then we reload.
   const syncNow = useCallback(async () => {
@@ -185,7 +195,7 @@ export default function CompanyInboxTab({
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white">
-      <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3">
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-3">
         <Inbox className="h-4 w-4 text-blue-600" />
         <div>
           <div className="text-[13px] font-bold text-[#0F172A]">
@@ -195,6 +205,7 @@ export default function CompanyInboxTab({
             Email and LinkedIn conversations with contacts at this company, kept in one timeline.
           </div>
         </div>
+        <LinkedInSenderBadge connected={linkedinSenderConnected} />
         <button
           type="button"
           onClick={syncNow}
@@ -215,6 +226,10 @@ export default function CompanyInboxTab({
         >
           Open full inbox →
         </button>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50/70 px-4 py-2 text-[10px] text-slate-500">
+        <HelpCircle className="h-3.5 w-3 text-[#0A66C2]" />
+        <span><strong className="text-slate-700">LinkedIn status:</strong> Invitation pending means wait; Connected means you can message; Message sent means LinkedIn accepted the delivery.</span>
       </div>
       <div className="max-h-[60vh] overflow-y-auto">
         {loading ? (
@@ -246,6 +261,7 @@ export default function CompanyInboxTab({
                 ? ((t.participants || [])[0] || ({} as any))
                 : { name: t.recipient_name };
             const isUnread = (t.unread_count || 0) > 0;
+            const linkedInState = t.channel === "linkedin_action" ? linkedInContactState(t) : null;
             return (
               <button
                 key={t.id}
@@ -276,8 +292,8 @@ export default function CompanyInboxTab({
                     >
                       {t.channel === "email" ? (t.subject || "(no subject)") : t.channel === "linkedin" ? (t.subject || "LinkedIn conversation") : t.message}
                     </div>
-                    {t.channel === "email" ? <ConversationTypeChip type={t.conversation_type} /> : (
-                      <span className="inline-flex shrink-0 items-center gap-1 rounded bg-sky-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-[#0A66C2]"><Linkedin className="h-2.5 w-2.5" /> {t.channel === "linkedin_action" ? t.status.replaceAll("_", " ") : "LinkedIn"}</span>
+                    {t.channel === "email" ? <ConversationTypeChip type={t.conversation_type} /> : t.channel === "linkedin_action" ? <LinkedInStatusBadge action={t} compact /> : (
+                      <span className="inline-flex shrink-0 items-center gap-1 rounded bg-sky-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-[#0A66C2]"><Linkedin className="h-2.5 w-2.5" /> LinkedIn conversation</span>
                     )}
                   </div>
                   <div className="mt-0.5 text-[10px] text-slate-400">
@@ -287,6 +303,9 @@ export default function CompanyInboxTab({
                         <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
                         unread
                       </span>
+                    ) : null}
+                    {linkedInState?.key === "connected" || linkedInState?.key === "replied" ? (
+                      <span className="ml-2 inline-flex items-center gap-1 font-semibold text-[#0A66C2]"><MessageCircle className="h-2.5 w-2.5" />Send message →</span>
                     ) : null}
                   </div>
                 </div>

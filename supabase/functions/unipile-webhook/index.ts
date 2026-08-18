@@ -120,12 +120,18 @@ Deno.serve(async (req) => {
         const { data: invite } = await admin.from("lit_linkedin_outreach_actions").select("*")
           .eq("unipile_account_id", account.id).eq("recipient_provider_id", providerId).eq("action_type", "invite")
           .order("sent_at", { ascending: false }).limit(1).maybeSingle();
-        if (invite) await admin.from("lit_outreach_history").insert({
-          campaign_id: invite.campaign_id, campaign_step_id: invite.campaign_step_id,
-          contact_id: invite.contact_id, user_id: invite.created_by, channel: "linkedin",
-          event_type: "connection_accepted", status: "accepted", provider: "unipile",
-          occurred_at: new Date().toISOString(), metadata: { action_id: invite.id, recipient_provider_id: providerId },
-        });
+        if (invite) {
+          await admin.from("lit_linkedin_outreach_actions").update({
+            metadata: { ...(invite.metadata || {}), relationship_status: "connected", connected_at: new Date().toISOString() },
+            updated_at: new Date().toISOString(),
+          }).eq("id", invite.id);
+          await admin.from("lit_outreach_history").insert({
+            campaign_id: invite.campaign_id, campaign_step_id: invite.campaign_step_id,
+            contact_id: invite.contact_id, user_id: invite.created_by, channel: "linkedin",
+            event_type: "connection_accepted", status: "accepted", provider: "unipile",
+            occurred_at: new Date().toISOString(), metadata: { action_id: invite.id, recipient_provider_id: providerId },
+          });
+        }
       }
     }
 

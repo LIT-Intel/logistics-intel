@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Linkedin, Loader2, Mail, RefreshCw, Send, Sparkles, Trash2, XCircle } from "lucide-react";
+import { CheckCircle2, HelpCircle, Linkedin, Loader2, Mail, RefreshCw, Send, Sparkles, Trash2, XCircle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import {
   approveAndSendLinkedIn,
@@ -12,6 +12,7 @@ import {
   updateLinkedInDraft,
   type LinkedInOutreachAction,
 } from "@/api/outreach";
+import { LinkedInSenderBadge, LinkedInStatusBadge, linkedInContactState } from "@/components/linkedin/LinkedInStatusBadge";
 
 type Recipient = { id: string; display_name: string | null; email: string; linkedin_url: string | null; status: string | null; last_error: string | null };
 type Step = { id: string; step_order: number; step_type: string; body: string | null };
@@ -133,6 +134,8 @@ export default function LinkedInApprovalQueue({ campaignId }: { campaignId: stri
         <div>
           <div className="flex items-center gap-2 text-sm font-bold text-slate-900"><Linkedin className="h-4 w-4 text-[#0A66C2]" /> LinkedIn approval queue</div>
           <p className="mt-1 text-xs text-slate-500">The outreach agent drafts each touch. A person must approve it before Unipile sends.</p>
+          <div className="mt-2"><LinkedInSenderBadge connected={connected} /></div>
+          <div className="mt-2 flex max-w-2xl items-start gap-1.5 text-[10px] leading-4 text-slate-500"><HelpCircle className="mt-0.5 h-3 w-3 shrink-0 text-[#0A66C2]" />Invitation pending means wait. Connected means the message action is available. Message sent means LinkedIn accepted delivery.</div>
         </div>
         <div className="flex gap-2">
           <button type="button" onClick={() => void load()} className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700"><RefreshCw className="h-3 w-3" /> Refresh</button>
@@ -162,6 +165,8 @@ export default function LinkedInApprovalQueue({ campaignId }: { campaignId: stri
             });
             const action = nextStep ? latestByRecipientStep.get(`${recipient.id}:${nextStep.id}`) : recipientActions[0];
             const actionStep = action?.campaign_step_id ? steps.find((step) => step.id === action.campaign_step_id) : nextStep;
+            const messageStep = steps.find((step) => step.step_type === "linkedin_message" && (!actionStep || step.step_order >= actionStep.step_order));
+            const contactState = linkedInContactState(action);
             const busy = busyId === recipient.id;
             return (
               <div key={recipient.id} className="flex flex-col gap-2 px-3 py-3 md:flex-row md:items-center">
@@ -170,7 +175,7 @@ export default function LinkedInApprovalQueue({ campaignId }: { campaignId: stri
                   <div className="truncate text-[11px] text-slate-500">{recipient.linkedin_url || "LinkedIn URL missing — enrich or edit this contact"}</div>
                   <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                     <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600"><Mail className="h-2.5 w-2.5" /> Email · {recipient.status || "queued"}</span>
-                    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${action?.status === "replied" ? "bg-emerald-50 text-emerald-700" : action?.status === "failed" ? "bg-rose-50 text-rose-700" : action?.status === "pending_approval" ? "bg-amber-50 text-amber-700" : "bg-blue-50 text-blue-700"}`}><Linkedin className="h-2.5 w-2.5" /> LinkedIn · {action?.status?.replaceAll("_", " ") || (recipient.linkedin_url ? "not drafted" : "profile missing")}</span>
+                    {recipient.linkedin_url ? <LinkedInStatusBadge action={action} compact /> : <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-700"><Linkedin className="h-2.5 w-2.5" /> Profile missing</span>}
                   </div>
                   <div className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
                     {nextStep ? `Step ${nextStep.step_order}: ${nextStep.step_type.replaceAll("_", " ")}` : "LinkedIn sequence complete"}
@@ -193,7 +198,8 @@ export default function LinkedInApprovalQueue({ campaignId }: { campaignId: stri
                     <button type="button" disabled={busy || !action.message.trim()} onClick={() => void approve(action, recipient.id)} className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-50"><Send className="h-3 w-3" /> Approve &amp; send</button>
                     <button type="button" disabled={busy} onClick={() => void cancelAction(action, recipient.id)} className="inline-flex items-center gap-1 rounded-md border border-amber-200 px-2.5 py-1.5 text-xs font-semibold text-amber-700 disabled:opacity-50"><XCircle className="h-3 w-3" /> Cancel</button></>
                   ) : action?.status === "sent" || action?.status === "replied" ? (
-                    <><button type="button" disabled={busy || !actionStep} onClick={() => actionStep && void createDraft(recipient, actionStep, true)} className="rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-blue-700 disabled:opacity-50">Create editable 5-option draft</button>
+                    <>{(contactState.key === "connected" || contactState.key === "replied") && messageStep ? <button type="button" disabled={busy} onClick={() => void createDraft(recipient, messageStep, true)} className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-50"><Send className="h-3 w-3" /> Send message</button> : null}
+                    <button type="button" disabled={busy || !actionStep} onClick={() => actionStep && void createDraft(recipient, actionStep, true)} className="rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-blue-700 disabled:opacity-50">Create editable 5-option draft</button>
                     <button type="button" disabled={busy} onClick={() => void removeAction(action, recipient.id)} className="inline-flex items-center gap-1 rounded-md border border-rose-200 px-2.5 py-1.5 text-xs font-semibold text-rose-700 disabled:opacity-50"><Trash2 className="h-3 w-3" /> Remove</button></>
                   ) : action?.status === "cancelled" || action?.status === "failed" ? (
                     <><button type="button" disabled={busy || !actionStep} onClick={() => actionStep && void createDraft(recipient, actionStep, true)} className="rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-blue-700 disabled:opacity-50">Redraft 5 options</button>
