@@ -172,6 +172,25 @@ export async function refreshUnipileAccount(accountId: string): Promise<UnipileA
   return result.account;
 }
 
+/** Assign a connected sender to Campaigns and/or the internal Lead CRM. */
+export async function updateUnipileAccount(params: {
+  accountId: string;
+  useForCampaigns: boolean;
+  useForLeadCrm: boolean;
+  dailyInviteCap?: number;
+  dailyMessageCap?: number;
+}): Promise<UnipileAccount> {
+  const result = await invokeEdge<{ account: UnipileAccount }>("unipile-account", {
+    action: "update",
+    account_id: params.accountId,
+    use_for_campaigns: params.useForCampaigns,
+    use_for_lead_crm: params.useForLeadCrm,
+    ...(params.dailyInviteCap !== undefined ? { daily_invite_cap: params.dailyInviteCap } : {}),
+    ...(params.dailyMessageCap !== undefined ? { daily_message_cap: params.dailyMessageCap } : {}),
+  });
+  return result.account;
+}
+
 export async function listLinkedInOutreach(params: {
   leadId?: string;
   campaignContactId?: string;
