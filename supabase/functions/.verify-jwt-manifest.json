@@ -65,6 +65,8 @@
     "sync-inbox-cron",
     "tier3-enrichment",
     "track-landing-visit",
-    "track-open"
+    "track-open",
+    "unipile-account-callback",
+    "unipile-webhook"
   ]
 }

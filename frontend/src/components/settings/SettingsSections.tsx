@@ -32,7 +32,7 @@ import {
 } from "lucide-react";
 import { PLAN_LIMITS, normalizePlan as normalizePlanCode } from "@/lib/planLimits";
 import { listEmailAccounts, startGmailOAuth, startOutlookOAuth, sendTestEmail, disconnectEmailAccount } from "@/lib/api";
-import { supabase } from "@/lib/supabase";
+import { listUnipileAccounts, refreshUnipileAccount, startUnipileLinkedIn, type UnipileAccount } from "@/api/outreach";
 import { resetOnboarding } from "@/lib/onboardingState";
 import { useInboxStatus } from "@/features/outbound/hooks/useInboxStatus";
 import type { LitEmailAccountRow } from "@/types/lit-outbound";
@@ -2186,6 +2186,84 @@ export function EmailAccountsSection({
   );
 }
 
+function LinkedInUnipileSection() {
+  const { orgId } = useAuth();
+  const [accounts, setAccounts] = useState<UnipileAccount[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function load() {
+    setLoading(true);
+    try { setAccounts(await listUnipileAccounts(orgId || undefined)); }
+    catch (e: any) { setError(e?.message || "Could not load LinkedIn accounts"); }
+    finally { setLoading(false); }
+  }
+
+  useEffect(() => { void load(); }, [orgId]);
+
+  async function connect(accountId?: string) {
+    setBusy(true); setError(null);
+    try {
+      const result = await startUnipileLinkedIn({
+        purpose: "campaigns",
+        orgId: orgId || undefined,
+        accountId,
+        returnUrl: "/app/settings?section=integrations",
+      });
+      window.location.assign(result.url);
+    } catch (e: any) {
+      setError(e?.message || "Could not start LinkedIn connection");
+      setBusy(false);
+    }
+  }
+
+  async function refresh(accountId: string) {
+    setBusy(true); setError(null);
+    try { await refreshUnipileAccount(accountId); await load(); }
+    catch (e: any) { setError(e?.message || "Could not refresh LinkedIn status"); }
+    finally { setBusy(false); }
+  }
+
+  const connected = accounts.find((a) => a.status === "OK" && a.use_for_campaigns);
+  const reconnect = accounts.find((a) => a.status !== "OK");
+  return (
+    <SCard
+      title="LinkedIn"
+      subtitle="Connection requests and messages are delivered through Unipile after human approval."
+      right={<SBadge tone={connected ? "green" : "slate"} dot>{loading ? "Checking…" : connected ? "Connected" : "Not connected"}</SBadge>}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "2px 0 10px" }}>
+        <div style={{ width: 40, height: 40, borderRadius: 10, background: "#EFF6FF", border: "1px solid #BFDBFE", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <Linkedin size={19} color="#0A66C2" />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontFamily: "Space Grotesk,sans-serif", fontWeight: 700, fontSize: 13.5, color: "#0F172A" }}>
+            {connected?.display_name || connected?.email || "Connect your LinkedIn account"}
+          </div>
+          <div style={{ fontFamily: "DM Sans,sans-serif", fontSize: 12, color: "#64748B", marginTop: 2 }}>
+            Agent drafts never send automatically. Review and approve every invitation or message first.
+          </div>
+        </div>
+        {connected ? (
+          <>
+            <button style={sBtnGhost} disabled={busy} onClick={() => refresh(connected.id)}><RefreshCw size={12} /> Refresh</button>
+            <button style={sBtnGhost} disabled={busy} onClick={() => connect(connected.id)}>Reconnect</button>
+          </>
+        ) : (
+          <button style={sBtnPrimary} disabled={busy || loading} onClick={() => connect(reconnect?.id)}>
+            <Linkedin size={13} /> {busy ? "Opening…" : reconnect ? "Reconnect LinkedIn" : "Connect LinkedIn"}
+          </button>
+        )}
+      </div>
+      {error ? <StatusMsg error={error} /> : null}
+      <div style={{ fontFamily: "DM Sans,sans-serif", fontSize: 11.5, color: "#94A3B8" }}>
+        Safety defaults: 20 invitations/day and 40 messages/day per account, with provider errors stopping the send instead of retrying aggressively.
+      </div>
+    </SCard>
+  );
+}
+
 // ─── IntegrationsHubSection ───────────────────────────────────────────────────
 export function IntegrationsHubSection(props: {
   integrations?: Array<{ id?: string; integration_type?: string; type?: string; status?: string; external_id?: string }>;
@@ -2210,6 +2288,8 @@ export function IntegrationsHubSection(props: {
         integrations={props.integrations}
         onDisconnect={props.onDisconnect}
       />
+
+      <LinkedInUnipileSection />
 
       {/* Enrichment card */}
       <SCard
@@ -2592,4 +2672,3 @@ function SigToolbarBtn({ onClick, title, children }: { onClick: () => void; titl
     </button>
   );
 }
-
