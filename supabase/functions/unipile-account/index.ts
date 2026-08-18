@@ -116,6 +116,33 @@ Deno.serve(async (req) => {
       return json({ ok: true, account: updated });
     }
 
+    if (action === "update") {
+      const localId = String(body.account_id || "");
+      const { data: local } = await auth.admin.from("lit_unipile_accounts")
+        .select("id,owner_user_id").eq("id", localId).eq("org_id", orgId).maybeSingle();
+      if (!local) return json({ ok: false, code: "ACCOUNT_NOT_FOUND", error: "LinkedIn account not found" }, 404);
+      if (local.owner_user_id !== auth.user.id && membership?.role !== "owner" && membership?.role !== "admin") {
+        return json({ ok: false, code: "ACCOUNT_FORBIDDEN", error: "Only the account owner or a workspace admin can change sender settings" }, 403);
+      }
+      const wantsLeadCrm = body.use_for_lead_crm === true;
+      if (wantsLeadCrm) {
+        const { data: access } = await auth.userClient.rpc("lit_my_lead_crm_access");
+        const gate = Array.isArray(access) ? access[0] : access;
+        if (!gate?.is_member) return json({ ok: false, code: "LEAD_CRM_REQUIRED", error: "Lead CRM membership required" }, 403);
+      }
+      const inviteCap = Math.max(1, Math.min(40, Number(body.daily_invite_cap || 20)));
+      const messageCap = Math.max(1, Math.min(80, Number(body.daily_message_cap || 40)));
+      const { data: updated, error } = await auth.admin.from("lit_unipile_accounts").update({
+        use_for_campaigns: body.use_for_campaigns === true,
+        use_for_lead_crm: wantsLeadCrm,
+        daily_invite_cap: inviteCap,
+        daily_message_cap: messageCap,
+        updated_at: new Date().toISOString(),
+      }).eq("id", local.id).select().single();
+      if (error) throw error;
+      return json({ ok: true, account: updated });
+    }
+
     return json({ ok: false, code: "UNKNOWN_ACTION", error: "Unknown action" }, 400);
   } catch (error) {
     const upstreamStatus = Number((error as { status?: number })?.status || 0);
