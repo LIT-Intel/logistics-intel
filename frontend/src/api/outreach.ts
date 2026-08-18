@@ -258,3 +258,8 @@ export async function cancelLinkedInOutreach(actionId: string): Promise<void> {
 export async function deleteLinkedInOutreach(actionId: string): Promise<void> {
   await invokeEdge("unipile-outreach", { action: "delete", action_id: actionId });
 }
+
+/** Hide a historical action from Lead CRM without erasing delivery audit data. */
+export async function dismissLinkedInOutreach(actionId: string): Promise<void> {
+  await invokeEdge("unipile-outreach", { action: "dismiss", action_id: actionId });
+}

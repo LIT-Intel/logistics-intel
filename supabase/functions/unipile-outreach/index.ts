@@ -254,9 +254,13 @@ Deno.serve(async (req) => {
       const { data: existing } = await auth.admin.from("lit_linkedin_outreach_actions").select("*")
         .eq("idempotency_key", baseKey).maybeSingle();
       const hasFiveOptions = Array.isArray(existing?.metadata?.draft_options) && existing.metadata.draft_options.length === 5;
-      if (existing && (["approved","sending","sent","replied"].includes(existing.status) || (existing.status === "pending_approval" && hasFiveOptions && body.regenerate !== true))) {
+      const immutableExisting = existing && ["approved","sending","sent","replied"].includes(existing.status);
+      if (existing && (immutableExisting || (existing.status === "pending_approval" && hasFiveOptions && body.regenerate !== true)) && body.regenerate !== true) {
         return json({ ok: true, action: existing, duplicate_prevented: true });
       }
+      // Never rewrite a provider-accepted historical action when the user asks
+      // for a fresh editable draft. Create a new idempotent record instead.
+      const createFreshDraft = Boolean(immutableExisting && body.regenerate === true);
 
       const openaiKey = Deno.env.get("Outreach_agent") || Deno.env.get("OPENAI_API_KEY") || "";
       if (!openaiKey) return json({ ok: false, code: "AGENT_NOT_CONFIGURED", error: "Outreach agent is not configured" }, 503);
@@ -283,12 +287,13 @@ Deno.serve(async (req) => {
         campaign_contact_id: target.campaignContactId, contact_id: target.contactId,
         action_type: actionType, status: "pending_approval", recipient_name: target.name,
         recipient_linkedin_url: target.linkedinUrl, message: selected.message,
-        agent_version: `outreach-human-v2:${model}`, agent_rationale: selected.rationale, idempotency_key: baseKey,
+        agent_version: `outreach-human-v2:${model}`, agent_rationale: selected.rationale,
+        idempotency_key: createFreshDraft ? `${baseKey}:${crypto.randomUUID()}` : baseKey,
         metadata: { company: target.company, title: target.title, qualification: target.qualification, draft_options: options, selected_tone: selected.tone },
         approved_by: null, approved_at: null, sent_at: null, failed_at: null,
         provider_event_id: null, last_error: null, updated_at: new Date().toISOString(),
       };
-      const mutation = existing
+      const mutation = existing && !createFreshDraft
         ? auth.admin.from("lit_linkedin_outreach_actions").update(draftRow).eq("id", existing.id)
         : auth.admin.from("lit_linkedin_outreach_actions").insert(draftRow);
       const { data: created, error } = await mutation.select().single();
@@ -362,6 +367,20 @@ Deno.serve(async (req) => {
         return json({ ok: false, code: "CANNOT_DELETE", error: "Only cancelled or failed drafts that were never sent can be deleted" }, 409);
       }
       const { error } = await auth.admin.from("lit_linkedin_outreach_actions").delete().eq("id", actionId);
+      if (error) throw error;
+      return json({ ok: true });
+    }
+    if (operation === "dismiss") {
+      const actionId = String(body.action_id || "");
+      const { data: row } = await auth.admin.from("lit_linkedin_outreach_actions")
+        .select("org_id,metadata").eq("id", actionId).maybeSingle();
+      if (!row || !(await isOrgMember(auth.admin, auth.user.id, row.org_id))) {
+        return json({ ok: false, code: "ACTION_NOT_FOUND", error: "Outreach action not found" }, 404);
+      }
+      const { error } = await auth.admin.from("lit_linkedin_outreach_actions").update({
+        metadata: { ...(row.metadata || {}), hidden_in_lead_crm: true, hidden_at: new Date().toISOString(), hidden_by: auth.user.id },
+        updated_at: new Date().toISOString(),
+      }).eq("id", actionId);
       if (error) throw error;
       return json({ ok: true });
     }

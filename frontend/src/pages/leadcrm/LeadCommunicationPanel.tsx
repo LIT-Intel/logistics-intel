@@ -56,6 +56,7 @@ import {
   approveAndSendLinkedIn,
   cancelLinkedInOutreach,
   deleteLinkedInOutreach,
+  dismissLinkedInOutreach,
   draftLinkedInOutreach,
   listLinkedInOutreach,
   listUnipileAccounts,
@@ -209,6 +210,7 @@ function LinkedInBlock({
   const [angle, setAngle] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [selectedActionId, setSelectedActionId] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -219,7 +221,9 @@ function LinkedInBlock({
       url ? listLinkedInOutreach({ leadId: lead.id, linkedinUrl: url }).catch(() => []) : Promise.resolve([]),
     ]);
     setAccounts(connected.filter((a) => a.status === "OK" && a.use_for_lead_crm));
-    setActions(history);
+    const visibleHistory = history.filter((action) => action.metadata?.hidden_in_lead_crm !== true);
+    setActions(visibleHistory);
+    setSelectedActionId((current) => current && visibleHistory.some((action) => action.id === current) ? current : visibleHistory[0]?.id || null);
     setLoading(false);
   }
 
@@ -249,6 +253,7 @@ function LinkedInBlock({
         regenerate,
       });
       setActions((prev) => [action, ...prev.filter((a) => a.id !== action.id)]);
+      setSelectedActionId(action.id);
       toast({ title: "Draft ready for review" });
     } catch (e: any) {
       toast({ title: "Could not create draft", description: asText(e?.message), variant: "destructive" });
@@ -311,7 +316,20 @@ function LinkedInBlock({
     } finally { setBusy(false); }
   }
 
-  const latest = actions[0];
+  async function dismissAction(action: LinkedInOutreachAction) {
+    if (busy || !window.confirm("Remove this LinkedIn test from the Lead CRM view? Delivery audit data will be retained.")) return;
+    setBusy(true);
+    try {
+      await dismissLinkedInOutreach(action.id);
+      setActions((prev) => prev.filter((item) => item.id !== action.id));
+      setSelectedActionId(null);
+      toast({ title: "LinkedIn test removed from view" });
+    } catch (e: any) {
+      toast({ title: "Could not remove", description: asText(e?.message), variant: "destructive" });
+    } finally { setBusy(false); }
+  }
+
+  const latest = actions.find((action) => action.id === selectedActionId) || actions[0];
   return (
     <Section title="LinkedIn" icon={<Linkedin style={{ width: 13, height: 13, color: "#0A66C2" }} />}>
       <Hint>Agent-written outreach always pauses for your approval. Qualification, deduplication, and daily account limits are checked before delivery.</Hint>
@@ -334,6 +352,15 @@ function LinkedInBlock({
           </button>
         </>
       )}
+      {actions.length > 0 ? (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {actions.map((action, index) => (
+            <button key={action.id} type="button" onClick={() => setSelectedActionId(action.id)} style={{ ...ghostBtn, padding: "6px 9px", fontSize: 11, borderColor: action.id === latest?.id ? "#3B82F6" : "#CBD5E1", color: action.id === latest?.id ? "#1D4ED8" : "#64748B" }}>
+              {index === 0 ? "Latest" : `Test ${actions.length - index}`} · {action.status.replaceAll("_", " ")}
+            </button>
+          ))}
+        </div>
+      ) : null}
       {latest ? (
         <div style={{ border: "1px solid #DBEAFE", background: "#F8FAFF", borderRadius: 10, padding: 11 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 7 }}>
@@ -379,6 +406,11 @@ function LinkedInBlock({
             </div>
           ) : latest.status === "cancelled" ? (
             <div style={{ marginTop: 10 }}><button onClick={() => deleteAction(latest)} disabled={busy} style={{ ...ghostBtn, color: "#BE123C" }}><Trash2 style={{ width: 13, height: 13 }} /> Delete unsent draft</button></div>
+          ) : latest.status === "sent" || latest.status === "replied" ? (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
+              <button onClick={() => draft(true)} disabled={busy} style={ghostBtn}>Create editable 5-option draft</button>
+              <button onClick={() => dismissAction(latest)} disabled={busy} style={{ ...ghostBtn, color: "#BE123C" }}><Trash2 style={{ width: 13, height: 13 }} /> Remove from view</button>
+            </div>
           ) : null}
         </div>
       ) : null}
