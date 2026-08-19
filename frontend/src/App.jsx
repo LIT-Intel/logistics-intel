@@ -64,6 +64,8 @@ const PreCallBriefing = lazy(() => import("@/pages/PreCallBriefing"));
 const DemoCompany = lazy(() => import("@/pages/demo/company"));
 const CompaniesIndex = lazy(() => import("@/pages/companies/index"));
 const AuthCallback = lazy(() => import("@/pages/AuthCallback"));
+// Mandatory post-signup onboarding (2026-08-19) — 3-step qualification gate.
+const OnboardingPage = lazy(() => import("@/pages/OnboardingPage"));
 const PrivacyPolicy = lazy(() => import("@/pages/PrivacyPolicy"));
 const TermsOfService = lazy(() => import("@/pages/TermsOfService"));
 const SectorLandingPage = lazy(() => import("@/pages/landing/SectorLandingPage"));
@@ -89,14 +91,35 @@ const LeadCrmFindLeadsPage = lazy(() => import("@/pages/leadcrm/FindLeadsPage"))
 const DEMO_MODE = !import.meta.env.VITE_SUPABASE_URL;
 
 function RequireAuth({ children }) {
-  const { user, loading } = useAuth();
+  const { user, loading, onboardingCompleted } = useAuth();
+  const location = useLocation();
   if (DEMO_MODE) return children;
   if (loading) return null;
   if (!user) return <Navigate to="/login?next=/app/search" replace />;
-  // The 6-step onboarding wizard was removed 2026-08-06: the
-  // `on_new_user_org_bootstrap` + `handle_new_user_profile` DB triggers
-  // already provision profile, workspace, and free_trial subscription at
-  // signup, so authenticated users go straight into the app.
+  // Post-signup onboarding gate (2026-08-19). Every NEW confirmed user must
+  // finish the mandatory 3-step qualification flow (anti-spam + sales data)
+  // before reaching the app. `onboardingCompleted` comes from AuthProvider,
+  // which reads profiles.onboarding_completed_at (grandfathered to now() for
+  // all pre-existing accounts, and fail-open on read errors — see migration
+  // 20260819130000). Preserve where they were headed via ?next=.
+  if (onboardingCompleted === false) {
+    const next = encodeURIComponent(location.pathname + (location.search || ""));
+    return <Navigate to={`/onboarding?next=${next}`} replace />;
+  }
+  return children;
+}
+
+// Gate for the /onboarding screen itself. Auth is required (else login), but
+// this route must NOT apply the onboarding redirect (that would loop). If the
+// user has already completed onboarding, send them into the app so the flow
+// can't be re-run. Deliberately does not block on `onboardingCompleted`
+// staying false — a fresh user sits here until they finish.
+function RequireOnboarding({ children }) {
+  const { user, loading, onboardingCompleted } = useAuth();
+  if (DEMO_MODE) return <Navigate to="/app/search" replace />;
+  if (loading) return null;
+  if (!user) return <Navigate to="/login?next=/app/search" replace />;
+  if (onboardingCompleted === true) return <Navigate to="/app/search" replace />;
   return children;
 }
 
@@ -106,10 +129,15 @@ function RequireAuth({ children }) {
 // pass. Renders an explanatory card instead of redirecting so a member
 // with several disabled pages can't redirect-loop.
 function RequirePage({ page, children }) {
-  const { user, loading, canViewPage } = useAuth();
+  const { user, loading, canViewPage, onboardingCompleted } = useAuth();
+  const location = useLocation();
   if (DEMO_MODE) return children;
   if (loading) return null;
   if (!user) return <Navigate to="/login?next=/app/search" replace />;
+  if (onboardingCompleted === false) {
+    const next = encodeURIComponent(location.pathname + (location.search || ""));
+    return <Navigate to={`/onboarding?next=${next}`} replace />;
+  }
   if (typeof canViewPage === "function" && !canViewPage(page)) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center px-6">
@@ -165,10 +193,15 @@ function RequireSuperAdmin({ children }) {
 }
 
 function RequirePlan({ feature, featureName, description, requiredPlan = "growth", children }) {
-  const { user, loading, plan: userPlan } = useAuth();
+  const { user, loading, plan: userPlan, onboardingCompleted } = useAuth();
+  const location = useLocation();
   if (DEMO_MODE) return children;
   if (loading) return null;
   if (!user) return <Navigate to="/login?next=/app/search" replace />;
+  if (onboardingCompleted === false) {
+    const next = encodeURIComponent(location.pathname + (location.search || ""));
+    return <Navigate to={`/onboarding?next=${next}`} replace />;
+  }
   const plan = normalizePlan(userPlan);
   const hasAccess = canAccessFeature(plan, feature);
   // Always render the underlying page through UpgradeGate — when the
@@ -274,10 +307,20 @@ export default function App() {
         <Route path="/accept-invite" element={<AcceptInvitePage />} />
         <Route path="/invite" element={<Navigate to="/accept-invite" replace />} />
 
-        {/* The 6-step onboarding wizard was removed 2026-08-06. Keep the
-            route as a redirect so old confirmation-email links and
-            bookmarks land in the app instead of 404ing. */}
-        <Route path="/onboarding" element={<Navigate to="/app/search" replace />} />
+        {/* Mandatory post-signup onboarding (2026-08-19). The RequireAuth
+            guard redirects new confirmed users here when
+            profiles.onboarding_completed_at is null; completing the 3-step
+            flow (details → qualification → book-a-demo) sets the flag and
+            unlocks the app. RequireOnboarding bounces already-onboarded
+            users back to the app so the flow never re-runs. */}
+        <Route
+          path="/onboarding"
+          element={
+            <RequireOnboarding>
+              <OnboardingPage />
+            </RequireOnboarding>
+          }
+        />
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/terms" element={<TermsOfService />} />
         <Route path="/l/:sector" element={<SectorLandingPage />} />

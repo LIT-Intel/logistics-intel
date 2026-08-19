@@ -12,6 +12,7 @@ import { getStoredRef, clearStoredRef } from '@/lib/affiliateRef';
 import { getAnonId } from '@/lib/anonId';
 import { identifySentryUser, clearSentryUser } from '@/lib/sentry';
 import { captureAppAttribution, readAttribution } from '@/lib/attribution';
+import { fetchOnboardingStatus } from '@/api/onboarding';
 
 // Record first-touch source (UTMs / referrer / landing) for visitors who
 // land directly on the app without passing through the marketing site.
@@ -117,6 +118,7 @@ const AuthCtx = createContext({
   canAccessAdmin: false,
   orgRole: null,
   orgId: null,
+  onboardingCompleted: true,
   signInWithGoogle: async () => {},
   signInWithMicrosoft: async () => {},
   signInWithEmailPassword: async () => {},
@@ -211,6 +213,10 @@ export function AuthProvider({ children }) {
   const [orgId, setOrgId] = useState(null);
   const [plan, setPlan] = useState(null);
   const [pagePermissions, setPagePermissions] = useState(null);
+  // Post-signup onboarding gate (2026-08-19). null = unknown/not-yet-loaded,
+  // true = onboarding done (or grandfathered / unreadable → fail-open so we
+  // never lock a real user out of the app on a transient read error).
+  const [onboardingCompleted, setOnboardingCompleted] = useState(true);
 
   useEffect(() => {
     const unsub = listenToAuth(async (u) => {
@@ -255,6 +261,22 @@ export function AuthProvider({ children }) {
 
         const membership = await fetchPrimaryOrgMembership(u.id);
 
+        // Onboarding gate: read the profiles.onboarding_completed_at flag.
+        // Platform admins are never gated. On an unreadable status we fail
+        // OPEN (treat as completed) so a transient error can't lock anyone
+        // out. Invited/legacy users are grandfathered by the migration
+        // backfill, so their flag is already set.
+        if (superAdminByEmail) {
+          setOnboardingCompleted(true);
+        } else {
+          try {
+            const status = await fetchOnboardingStatus();
+            setOnboardingCompleted(status ? Boolean(status.completedAt) : true);
+          } catch {
+            setOnboardingCompleted(true);
+          }
+        }
+
         setIsSuperAdmin(superAdminByEmail);
         setOrgId(membership.orgId);
         setOrgRole(membership.orgRole);
@@ -281,6 +303,7 @@ export function AuthProvider({ children }) {
         setOrgRole(null);
         setPlan(null);
         setPagePermissions(null);
+        setOnboardingCompleted(true);
         clearSentryUser();
       }
 
@@ -366,6 +389,7 @@ export function AuthProvider({ children }) {
       orgId,
       pagePermissions,
       canViewPage,
+      onboardingCompleted,
       signInWithGoogle,
       signInWithMicrosoft,
       signInWithEmailPassword,
@@ -373,7 +397,7 @@ export function AuthProvider({ children }) {
       logout: handleLogout,
       fullName: rawUser?.displayName || null,
     };
-  }, [rawUser, loading, authReady, isSuperAdmin, orgRole, orgId, plan, pagePermissions]);
+  }, [rawUser, loading, authReady, isSuperAdmin, orgRole, orgId, plan, pagePermissions, onboardingCompleted]);
 
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
 }
