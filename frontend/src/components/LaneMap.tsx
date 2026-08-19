@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import L, {
   type LatLngTuple,
   type Map as LeafletMap,
+  type Marker as LeafletMarker,
   type Polyline as LeafletPolyline,
   type CircleMarker as LeafletCircleMarker,
   type TileLayer as LeafletTileLayer,
@@ -58,6 +59,21 @@ export type LaneMapLaneColor = {
   base: string;
   selected: string;
   glow: string;
+};
+
+/**
+ * Extra point-of-interest marker (e.g. estimated receiving facilities from
+ * the inland-freight model). Rendered as a small SQUARE amber marker —
+ * visually distinct from the round lane-endpoint dots — with a plain-text
+ * tooltip. Non-invasive: markers never participate in lane selection,
+ * hover styling, or bounds fitting.
+ */
+export type LaneMapExtraMarker = {
+  id: string;
+  lat: number;
+  lng: number;
+  /** Tooltip text (plain text — HTML is escaped). */
+  label: string;
 };
 
 export type LaneMapProps = {
@@ -118,6 +134,11 @@ export type LaneMapProps = {
    *    geographic context. Lines still appear on hover/click.
    */
   linesMode?: "always" | "onDemand";
+  /**
+   * Optional facility/POI markers overlaid on the map (see
+   * {@link LaneMapExtraMarker}). Lanes behavior is unchanged.
+   */
+  extraMarkers?: LaneMapExtraMarker[];
 };
 
 // ── Palettes ──────────────────────────────────────────────────────────
@@ -377,6 +398,7 @@ export default function LaneMap({
   unselectedStyle = "fade",
   flow = false,
   linesMode = "always",
+  extraMarkers,
 }: LaneMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<LeafletMap | null>(null);
@@ -686,6 +708,60 @@ export default function LaneMap({
     applyStateStyles();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [laneKey, onSelectLane, isMobile, volumeScale]);
+
+  // ── Extra POI markers (facilities) ──────────────────────────────────
+  // Small square amber divIcon markers — deliberately distinct from the
+  // round lane-endpoint dots. Fully rebuilt when the marker set changes;
+  // never touches lane layers, selection, or bounds fitting.
+  const extraMarkerLayersRef = useRef<LeafletMarker[]>([]);
+  const extraKey = useMemo(
+    () =>
+      (extraMarkers ?? [])
+        .map((m) => `${m.id}|${m.lat}|${m.lng}|${m.label}`)
+        .join(";"),
+    [extraMarkers],
+  );
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    for (const mk of extraMarkerLayersRef.current) map.removeLayer(mk);
+    extraMarkerLayersRef.current = [];
+    if (!extraMarkers || extraMarkers.length === 0) return;
+    const escapeHtml = (s: string) =>
+      s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    for (const m of extraMarkers) {
+      if (!Number.isFinite(m.lat) || !Number.isFinite(m.lng)) continue;
+      const icon = L.divIcon({
+        className: "lit-lane-map__facility",
+        iconSize: [12, 12],
+        iconAnchor: [6, 6],
+        html:
+          '<span style="display:block;width:12px;height:12px;border-radius:3px;' +
+          "background:#F59E0B;border:2px solid #FFFFFF;" +
+          'box-shadow:0 0 0 1px rgba(15,23,42,0.25);"></span>',
+      });
+      const marker = L.marker([m.lat, m.lng], {
+        icon,
+        keyboard: false,
+        interactive: true,
+      });
+      marker.bindTooltip(escapeHtml(m.label), {
+        direction: "top",
+        offset: [0, -8],
+        opacity: 0.95,
+      });
+      marker.addTo(map);
+      extraMarkerLayersRef.current.push(marker);
+    }
+    return () => {
+      const live = mapRef.current;
+      if (live) {
+        for (const mk of extraMarkerLayersRef.current) live.removeLayer(mk);
+      }
+      extraMarkerLayersRef.current = [];
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [extraKey]);
 
   /**
    * Restyle pass. Walks every lane's layers and reconciles them with

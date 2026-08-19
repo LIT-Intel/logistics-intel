@@ -49,8 +49,14 @@ import {
 } from "@/api/intel";
 import BuyingIntentTile from "@/components/intent/BuyingIntentTile";
 import { type GlobeLane } from "@/components/GlobeCanvas";
-import LaneMap, { type LaneMapLaneColor } from "@/components/LaneMap";
+import LaneMap, {
+  type LaneMapExtraMarker,
+  type LaneMapLaneColor,
+} from "@/components/LaneMap";
 import { canonicalizeLanes, resolveEndpoint } from "@/lib/laneGlobe";
+import { lookupCentroid } from "@/lib/explorer/normalizeCompanySearch";
+import { useInlandFreight } from "@/api/inlandFreight";
+import InlandFreightCard from "@/components/company/InlandFreightCard";
 import { laneRegionColor } from "@/lib/laneRegions";
 import {
   useCompanyLaneMonths,
@@ -556,6 +562,10 @@ function SummaryView({
         donutCounts={donutCounts}
         selectedYear={selectedYear}
       />
+      {/* Domestic Freight (estimated) — modeled inland TL picture from
+          lit_company_inland_freight, keyed on the same source_company_key
+          as lane history. Self-hiding when the RPC has no data. */}
+      <InlandFreightCard companyId={sourceCompanyKey ?? null} />
       {companyName && (
         <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-2">
           <MxTransborderKpi companyName={companyName} />
@@ -4390,6 +4400,35 @@ function TradeLanesMapDialog({
       selPair?.fromMeta?.countryName,
       selPair?.toMeta?.countryName,
     );
+  // Estimated receiving facilities (lit_company_inland_freight) → small
+  // square warehouse markers on the expanded map. Only confidence >= 60,
+  // only when the city geocodes at CITY level via the Explorer's static
+  // centroid table (lookupCentroid) — state/country fallbacks would drop a
+  // city-labeled marker on a centroid, so those skip silently. Deduped by
+  // (city, state) keeping the highest confidence. Lanes are untouched.
+  const { data: inlandFreight } = useInlandFreight(companyId);
+  const facilityMarkers = useMemo<LaneMapExtraMarker[]>(() => {
+    const byKey = new Map<string, LaneMapExtraMarker & { confidence: number }>();
+    for (const f of inlandFreight?.facilities ?? []) {
+      const conf = Math.round(Number(f.confidence) || 0);
+      if (conf < 60 || !f.city) continue;
+      const c = lookupCentroid(f.city, f.state, "US");
+      if (!c || c.mapStatus !== "mapped") continue;
+      const key = `${f.city.toLowerCase()}::${(f.state || "").toUpperCase()}`;
+      const prev = byKey.get(key);
+      if (prev && prev.confidence >= conf) continue;
+      byKey.set(key, {
+        id: `facility:${key}`,
+        lat: c.lat,
+        lng: c.lng,
+        label: `${f.city}${f.state ? `, ${f.state}` : ""} · facility (confidence ${conf})`,
+        confidence: conf,
+      });
+    }
+    return Array.from(byKey.values()).map(
+      ({ confidence: _conf, ...marker }) => marker,
+    );
+  }, [inlandFreight]);
   const monthlyChartData = useMemo(() => {
     if (!selPair) return [];
     const values = laneMonthsByPair?.get(selPair.pairKey) || {};
@@ -4639,6 +4678,7 @@ function TradeLanesMapDialog({
             laneColors={laneColors}
             unselectedStyle={showAllLanes ? "fade" : "ghost"}
             flow
+            extraMarkers={facilityMarkers}
           />
 
           {/* Floating "Filters" card — pinned to the LEFT edge of the map.
