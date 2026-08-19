@@ -46,6 +46,18 @@ create table if not exists public.lit_company_relationship_intel (
   requested_by             uuid
 );
 
+-- Async start-and-poll support: the research takes 30-90s (Claude + up to 8
+-- web searches), too long to hold a single request open reliably. The edge fn
+-- starts the research in the background (EdgeRuntime.waitUntil), marks the row
+-- 'pending', and the UI polls until it flips to 'ok' or 'error'. error_detail
+-- surfaces the REAL failure cause (Anthropic HTTP status, parse failure, etc.)
+-- instead of a generic "failed". Error rows are exempt from the 7-day refresh
+-- cache so a failed run can be retried immediately.
+alter table public.lit_company_relationship_intel
+  add column if not exists research_status text not null default 'ok'
+    check (research_status in ('pending','ok','error')),
+  add column if not exists error_detail text;
+
 comment on table public.lit_company_relationship_intel is
   'AI-researched (Claude + web search) company network profile: company type, published warehouse/DC network, published client/distributor relationships (source-cited only), and an outbound-FTL likelihood score. Written only by the company-relationship-intel edge fn (service role, 7-day refresh cadence). Public-web-derived — readable by any authenticated user.';
 

@@ -65,6 +65,10 @@ export interface RelationshipIntel {
   sources: IntelSource[];
   model: string | null;
   refreshed_at: string | null;
+  /** 'pending' = research in flight (poll), 'error' = failed (error_detail
+   *  says why, retry allowed immediately), 'ok' = complete. */
+  research_status: "pending" | "ok" | "error";
+  error_detail: string | null;
 }
 
 /** Normalize whatever company key the page has to the bare IY slug (strip a
@@ -120,6 +124,7 @@ function normalizeIntel(data: unknown): RelationshipIntel | null {
         .filter((s: IntelSource) => s.url)
     : [];
 
+  const rawStatus = str(obj.research_status);
   return {
     company_id: String(obj.company_id),
     company_type: str(obj.company_type) || null,
@@ -132,6 +137,8 @@ function normalizeIntel(data: unknown): RelationshipIntel | null {
     sources,
     model: str(obj.model) || null,
     refreshed_at: str(obj.refreshed_at) || null,
+    research_status: rawStatus === "pending" || rawStatus === "error" ? rawStatus : "ok",
+    error_detail: str(obj.error_detail) || null,
   };
 }
 
@@ -151,6 +158,13 @@ export function useRelationshipIntel(
     queryKey: queryKey(slug),
     enabled: Boolean(slug),
     staleTime: FIVE_MIN,
+    // Start-and-poll: while a research run is pending server-side, poll the
+    // row every 5s (the edge fn returns 202 immediately and works in the
+    // background). Stops automatically when status flips to ok/error.
+    refetchInterval: (query) =>
+      (query.state.data as RelationshipIntel | null)?.research_status === "pending"
+        ? 5000
+        : false,
     queryFn: async (): Promise<RelationshipIntel | null> => {
       if (!slug) return null;
       const { data, error } = await supabase
@@ -170,14 +184,17 @@ export function useRelationshipIntel(
 interface ResearchResponse {
   ok: boolean;
   cached?: boolean;
+  pending?: boolean;
+  started?: boolean;
   intel?: unknown;
 }
 
 /**
  * Kick off (or refresh) the AI research for one company via the
- * `company-relationship-intel` edge fn. Long-running (~30-60s while Claude
- * web-searches). On success, seeds the read query so the card fills in
- * without a refetch.
+ * `company-relationship-intel` edge fn. The fn returns 202 immediately
+ * ({started:true}) and researches in the background (~30-90s) — the read
+ * query above polls the row until research_status leaves 'pending'. A fresh
+ * cached row comes back inline ({cached:true, intel}).
  */
 export function useResearchRelationshipIntel(
   companyId: string | null | undefined,
@@ -193,8 +210,14 @@ export function useResearchRelationshipIntel(
       return normalizeIntel(res?.intel);
     },
     onSuccess: (intel) => {
-      if (intel) queryClient.setQueryData(queryKey(slug), intel);
+      // Cached row returned inline → seed it. Otherwise the run just started —
+      // invalidate so the read query picks up the 'pending' row and polls.
+      if (intel && intel.research_status === "ok") queryClient.setQueryData(queryKey(slug), intel);
       else queryClient.invalidateQueries({ queryKey: queryKey(slug) });
+    },
+    onError: () => {
+      // Even on transport errors the row may hold the real cause — refetch.
+      queryClient.invalidateQueries({ queryKey: queryKey(slug) });
     },
   });
 }

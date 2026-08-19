@@ -196,7 +196,7 @@ export default function RelationshipIntelCard({
             {research.isPending ? (
               <>
                 <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                Researching — 30-60s
+                Starting…
               </>
             ) : (
               <>
@@ -207,9 +207,63 @@ export default function RelationshipIntelCard({
           </button>
           {research.isError && (
             <p className="font-body text-[10.5px] text-red-600">
-              Research failed — try again in a moment.
+              Research failed — {research.error?.message || "try again in a moment."}
             </p>
           )}
+        </div>
+      </LitSectionCard>
+    );
+  }
+
+  // ── Pending state: research running server-side; the read query polls the
+  //    row every 5s until research_status flips. Survives page reloads. ────
+  if (intel.research_status === "pending") {
+    return (
+      <LitSectionCard
+        title="Network & Relationships"
+        sub="Company type, warehouse network & published partners"
+      >
+        <div className="flex items-center gap-2">
+          <Loader2 className="h-4 w-4 animate-spin text-[#2563EB]" aria-hidden />
+          <p className="font-body text-[11.5px] leading-snug text-slate-600">
+            Researching the public web — usually 30–90 seconds. This page
+            updates automatically.
+          </p>
+        </div>
+      </LitSectionCard>
+    );
+  }
+
+  // ── Error state: the background run failed — show the REAL cause and let
+  //    the user retry immediately (error rows are exempt from the 7-day cache).
+  if (intel.research_status === "error") {
+    return (
+      <LitSectionCard
+        title="Network & Relationships"
+        sub="Company type, warehouse network & published partners"
+      >
+        <div className="flex flex-col items-start gap-2">
+          <p className="font-body text-[11.5px] leading-snug text-red-600">
+            Research failed{intel.error_detail ? `: ${intel.error_detail}` : " — try again in a moment."}
+          </p>
+          <button
+            type="button"
+            disabled={research.isPending}
+            onClick={() => research.mutate()}
+            className="font-display inline-flex min-h-[32px] items-center gap-1.5 rounded-lg bg-[#2563EB] px-3 py-1.5 text-[11.5px] font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            {research.isPending ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                Starting…
+              </>
+            ) : (
+              <>
+                <Sparkles className="h-3.5 w-3.5" aria-hidden />
+                Retry research
+              </>
+            )}
+          </button>
         </div>
       </LitSectionCard>
     );

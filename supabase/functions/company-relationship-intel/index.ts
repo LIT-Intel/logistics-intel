@@ -216,7 +216,17 @@ Deno.serve(async (req) => {
       const { isPlatformAdmin } = await isUserAdmin(admin, auth.user.id);
       if (!isPlatformAdmin) force = false; // force is a platform-admin-only lever
     }
-    if (existing && !force) {
+    // A research run is already in flight (started < 5 min ago) — don't
+    // double-start; the UI is polling the row.
+    if (existing?.research_status === "pending" && !force) {
+      const ageMs = Date.now() - new Date(existing.refreshed_at as string).getTime();
+      if (Number.isFinite(ageMs) && ageMs < 5 * 60 * 1000) {
+        return json({ ok: true, pending: true, intel: existing });
+      }
+    }
+    // Only a SUCCESSFUL fresh row satisfies the 7-day cache — an error row
+    // may be retried immediately (that's the whole point of surfacing it).
+    if (existing && !force && existing.research_status === "ok") {
       const ageMs = Date.now() - new Date(existing.refreshed_at as string).getTime();
       if (Number.isFinite(ageMs) && ageMs < REFRESH_WINDOW_MS) {
         return json({ ok: true, cached: true, intel: existing });
@@ -226,37 +236,61 @@ Deno.serve(async (req) => {
     const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!anthropicKey) return json({ ok: false, code: "NOT_CONFIGURED", error: "ANTHROPIC_API_KEY not configured" }, 500);
 
-    // ── BOL context: display name, top delivery cities, top commodities ───
-    const { data: bols } = await admin
-      .from("lit_unified_shipments")
-      .select("consignee_name, shipper_name, dest_city, dest_state, hs_code, product_description")
-      .eq("company_id", companyId)
-      .order("bol_date", { ascending: false })
-      .limit(400);
+    // ── Start-and-poll: the research takes 30-90s (up to 8 web searches),
+    // too long to hold one request open reliably (gateway timeouts read as a
+    // generic "failed" in the UI with no cause). Mark the row pending, run
+    // the research in the background (EdgeRuntime.waitUntil), and let the UI
+    // poll the row. Every failure path writes research_status='error' with
+    // the REAL cause in error_detail.
+    await admin.from("lit_company_relationship_intel").upsert({
+      company_id: companyId,
+      research_status: "pending",
+      error_detail: null,
+      refreshed_at: new Date().toISOString(),
+      requested_by: auth.user.id,
+    }, { onConflict: "company_id" });
 
-    const rows = bols ?? [];
-    // Canonical name: lit_companies row if one exists for this slug, else the
-    // most common consignee (falling back to shipper) on the BOLs.
-    const { data: companyRow } = await admin
-      .from("lit_companies")
-      .select("name")
-      .in("source_company_key", [companyId, `company/${companyId}`])
-      .limit(1)
-      .maybeSingle();
-    const displayName =
-      str(companyRow?.name, 200) ||
-      mostCommon(rows.map((r) => r.consignee_name)) ||
-      mostCommon(rows.map((r) => r.shipper_name)) ||
-      companyId.replace(/-/g, " ");
+    const failRun = async (detail: string) => {
+      log.error("research_failed", { err: detail.slice(0, 300), company_id: companyId });
+      await admin.from("lit_company_relationship_intel").update({
+        research_status: "error",
+        error_detail: detail.slice(0, 600),
+        refreshed_at: new Date().toISOString(),
+      }).eq("company_id", companyId);
+    };
 
-    const topCities = topCounted(
-      rows.map((r) => (r.dest_city && r.dest_state ? `${r.dest_city}, ${r.dest_state}` : r.dest_city)),
-      8,
-    );
-    const topCommodities = topCounted(rows.map((r) => r.product_description), 5);
-    const topHs = topCounted(rows.map((r) => (r.hs_code ? String(r.hs_code).slice(0, 4) : null)), 5);
+    const runResearch = async () => {
+      // ── BOL context: display name, top delivery cities, top commodities ─
+      const { data: bols } = await admin
+        .from("lit_unified_shipments")
+        .select("consignee_name, shipper_name, dest_city, dest_state, hs_code, product_description")
+        .eq("company_id", companyId)
+        .order("bol_date", { ascending: false })
+        .limit(400);
 
-    const userPrompt = `Research this company:
+      const rows = bols ?? [];
+      // Canonical name: lit_companies row if one exists for this slug, else
+      // the most common consignee (falling back to shipper) on the BOLs.
+      const { data: companyRow } = await admin
+        .from("lit_companies")
+        .select("name")
+        .in("source_company_key", [companyId, `company/${companyId}`])
+        .limit(1)
+        .maybeSingle();
+      const displayName =
+        str(companyRow?.name, 200) ||
+        mostCommon(rows.map((r) => r.consignee_name)) ||
+        mostCommon(rows.map((r) => r.shipper_name)) ||
+        companyId.replace(/-/g, " ");
+
+      const topCities = topCounted(
+        rows.map((r) => (r.dest_city && r.dest_state ? `${r.dest_city}, ${r.dest_state}` : r.dest_city)),
+        8,
+      );
+      const topCommodities = topCounted(rows.map((r) => r.product_description), 5);
+      const topHs = topCounted(rows.map((r) => (r.hs_code ? String(r.hs_code).slice(0, 4) : null)), 5);
+
+      const userPrompt = `Research this company:
 
 Company name (from customs records): ${displayName}
 Company slug: ${companyId}
@@ -264,87 +298,101 @@ BOL-observed US delivery locations (most frequent first): ${topCities.length ? t
 Top imported commodities (from BOL descriptions): ${topCommodities.length ? topCommodities.join("; ") : "unknown"}
 Top HS chapters/headings: ${topHs.length ? topHs.join(", ") : "unknown"}`;
 
-    log.info("research_started", { company_id: companyId, user_id: auth.user.id, bol_rows: rows.length });
+      log.info("research_started", { company_id: companyId, user_id: auth.user.id, bol_rows: rows.length });
 
-    // ── Claude + web search (server tool). Loop on pause_turn. ────────────
-    const messages: Array<{ role: string; content: unknown }> = [{ role: "user", content: userPrompt }];
-    let aData: Record<string, unknown> | null = null;
-    for (let attempt = 0; attempt <= MAX_CONTINUATIONS; attempt++) {
-      const aRes = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": anthropicKey,
-          "anthropic-version": "2023-06-01",
-        },
-        body: JSON.stringify({
-          model: ANTHROPIC_MODEL,
-          max_tokens: MAX_TOKENS,
-          system: SYSTEM_PROMPT,
-          tools: [{ type: "web_search_20250305", name: "web_search", max_uses: WEB_SEARCH_MAX_USES }],
-          messages,
-        }),
-      });
-      if (!aRes.ok) {
-        const t = await aRes.text();
-        log.error("anthropic_api_failed", { err: `HTTP ${aRes.status}`, status: aRes.status, detail: t.slice(0, 500), company_id: companyId });
-        return json({ ok: false, code: "ANTHROPIC_FAILED", error: "Research call failed", status: aRes.status }, 502);
+      // ── Claude + web search (server tool). Loop on pause_turn. ──────────
+      const messages: Array<{ role: string; content: unknown }> = [{ role: "user", content: userPrompt }];
+      let aData: Record<string, unknown> | null = null;
+      for (let attempt = 0; attempt <= MAX_CONTINUATIONS; attempt++) {
+        const aRes = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": anthropicKey,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: ANTHROPIC_MODEL,
+            max_tokens: MAX_TOKENS,
+            system: SYSTEM_PROMPT,
+            tools: [{ type: "web_search_20250305", name: "web_search", max_uses: WEB_SEARCH_MAX_USES }],
+            messages,
+          }),
+        });
+        if (!aRes.ok) {
+          const t = await aRes.text();
+          await failRun(`Anthropic API HTTP ${aRes.status}: ${t.slice(0, 400)}`);
+          return;
+        }
+        aData = await aRes.json();
+        if (aData?.stop_reason !== "pause_turn") break;
+        // Server-side search loop paused — resume by echoing the assistant turn.
+        messages.push({ role: "assistant", content: aData.content });
       }
-      aData = await aRes.json();
-      if (aData?.stop_reason !== "pause_turn") break;
-      // Server-side search loop paused — resume by echoing the assistant turn.
-      messages.push({ role: "assistant", content: aData.content });
-    }
 
-    const content = Array.isArray(aData?.content) ? (aData!.content as Array<Record<string, unknown>>) : [];
-    const textBlocks = content.filter((b) => b?.type === "text").map((b) => String(b.text ?? ""));
-    if (textBlocks.length === 0) {
-      log.error("anthropic_no_text", { company_id: companyId, stop_reason: aData?.stop_reason });
-      return json({ ok: false, code: "NO_ANSWER", error: "Model returned no answer" }, 502);
-    }
+      const content = Array.isArray(aData?.content) ? (aData!.content as Array<Record<string, unknown>>) : [];
+      const textBlocks = content.filter((b) => b?.type === "text").map((b) => String(b.text ?? ""));
+      if (textBlocks.length === 0) {
+        await failRun(`Model returned no text (stop_reason: ${aData?.stop_reason ?? "unknown"})`);
+        return;
+      }
 
-    let parsed: Record<string, unknown>;
-    try {
-      // The final text block carries the JSON answer; earlier ones are narration.
-      parsed = extractJson(textBlocks[textBlocks.length - 1]);
-    } catch {
+      let parsed: Record<string, unknown>;
       try {
-        parsed = extractJson(textBlocks.join("\n"));
-      } catch (err) {
-        log.error("anthropic_returned_non_json", { err: String(err), text_preview: textBlocks.join(" ").slice(0, 300), company_id: companyId });
-        return json({ ok: false, code: "BAD_MODEL_OUTPUT", error: "Model returned non-JSON output" }, 502);
+        // The final text block carries the JSON answer; earlier ones are narration.
+        parsed = extractJson(textBlocks[textBlocks.length - 1]);
+      } catch {
+        try {
+          parsed = extractJson(textBlocks.join("\n"));
+        } catch {
+          await failRun(`Model returned non-JSON output: ${textBlocks.join(" ").slice(0, 200)}`);
+          return;
+        }
       }
-    }
 
-    const clean = sanitize(parsed);
-    const row: IntelRow = {
-      company_id: companyId,
-      ...clean,
-      model: ANTHROPIC_MODEL,
-      refreshed_at: new Date().toISOString(),
-      requested_by: auth.user.id,
+      const clean = sanitize(parsed);
+      const row = {
+        company_id: companyId,
+        ...clean,
+        model: ANTHROPIC_MODEL,
+        research_status: "ok",
+        error_detail: null,
+        refreshed_at: new Date().toISOString(),
+        requested_by: auth.user.id,
+      };
+
+      const { error: upsertError } = await admin
+        .from("lit_company_relationship_intel")
+        .upsert(row, { onConflict: "company_id" });
+      if (upsertError) {
+        await failRun(`DB upsert failed: ${upsertError.message}`);
+        return;
+      }
+
+      const usage = (aData?.usage ?? {}) as Record<string, unknown>;
+      log.info("research_completed", {
+        company_id: companyId,
+        user_id: auth.user.id,
+        relationships: clean.relationships.length,
+        facilities: clean.facilities.length,
+        ftl_likelihood: clean.outbound_ftl_likelihood,
+        input_tokens: usage.input_tokens,
+        output_tokens: usage.output_tokens,
+      });
     };
 
-    const { data: saved, error: upsertError } = await admin
-      .from("lit_company_relationship_intel")
-      .upsert(row, { onConflict: "company_id" })
-      .select()
-      .single();
-    if (upsertError) throw upsertError;
+    const task = runResearch().catch((err) => failRun(`Unhandled: ${String(err)}`));
+    // Prefer background execution so the response returns instantly; fall
+    // back to awaiting inline if the runtime lacks waitUntil.
+    const edgeRuntime = (globalThis as Record<string, unknown>).EdgeRuntime as
+      | { waitUntil?: (p: Promise<unknown>) => void }
+      | undefined;
+    if (edgeRuntime?.waitUntil) edgeRuntime.waitUntil(task);
+    else await task;
 
-    const usage = (aData?.usage ?? {}) as Record<string, unknown>;
-    log.info("research_completed", {
-      company_id: companyId,
-      user_id: auth.user.id,
-      relationships: clean.relationships.length,
-      facilities: clean.facilities.length,
-      ftl_likelihood: clean.outbound_ftl_likelihood,
-      input_tokens: usage.input_tokens,
-      output_tokens: usage.output_tokens,
-    });
-    return json({ ok: true, cached: false, intel: saved });
+    return json({ ok: true, started: true }, 202);
   } catch (err) {
     log.error("internal_error", { err: String(err), company_id: companyId });
-    return json({ ok: false, code: "INTERNAL_ERROR", error: "Relationship research failed" }, 500);
+    return json({ ok: false, code: "INTERNAL_ERROR", error: "Relationship research failed", detail: String(err).slice(0, 300) }, 500);
   }
 });
