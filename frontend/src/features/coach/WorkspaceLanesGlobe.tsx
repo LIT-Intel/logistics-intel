@@ -138,6 +138,16 @@ export default function WorkspaceLanesGlobe() {
     } else {
       eligible.sort((a, b) => (laneMetrics.get(b.key)?.current || b.shipments_total) - (laneMetrics.get(a.key)?.current || a.shipments_total));
     }
+    // Graceful degradation: the real-data gates (positive YoY, multi-account,
+    // >= median volume) can eliminate every lane when a workspace has sparse
+    // history (e.g. no prior-year rollup rows to compute YoY). Rather than
+    // wiping the globe — which reads as "broken" — fall back to the full
+    // volume-ranked lane set so the map always shows real lanes for the mode.
+    if (eligible.length === 0 && copy.length > 0) {
+      eligible = copy
+        .slice()
+        .sort((a, b) => (laneMetrics.get(b.key)?.current || b.shipments_total) - (laneMetrics.get(a.key)?.current || a.shipments_total));
+    }
     return eligible.slice(0, 8);
   }, [lanes, mode, laneMetrics]);
 

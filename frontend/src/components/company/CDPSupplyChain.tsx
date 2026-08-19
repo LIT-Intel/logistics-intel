@@ -4231,18 +4231,33 @@ function TradeLanesMapDialog({
 
   const volumeCutoff = ranked[Math.max(0, Math.ceil(ranked.length * 0.25) - 1)]?.shipments || 0;
   const filtered = useMemo(
-    () => ranked.filter(
+    () => {
+      // The origin/mode/min-shipment predicates are hard user selections and
+      // always apply. The executive STRATEGY view, however, gates on real
+      // lane-month metrics (YoY, seasonality peak ratio, recency) that can be
+      // unavailable when a company has only the ~50-BOL sample or no
+      // prior-year rollup rows. In that case the strategy predicate matches
+      // nothing and the map would go blank. Split the two so a strategy that
+      // resolves to zero real matches degrades to the base-filtered lanes
+      // instead of wiping the map — preserving the real-data intent when the
+      // history exists.
+      const base = ranked.filter(
         (p: any) =>
           (!originFilter || p?.fromMeta?.canonicalKey === originFilter) &&
           (!modeFilter || String(p?.mode || "") === modeFilter) &&
-          (Number(p?.shipments) || 0) >= minShipments &&
-          (strategyFilter === "all" ||
-            (strategyFilter === "growth" && (realMetricsByPair.get(p.pairKey)?.yoy ?? -Infinity) > 0) ||
-            (strategyFilter === "priority" && Number(p?.shipments || 0) >= Number(volumeCutoff || 0)) ||
-            (strategyFilter === "recent" && (() => { const d = realMetricsByPair.get(p.pairKey)?.latest || lastActivityByPair.get(p.pairKey); return !!d && Date.now() - d.getTime() <= 120 * 86400000; })()) ||
-            (strategyFilter === "seasonal" && (realMetricsByPair.get(p.pairKey)?.peakRatio ?? 0) >= 1.35) ||
-            (strategyFilter === "whitespace" && Number(p?.shipments || 0) < Number(volumeCutoff || 0) && (realMetricsByPair.get(p.pairKey)?.yoy ?? -Infinity) > 0)),
-      ),
+          (Number(p?.shipments) || 0) >= minShipments,
+      );
+      if (strategyFilter === "all") return base;
+      const strat = base.filter(
+        (p: any) =>
+          (strategyFilter === "growth" && (realMetricsByPair.get(p.pairKey)?.yoy ?? -Infinity) > 0) ||
+          (strategyFilter === "priority" && Number(p?.shipments || 0) >= Number(volumeCutoff || 0)) ||
+          (strategyFilter === "recent" && (() => { const d = realMetricsByPair.get(p.pairKey)?.latest || lastActivityByPair.get(p.pairKey); return !!d && Date.now() - d.getTime() <= 120 * 86400000; })()) ||
+          (strategyFilter === "seasonal" && (realMetricsByPair.get(p.pairKey)?.peakRatio ?? 0) >= 1.35) ||
+          (strategyFilter === "whitespace" && Number(p?.shipments || 0) < Number(volumeCutoff || 0) && (realMetricsByPair.get(p.pairKey)?.yoy ?? -Infinity) > 0),
+      );
+      return strat.length > 0 ? strat : base;
+    },
     [ranked, originFilter, modeFilter, minShipments, strategyFilter, volumeCutoff, lastActivityByPair, realMetricsByPair],
   );
 
