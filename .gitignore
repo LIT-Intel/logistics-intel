@@ -38,3 +38,7 @@ yarn-error.log*
 marketing/.vercel/
 .vercel
 .gstack/
+
+# geocode batch scratch
+tmp-geo/
+tmp-ports/
