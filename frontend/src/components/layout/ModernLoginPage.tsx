@@ -8,6 +8,10 @@ import {
   resendConfirmationEmail,
 } from "@/auth/supabaseAuthClient";
 import { useAuth } from "@/auth/AuthProvider";
+import TurnstileWidget, {
+  TURNSTILE_SITE_KEY,
+  isTurnstileEnabled,
+} from "@/components/layout/TurnstileWidget";
 
 function BrandPanel() {
   const features = [
@@ -139,18 +143,38 @@ export default function ModernLoginPage() {
   const [loading, setLoading]   = useState(false);
   const [resendSent, setResendSent] = useState(false);
 
+  // ENV-GATED Turnstile — when Supabase Auth "Attack Protection → CAPTCHA" is
+  // on, EVERY password-grant call (login, resend, recover) requires a token,
+  // not just signup. Mirror the ModernSignupPage wiring exactly: no site key →
+  // no widget, no token required, login behaves as before.
+  const captchaEnabled = isTurnstileEnabled();
+  const [captchaToken, setCaptchaToken] = useState("");
+  const turnstileHostRef = React.useRef<HTMLDivElement | null>(null);
+  // Tokens are single-use — force a fresh challenge after every attempt.
+  function resetCaptcha() {
+    setCaptchaToken("");
+    turnstileHostRef.current
+      ?.querySelector("div")
+      ?.dispatchEvent(new Event("turnstile-reset", { bubbles: false }));
+  }
+
   const isEmailNotConfirmed = err.toLowerCase().includes('email not confirmed');
 
   async function handleResend() {
     if (!email) { setErr('Enter your email address above, then click Resend.'); return; }
+    if (captchaEnabled && !captchaToken) {
+      setErr('Please complete the security check below, then click Resend again.');
+      return;
+    }
     try {
       setLoading(true);
-      await resendConfirmationEmail(email);
+      await resendConfirmationEmail(email, captchaEnabled ? captchaToken : undefined);
       setResendSent(true);
       setErr('');
     } catch (e: any) {
       setErr(e?.message || 'Failed to resend. Try again.');
     } finally {
+      if (captchaEnabled) resetCaptcha();
       setLoading(false);
     }
   }
@@ -179,13 +203,19 @@ export default function ModernLoginPage() {
 
   async function handleEmailPassword(e: React.FormEvent) {
     e.preventDefault();
+    if (captchaEnabled && !captchaToken) {
+      setErr("Please complete the security check below.");
+      return;
+    }
     try {
       setErr("");
       setLoading(true);
-      await loginWithEmailPassword(email, password);
+      await loginWithEmailPassword(email, password, captchaEnabled ? captchaToken : undefined);
       nav(loginRedirectPath, { replace: true });
     } catch (e: any) {
       setErr(e?.message || "Sign-in failed");
+      // Turnstile tokens are single-use — re-challenge for the retry.
+      if (captchaEnabled) resetCaptcha();
     } finally {
       setLoading(false);
     }
@@ -311,9 +341,23 @@ export default function ModernLoginPage() {
               <label htmlFor="remember">Remember me</label>
             </div>
 
+            {/* Cloudflare Turnstile — only rendered when the owner has set
+                VITE_TURNSTILE_SITE_KEY. Required because Supabase Auth CAPTCHA
+                protection gates password logins, not just signups. */}
+            {captchaEnabled && (
+              <div ref={turnstileHostRef} className="pt-1">
+                <TurnstileWidget
+                  siteKey={TURNSTILE_SITE_KEY}
+                  onToken={setCaptchaToken}
+                  onExpireOrError={() => setCaptchaToken("")}
+                  className="min-h-[65px]"
+                />
+              </div>
+            )}
+
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || (captchaEnabled && !captchaToken)}
               className="w-full rounded-xl bg-indigo-600 py-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {loading ? "Signing in…" : "Log In"}

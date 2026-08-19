@@ -415,6 +415,13 @@ export default function AffiliateOnboarding() {
       if (/registered|exist|already/i.test(msg)) {
         setMode("signin");
         setFormErr("An account exists for this email. Sign in to claim your invite.");
+      } else if (/captcha/i.test(msg)) {
+        // Auth CAPTCHA protection gates this API and this page has no widget —
+        // route through the main signup page (which has one), then return to
+        // this invite link to finish claiming.
+        setFormErr(
+          "Security check required. Please create your account on the main Sign Up page first, then reopen this invite link to finish.",
+        );
       } else {
         setFormErr(msg);
       }
@@ -439,7 +446,12 @@ export default function AffiliateOnboarding() {
       await claim();
     } catch (err) {
       setBusy(false);
-      setFormErr(err?.message || "Sign-in failed.");
+      const msg = err?.message || "Sign-in failed.";
+      setFormErr(
+        /captcha/i.test(msg)
+          ? "Security check required. Please log in on the main Log In page first, then reopen this invite link to finish."
+          : msg,
+      );
     }
   }
 

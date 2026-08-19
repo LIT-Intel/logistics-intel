@@ -36,11 +36,19 @@ export function getSupabaseError(): Error | null {
 }
 
 // Email/Password Sign In
-export async function signInWithEmailPassword(email: string, password: string) {
+// captchaToken: when Supabase Auth "Attack Protection → CAPTCHA" is enabled it
+// gates EVERY password-grant call (not just signup), so login must forward a
+// Turnstile token too. Omitted when the env gate is off — login behaves as
+// before.
+export async function signInWithEmailPassword(email: string, password: string, captchaToken?: string) {
   if (!auth) throw new Error('Auth not configured');
   if (!email || !password) throw new Error('Email and password required');
 
-  const { data, error } = await auth.auth.signInWithPassword({ email, password });
+  const { data, error } = await auth.auth.signInWithPassword({
+    email,
+    password,
+    ...(captchaToken ? { options: { captchaToken } } : {}),
+  });
   if (error) throw error;
   return data.user;
 }
@@ -211,10 +219,12 @@ export async function logout() {
 }
 
 // Password Reset Request
-export async function resetPassword(email: string) {
+// captchaToken required when Auth CAPTCHA protection is on (see sign-in note).
+export async function resetPassword(email: string, captchaToken?: string) {
   if (!auth) throw new Error('Auth not configured');
   const { error } = await auth.auth.resetPasswordForEmail(email, {
     redirectTo: `${window.location.origin}/reset-password`,
+    ...(captchaToken ? { captchaToken } : {}),
   });
   if (error) throw error;
 }
@@ -227,9 +237,14 @@ export async function updatePassword(newPassword: string) {
 }
 
 // Resend email confirmation (for users stuck at "Email not confirmed")
-export async function resendConfirmationEmail(email: string) {
+// captchaToken required when Auth CAPTCHA protection is on (see sign-in note).
+export async function resendConfirmationEmail(email: string, captchaToken?: string) {
   if (!auth) throw new Error('Auth not configured');
-  const { error } = await auth.auth.resend({ type: 'signup', email });
+  const { error } = await auth.auth.resend({
+    type: 'signup',
+    email,
+    ...(captchaToken ? { options: { captchaToken } } : {}),
+  });
   if (error) throw error;
 }
 

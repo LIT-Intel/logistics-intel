@@ -2,6 +2,10 @@ import React, { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Zap, Mail, KeyRound, CheckCircle2, ArrowLeft, Eye, EyeOff } from "lucide-react";
 import { auth, resetPassword, updatePassword } from "@/auth/supabaseAuthClient";
+import TurnstileWidget, {
+  TURNSTILE_SITE_KEY,
+  isTurnstileEnabled,
+} from "@/components/layout/TurnstileWidget";
 
 export default function ResetPasswordPage() {
   const navigate = useNavigate();
@@ -16,6 +20,20 @@ export default function ResetPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [success, setSuccess] = useState("");
+
+  // ENV-GATED Turnstile — Supabase Auth CAPTCHA protection also gates the
+  // password-recovery request, so the "send reset link" form needs a token.
+  // (Setting the NEW password uses the authenticated recovery session and is
+  // not captcha-gated.) No site key → no widget, works as before.
+  const captchaEnabled = isTurnstileEnabled();
+  const [captchaToken, setCaptchaToken] = useState("");
+  const turnstileHostRef = React.useRef<HTMLDivElement | null>(null);
+  function resetCaptcha() {
+    setCaptchaToken("");
+    turnstileHostRef.current
+      ?.querySelector("div")
+      ?.dispatchEvent(new Event("turnstile-reset", { bubbles: false }));
+  }
 
   useEffect(() => {
     document.title = "Reset Password — Logistics Intel";
@@ -52,13 +70,19 @@ export default function ResetPasswordPage() {
 
   async function handleRequestReset(e: React.FormEvent) {
     e.preventDefault();
+    if (captchaEnabled && !captchaToken) {
+      setErr("Please complete the security check below.");
+      return;
+    }
     setErr("");
     setLoading(true);
     try {
-      await resetPassword(email);
+      await resetPassword(email, captchaEnabled ? captchaToken : undefined);
       setSuccess(`Reset link sent to ${email}. Check your inbox (and spam folder).`);
     } catch (error: any) {
       setErr(error?.message || "Failed to send reset email. Please try again.");
+      // Tokens are single-use — re-challenge for the retry.
+      if (captchaEnabled) resetCaptcha();
     } finally {
       setLoading(false);
     }
@@ -160,9 +184,22 @@ export default function ResetPasswordPage() {
                   />
                 </div>
 
+                {/* Turnstile — only when VITE_TURNSTILE_SITE_KEY is set; the
+                    recovery request is captcha-gated by Supabase Auth. */}
+                {captchaEnabled && (
+                  <div ref={turnstileHostRef} className="pt-1">
+                    <TurnstileWidget
+                      siteKey={TURNSTILE_SITE_KEY}
+                      onToken={setCaptchaToken}
+                      onExpireOrError={() => setCaptchaToken("")}
+                      className="min-h-[65px]"
+                    />
+                  </div>
+                )}
+
                 <button
                   type="submit"
-                  disabled={loading}
+                  disabled={loading || (captchaEnabled && !captchaToken)}
                   className="w-full rounded-full bg-slate-900 py-3 text-sm font-bold text-white hover:bg-slate-800 disabled:opacity-50 transition-colors"
                 >
                   {loading ? "Sending..." : "Send reset link"}
