@@ -1,3 +1,4 @@
+-- APPLIED TO PROD 2026-08-19 via MCP (lit_geo_port_centroids_seed_a + _b).
 -- Port centroid seed for lit_geo_place_centroids (one-time, idempotent).
 --
 -- Geocodes the ~459 distinct ports referenced by
