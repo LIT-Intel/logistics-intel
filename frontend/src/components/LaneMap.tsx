@@ -74,6 +74,12 @@ export type LaneMapExtraMarker = {
   lng: number;
   /** Tooltip text (plain text — HTML is escaped). */
   label: string;
+  /**
+   * Square fill color (any CSS color). Defaults to the legacy amber
+   * (#F59E0B) so existing facility markers are unchanged; the port-lane
+   * layer passes violet to stay visually distinct.
+   */
+  color?: string;
 };
 
 /**
@@ -748,7 +754,7 @@ export default function LaneMap({
   const extraKey = useMemo(
     () =>
       (extraMarkers ?? [])
-        .map((m) => `${m.id}|${m.lat}|${m.lng}|${m.label}`)
+        .map((m) => `${m.id}|${m.lat}|${m.lng}|${m.label}|${m.color ?? ""}`)
         .join(";"),
     [extraMarkers],
   );
@@ -762,13 +768,17 @@ export default function LaneMap({
       s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     for (const m of extraMarkers) {
       if (!Number.isFinite(m.lat) || !Number.isFinite(m.lng)) continue;
+      // Fill color goes into an HTML string — restrict to safe CSS-color
+      // characters and fall back to the legacy amber on anything odd.
+      const fill =
+        m.color && /^[#a-zA-Z0-9(),.%\s-]+$/.test(m.color) ? m.color : "#F59E0B";
       const icon = L.divIcon({
         className: "lit-lane-map__facility",
         iconSize: [12, 12],
         iconAnchor: [6, 6],
         html:
           '<span style="display:block;width:12px;height:12px;border-radius:3px;' +
-          "background:#F59E0B;border:2px solid #FFFFFF;" +
+          `background:${fill};border:2px solid #FFFFFF;` +
           'box-shadow:0 0 0 1px rgba(15,23,42,0.25);"></span>',
       });
       const marker = L.marker([m.lat, m.lng], {

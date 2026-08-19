@@ -1,0 +1,110 @@
+tasks=1589 already_done=0
+progress: 25 new, total 25/1589
+progress: 50 new, total 50/1589
+progress: 75 new, total 75/1589
+progress: 100 new, total 100/1589
+progress: 125 new, total 125/1589
+progress: 150 new, total 150/1589
+progress: 175 new, total 175/1589
+progress: 200 new, total 200/1589
+progress: 225 new, total 225/1589
+progress: 250 new, total 250/1589
+progress: 275 new, total 275/1589
+progress: 300 new, total 300/1589
+progress: 325 new, total 325/1589
+progress: 350 new, total 350/1589
+progress: 375 new, total 375/1589
+progress: 400 new, total 400/1589
+progress: 425 new, total 425/1589
+progress: 450 new, total 450/1589
+progress: 475 new, total 475/1589
+progress: 500 new, total 500/1589
+progress: 525 new, total 525/1589
+progress: 550 new, total 550/1589
+progress: 575 new, total 575/1589
+progress: 600 new, total 600/1589
+progress: 625 new, total 625/1589
+progress: 650 new, total 650/1589
+progress: 675 new, total 675/1589
+progress: 700 new, total 700/1589
+progress: 725 new, total 725/1589
+progress: 750 new, total 750/1589
+progress: 775 new, total 775/1589
+progress: 800 new, total 800/1589
+progress: 825 new, total 825/1589
+progress: 850 new, total 850/1589
+progress: 875 new, total 875/1589
+progress: 900 new, total 900/1589
+progress: 925 new, total 925/1589
+progress: 950 new, total 950/1589
+progress: 975 new, total 975/1589
+progress: 1000 new, total 1000/1589
+progress: 1025 new, total 1025/1589
+progress: 1050 new, total 1050/1589
+progress: 1075 new, total 1075/1589
+progress: 1100 new, total 1100/1589
+progress: 1125 new, total 1125/1589
+progress: 1150 new, total 1150/1589
+progress: 1175 new, total 1175/1589
+progress: 1200 new, total 1200/1589
+progress: 1225 new, total 1225/1589
+progress: 1250 new, total 1250/1589
+progress: 1275 new, total 1275/1589
+progress: 1300 new, total 1300/1589
+progress: 1325 new, total 1325/1589
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&city=normal&state=il&country=usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&city=normal&state=il&country=usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&q=normal%2C+il%2C+usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&q=normal%2C+il%2C+usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&city=north+bay+village&state=fl&country=usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&city=north+bay+village&state=fl&country=usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&q=north+bay+village%2C+fl%2C+usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&q=north+bay+village%2C+fl%2C+usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&city=north+brunswick&state=nj&country=usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&city=north+brunswick&state=nj&country=usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&q=north+brunswick%2C+nj%2C+usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&q=north+brunswick%2C+nj%2C+usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&city=north+canton&state=oh&country=usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&city=north+canton&state=oh&country=usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&q=north+canton%2C+oh%2C+usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&q=north+canton%2C+oh%2C+usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&city=north+charleston&state=sc&country=usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&city=north+charleston&state=sc&country=usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&q=north+charleston%2C+sc%2C+usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&q=north+charleston%2C+sc%2C+usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&city=north+chesterfield&state=va&country=usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&city=north+chesterfield&state=va&country=usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&q=north+chesterfield%2C+va%2C+usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&q=north+chesterfield%2C+va%2C+usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&city=north+hills&state=ca&country=usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&city=north+hills&state=ca&country=usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&q=north+hills%2C+ca%2C+usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&q=north+hills%2C+ca%2C+usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&city=north+jackson&state=oh&country=usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&city=north+jackson&state=oh&country=usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&q=north+jackson%2C+oh%2C+usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&q=north+jackson%2C+oh%2C+usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&city=north+little+rock&state=ar&country=usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&city=north+little+rock&state=ar&country=usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&q=north+little+rock%2C+ar%2C+usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&q=north+little+rock%2C+ar%2C+usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&city=north+reading&state=ma&country=usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&city=north+reading&state=ma&country=usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&q=north+reading%2C+ma%2C+usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&q=north+reading%2C+ma%2C+usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&city=north+salt+lake&state=ut&country=usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&city=north+salt+lake&state=ut&country=usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&q=north+salt+lake%2C+ut%2C+usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&q=north+salt+lake%2C+ut%2C+usa — sleeping 10s
+429 on https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=en&city=noumea&country=usa — sleeping 10s
+progress: 1350 new, total 1350/1589
+progress: 1375 new, total 1375/1589
+progress: 1400 new, total 1400/1589
+progress: 1425 new, total 1425/1589
+progress: 1450 new, total 1450/1589
+progress: 1475 new, total 1475/1589
+progress: 1500 new, total 1500/1589
+progress: 1525 new, total 1525/1589
+progress: 1550 new, total 1550/1589
+progress: 1575 new, total 1575/1589
+DONE. processed=1589 total=1589/1589

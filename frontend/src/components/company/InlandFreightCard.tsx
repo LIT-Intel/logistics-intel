@@ -2,9 +2,11 @@ import { useMemo, useState, type ReactNode } from "react";
 import { Anchor, ArrowRight, Warehouse } from "lucide-react";
 import LitSectionCard from "@/components/ui/LitSectionCard";
 import {
+  useCompanyIyFacilities,
   useInlandFreight,
   type InlandFacility,
   type InlandFlow,
+  type IyFacility,
 } from "@/api/inlandFreight";
 
 /**
@@ -29,6 +31,43 @@ import {
  */
 
 const HIGH_CONFIDENCE = 80;
+
+/** A modeled facility + whether an ImportYeti address corroborates it. */
+type FacilityView = InlandFacility & { iyVerified: boolean };
+
+/**
+ * IY-corroboration: a BOL-modeled facility counts as verified when its city
+ * AND state both appear in at least one ImportYeti facility address string
+ * (case-insensitive; the 2-letter state matches as a whole word so "Az"
+ * can't hit inside "Plaza"). Addresses are messy free text — substring
+ * matching is deliberately loose, and a miss just means no chip.
+ */
+function corroborate(
+  facilities: InlandFacility[],
+  addresses: IyFacility[],
+): FacilityView[] {
+  if (facilities.length === 0) return [];
+  const haystacks = addresses
+    .map((a) => a.address.toLowerCase())
+    .filter(Boolean);
+  return facilities.map((f) => {
+    const city = f.city.trim().toLowerCase();
+    const state = f.state.trim();
+    let iyVerified = false;
+    if (city && state && haystacks.length > 0) {
+      const stateRe = new RegExp(
+        `\\b${state.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`,
+        "i",
+      );
+      iyVerified = haystacks.some(
+        (addr) => addr.includes(city) && stateRe.test(addr),
+      );
+    }
+    return iyVerified
+      ? { ...f, iyVerified, confidence: Math.min(100, f.confidence + 15) }
+      : { ...f, iyVerified };
+  });
+}
 
 function ConfidenceBadge({ value }: { value: number }) {
   const v = Math.round(Number(value) || 0);
@@ -82,6 +121,22 @@ function formatTl(n: number): string {
   return n >= 10 ? String(Math.round(n)) : n.toFixed(1).replace(/\.0$/, "");
 }
 
+/** "Mar 12, 2026" from an ISO date, or null when absent/unparseable. */
+function formatShortDate(iso: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function truncate(s: string, max: number): string {
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+}
+
 function SectionLabel({ children }: { children: ReactNode }) {
   return (
     <div className="font-display mb-1.5 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
@@ -90,7 +145,7 @@ function SectionLabel({ children }: { children: ReactNode }) {
   );
 }
 
-function FacilityRow({ f }: { f: InlandFacility }) {
+function FacilityRow({ f }: { f: FacilityView }) {
   const last = formatMonth(f.last_seen);
   return (
     <div className="flex items-start gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-2">
@@ -103,6 +158,14 @@ function FacilityRow({ f }: { f: InlandFacility }) {
             {f.zip ? ` ${f.zip}` : ""}
           </span>
           <ConfidenceBadge value={f.confidence} />
+          {f.iyVerified && (
+            <span
+              title="City + state matched an ImportYeti facility address on file"
+              className="font-display shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-[1px] text-[9px] font-bold text-emerald-700"
+            >
+              ✓ IY-verified
+            </span>
+          )}
           {f.class === "3pl" && (
             <span className="font-display shrink-0 rounded-full border border-violet-200 bg-violet-50 px-1.5 py-[1px] text-[9px] font-bold text-violet-700">
               3PL-operated
@@ -149,6 +212,7 @@ export default function InlandFreightCard({
   companyId: string | null;
 }) {
   const { data } = useInlandFreight(companyId);
+  const { data: iyFacilities } = useCompanyIyFacilities(companyId);
   const [showLow, setShowLow] = useState(false);
   const [showModeled, setShowModeled] = useState(false);
 
@@ -157,9 +221,15 @@ export default function InlandFreightCard({
   const transfers = data?.transfers ?? [];
   const totals = data?.totals ?? null;
 
+  // IY corroboration BEFORE the confidence gate so a +15 boost can lift a
+  // verified facility over the high-confidence bar.
+  const facilityViews = useMemo(
+    () => corroborate(facilities, iyFacilities ?? []),
+    [facilities, iyFacilities],
+  );
   const facilityGate = useMemo(
-    () => gateByConfidence(facilities, showLow),
-    [facilities, showLow],
+    () => gateByConfidence(facilityViews, showLow),
+    [facilityViews, showLow],
   );
   const flowGate = useMemo(
     () => gateByConfidence(flows, showLow),
@@ -227,6 +297,27 @@ export default function InlandFreightCard({
               <FacilityRow key={`${f.city}-${f.state}-${f.zip ?? i}`} f={f} />
             ))}
           </div>
+        </div>
+      )}
+
+      {/* IY facility network — observed addresses on file (subtle, data-
+          driven: hidden entirely when the company has none). The hook
+          returns rows most-recent-shipment first. */}
+      {(iyFacilities?.length ?? 0) > 0 && (
+        <div className="font-body mt-2.5 text-[10.5px] leading-snug text-slate-400">
+          <span className="text-slate-500">
+            Facility network: {iyFacilities!.length}{" "}
+            {iyFacilities!.length === 1 ? "address" : "addresses"} on file
+          </span>
+          {iyFacilities!.slice(0, 3).map((a, i) => {
+            const when = formatShortDate(a.last_shipment_to);
+            return (
+              <span key={`${a.address}-${i}`} className="block truncate">
+                · {truncate(a.address, 64)}
+                {when && <span className="text-slate-300"> — {when}</span>}
+              </span>
+            );
+          })}
         </div>
       )}
 

@@ -204,6 +204,57 @@ function normalizeInlandFreight(data: unknown): InlandFreight | null {
 }
 
 /**
+ * ImportYeti-observed facility address for one company — a row from
+ * `lit_company_iy_facilities` (RLS: authenticated read). Addresses are messy
+ * free text (e.g. "2110 W Ikea Way, Dept Tel, Tempe, Az 85284, Us"); they're
+ * used to CORROBORATE the modeled BOL facilities (city+state substring
+ * match), never geocoded or parsed structurally.
+ */
+export interface IyFacility {
+  address: string;
+  /** Date of the last shipment observed to this address (ISO), if any. */
+  last_shipment_to: string | null;
+}
+
+/**
+ * ImportYeti facility addresses on file for one company, most recent
+ * shipment first. Disabled (resolves `[]`) until a company key is present;
+ * errors degrade to `[]` so corroboration silently no-ops.
+ */
+export function useCompanyIyFacilities(
+  companyId: string | null | undefined,
+): UseQueryResult<IyFacility[]> {
+  const slug = bareSlug(companyId);
+  return useQuery({
+    queryKey: ["company-iy-facilities", slug ?? ""],
+    enabled: Boolean(slug),
+    staleTime: FIVE_MIN,
+    queryFn: async (): Promise<IyFacility[]> => {
+      if (!slug) return [];
+      const { data, error } = await supabase
+        .from("lit_company_iy_facilities")
+        .select("address, last_shipment_to")
+        .eq("company_id", slug)
+        .order("last_shipment_to", { ascending: false, nullsFirst: false })
+        .limit(100);
+      if (error) {
+        console.warn(
+          "[inlandFreight] lit_company_iy_facilities query failed:",
+          error.message,
+        );
+        return [];
+      }
+      return (data ?? [])
+        .map((r: any): IyFacility => ({
+          address: str(r?.address),
+          last_shipment_to: str(r?.last_shipment_to) || null,
+        }))
+        .filter((r: IyFacility) => r.address);
+    },
+  });
+}
+
+/**
  * Estimated domestic freight for one company. Disabled (resolves `null`)
  * until a company key is present. 5-min staleTime; degrades to `null` on
  * error so the card silently hides.

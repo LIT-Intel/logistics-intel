@@ -57,6 +57,12 @@ import LaneMap, {
 import { canonicalizeLanes, resolveEndpoint } from "@/lib/laneGlobe";
 import { lookupCentroid } from "@/lib/explorer/normalizeCompanySearch";
 import { useInlandFreight } from "@/api/inlandFreight";
+import {
+  useCompanyPortLanes,
+  usePortCentroids,
+  exitPortKey,
+  entryPortKey,
+} from "@/api/portLanes";
 import InlandFreightCard from "@/components/company/InlandFreightCard";
 import RelationshipIntelCard from "@/components/company/RelationshipIntelCard";
 import { laneRegionColor } from "@/lib/laneRegions";
@@ -4741,6 +4747,81 @@ function TradeLanesMapDialog({
     }
     return arcs;
   }, [inlandFreight, portOfEntry]);
+  // ── PORT-LEVEL lanes (lit_company_port_lanes, customs-derived) ─────────
+  // Exit port → US entry port pairs drawn as solid VIOLET arcs — visually
+  // distinct from the blue inland flows and the dashed amber transfers.
+  // Only pairs where BOTH ends resolve to a seeded `port:` centroid render;
+  // everything else skips silently (junk buckets are seeded as 'failed' and
+  // never resolve). Gated behind the "Port lanes" toggle chip (default ON
+  // when data exists). Excluded from lane selection and fit-bounds by the
+  // extraArcs/extraMarkers contract.
+  const PORT_LANE_TOP_N = 12;
+  const [showPortLanes, setShowPortLanes] = useState(true);
+  const { data: portLanes } = useCompanyPortLanes(companyId);
+  const { data: portCentroids } = usePortCentroids(portLanes);
+  const { portArcs, portMarkers } = useMemo<{
+    portArcs: LaneMapExtraArc[];
+    portMarkers: LaneMapExtraMarker[];
+  }>(() => {
+    const arcs: LaneMapExtraArc[] = [];
+    const markers = new Map<string, LaneMapExtraMarker>();
+    const lanes = (portLanes ?? [])
+      .slice()
+      .sort((a, b) => b.shipments - a.shipments);
+    const maxShipments = lanes[0]?.shipments || 0;
+    for (const lane of lanes) {
+      if (arcs.length >= PORT_LANE_TOP_N) break;
+      const exitKey = exitPortKey(lane.exit_port, lane.exit_port_country);
+      const entryKey = entryPortKey(lane.entry_port);
+      const from = exitKey ? portCentroids?.get(exitKey) : undefined;
+      const to = entryKey ? portCentroids?.get(entryKey) : undefined;
+      // BOTH ends must geocode at city precision — skip silently otherwise.
+      if (!from || !to || from.precision !== "city" || to.precision !== "city")
+        continue;
+      const ratio = maxShipments > 0 ? lane.shipments / maxShipments : 0;
+      const teu = Math.round(Number(lane.teu) || 0);
+      arcs.push({
+        id: `port-lane:${exitKey}>${entryKey}`,
+        from: [from.lat, from.lng],
+        to: [to.lat, to.lng],
+        color: "#7C3AED", // violet-600 — distinct from blue inland + amber transfers
+        opacity: 0.65,
+        weight: 1.5 + ratio * 2.5,
+        tooltip: `⚓ ${lane.exit_port} → ${lane.entry_port} · ${lane.shipments.toLocaleString()} shipments${teu > 0 ? ` · ${teu.toLocaleString()} TEU` : ""}`,
+      });
+      if (!markers.has(exitKey!)) {
+        markers.set(exitKey!, {
+          id: `port:${exitKey}`,
+          lat: from.lat,
+          lng: from.lng,
+          label: `⚓ ${lane.exit_port} (${lane.exit_port_country})`,
+          color: "#8B5CF6", // violet-500 squares — distinct from amber facilities
+        });
+      }
+      if (!markers.has(entryKey!)) {
+        markers.set(entryKey!, {
+          id: `port:${entryKey}`,
+          lat: to.lat,
+          lng: to.lng,
+          label: `⚓ ${lane.entry_port}`,
+          color: "#8B5CF6",
+        });
+      }
+    }
+    return { portArcs: arcs, portMarkers: Array.from(markers.values()) };
+  }, [portLanes, portCentroids]);
+  const portLayerAvailable = portArcs.length > 0;
+  const portLayerOn = portLayerAvailable && showPortLanes;
+  // Combined overlays — facility/inland layers are untouched; the port layer
+  // simply appends when toggled on.
+  const combinedExtraMarkers = useMemo<LaneMapExtraMarker[]>(
+    () => (portLayerOn ? [...facilityMarkers, ...portMarkers] : facilityMarkers),
+    [facilityMarkers, portMarkers, portLayerOn],
+  );
+  const combinedExtraArcs = useMemo<LaneMapExtraArc[]>(
+    () => (portLayerOn ? [...inlandArcs, ...portArcs] : inlandArcs),
+    [inlandArcs, portArcs, portLayerOn],
+  );
   const monthlyChartData = useMemo(() => {
     if (!selPair) return [];
     const values = laneMonthsByPair?.get(selPair.pairKey) || {};
@@ -4990,8 +5071,8 @@ function TradeLanesMapDialog({
             laneColors={laneColors}
             unselectedStyle={showAllLanes ? "fade" : "ghost"}
             flow
-            extraMarkers={facilityMarkers}
-            extraArcs={inlandArcs}
+            extraMarkers={combinedExtraMarkers}
+            extraArcs={combinedExtraArcs}
           />
 
           {/* Floating "Filters" card — pinned to the LEFT edge of the map.
@@ -5110,6 +5191,27 @@ function TradeLanesMapDialog({
                           {mode}
                         </button>
                       ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Port lanes (customs) — toggles the violet port-pair layer.
+                    Only offered when at least one pair geocoded (both ends);
+                    defaults ON when data exists. */}
+                {portLayerAvailable && (
+                  <div>
+                    <div className="font-display mb-1 text-[9.5px] font-bold uppercase tracking-wide text-slate-400">
+                      Layers
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      <button
+                        type="button"
+                        className={chipClass(portLayerOn)}
+                        onClick={() => setShowPortLanes((v) => !v)}
+                        aria-pressed={portLayerOn}
+                      >
+                        Port lanes ({portArcs.length})
+                      </button>
                     </div>
                   </div>
                 )}
@@ -5258,6 +5360,17 @@ function TradeLanesMapDialog({
                   </span>
                   <span className="font-body text-[10px] text-slate-600">
                     Inland flow (est.)
+                  </span>
+                </div>
+              )}
+              {/* Port lanes — customs-derived port-pair arcs (violet). */}
+              {portLayerOn && (
+                <div className="flex items-center gap-2">
+                  <span className="flex w-9 items-center">
+                    <span className="h-[2px] w-full rounded bg-violet-600/70" />
+                  </span>
+                  <span className="font-body text-[10px] text-slate-600">
+                    Port lane (customs)
                   </span>
                 </div>
               )}
