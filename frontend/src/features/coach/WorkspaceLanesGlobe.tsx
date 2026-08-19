@@ -10,6 +10,8 @@ import { laneRegionColor } from "@/lib/laneRegions";
 import LitFlag from "@/components/ui/LitFlag";
 import { usePulseCoach, useWorkspaceLanes } from "./PulseCoachWidget";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { useWorkspaceLaneIntel } from "@/api/laneIntel";
+import LaneIntelligenceCard from "@/components/maps/LaneIntelligenceCard";
 
 // Responsive globe sizing: clamp to a sensible band so it scales
 // down on tablet (where the panel is narrow) and scales up on
@@ -221,6 +223,26 @@ export default function WorkspaceLanesGlobe() {
   const stickyLane = stickyKey
     ? sorted.find((l) => l.key === stickyKey) ?? null
     : null;
+
+  // Central Intelligence Hub — workspace-scoped BOL detail for the selected
+  // lane. The RPC keys on COUNTRY display names ("China" → "United States"),
+  // not the raw city labels ("Shanghai, CN"), so resolve each endpoint to its
+  // country name the same way the ranked list renders "China → United States"
+  // (resolveEndpoint(...).countryName). Falls back to the raw label when the
+  // endpoint doesn't resolve. The hook self-disables (→ null) until both names
+  // are present, so passing possibly-undefined values is safe.
+  const stickyOriginCountry = stickyLane
+    ? (resolveEndpoint(stickyLane.from_label) ||
+        resolveEndpoint(`Port ${stickyLane.from_label}`))?.countryName ||
+      stickyLane.from_label
+    : null;
+  const stickyDestCountry = stickyLane
+    ? (resolveEndpoint(stickyLane.to_label) ||
+        resolveEndpoint(`Port ${stickyLane.to_label}`))?.countryName ||
+      stickyLane.to_label
+    : null;
+  const { data: workspaceLaneIntel, isLoading: workspaceLaneIntelLoading } =
+    useWorkspaceLaneIntel(stickyOriginCountry, stickyDestCountry);
   const workspaceShipTotal = sorted.reduce(
     (s, l) => s + (laneMetrics.get(l.key)?.current || l.shipments_total || 0),
     0,
@@ -540,6 +562,26 @@ export default function WorkspaceLanesGlobe() {
                   Find more shippers like these
                   <ArrowRight className="h-3 w-3" />
                 </Link>
+              </div>
+
+              {/* Central Intelligence Hub — workspace-aggregated BOL-level
+                  detail for the selected lane. Purely presentational shared
+                  card (scope="workspace"): carrier mix, modes, commodities,
+                  FCL/LCL, origin ports. Each section is data-driven and hides
+                  when empty; the whole block renders nothing when the RPC
+                  returns no shipment-level detail. */}
+              <div className="mt-3 border-t border-slate-200 pt-3">
+                <div className="font-display mb-2 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                  <Sparkles className="h-3 w-3 text-blue-600" />
+                  Lane intelligence
+                </div>
+                <div className="max-h-[46vh] overflow-y-auto pr-0.5">
+                  <LaneIntelligenceCard
+                    data={workspaceLaneIntel ?? null}
+                    isLoading={workspaceLaneIntelLoading}
+                    scope="workspace"
+                  />
+                </div>
               </div>
             </div>
           );
