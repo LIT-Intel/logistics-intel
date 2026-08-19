@@ -329,7 +329,7 @@ export default function WorkspaceLanesGlobe() {
                 laneColors={laneColors}
                 unselectedStyle="ghost"
                 flow
-                linesMode="onDemand"
+                linesMode="always"
               />
             )}
           </div>

@@ -4229,6 +4229,19 @@ function TradeLanesMapDialog({
     return result;
   }, [ranked, laneMonthsByPair]);
 
+  // "Recent activity" must be judged against the freshest data we actually
+  // have, not the wall clock: shipment feeds lag by weeks-to-months, so testing
+  // `Date.now() - latest` made every lane read stale and the Recent chip showed
+  // 0. Anchor recency to the newest month across all this company's lanes so the
+  // most-current lanes always register as recent.
+  const recencyAnchorMs = useMemo(() => {
+    let max = 0;
+    for (const m of realMetricsByPair.values()) {
+      if (m.latest) max = Math.max(max, m.latest.getTime());
+    }
+    return max || Date.now();
+  }, [realMetricsByPair]);
+
   const volumeCutoff = ranked[Math.max(0, Math.ceil(ranked.length * 0.25) - 1)]?.shipments || 0;
   const filtered = useMemo(
     () => {
@@ -4252,13 +4265,13 @@ function TradeLanesMapDialog({
         (p: any) =>
           (strategyFilter === "growth" && (realMetricsByPair.get(p.pairKey)?.yoy ?? -Infinity) > 0) ||
           (strategyFilter === "priority" && Number(p?.shipments || 0) >= Number(volumeCutoff || 0)) ||
-          (strategyFilter === "recent" && (() => { const d = realMetricsByPair.get(p.pairKey)?.latest || lastActivityByPair.get(p.pairKey); return !!d && Date.now() - d.getTime() <= 120 * 86400000; })()) ||
+          (strategyFilter === "recent" && (() => { const d = realMetricsByPair.get(p.pairKey)?.latest || lastActivityByPair.get(p.pairKey); return !!d && recencyAnchorMs - d.getTime() <= 120 * 86400000; })()) ||
           (strategyFilter === "seasonal" && (realMetricsByPair.get(p.pairKey)?.peakRatio ?? 0) >= 1.35) ||
           (strategyFilter === "whitespace" && Number(p?.shipments || 0) < Number(volumeCutoff || 0) && (realMetricsByPair.get(p.pairKey)?.yoy ?? -Infinity) > 0),
       );
       return strat.length > 0 ? strat : base;
     },
-    [ranked, originFilter, modeFilter, minShipments, strategyFilter, volumeCutoff, lastActivityByPair, realMetricsByPair],
+    [ranked, originFilter, modeFilter, minShipments, strategyFilter, volumeCutoff, lastActivityByPair, realMetricsByPair, recencyAnchorMs],
   );
 
   const strategyCounts = useMemo(() => {
@@ -4267,12 +4280,12 @@ function TradeLanesMapDialog({
       if (id === "priority") return Number(p.shipments || 0) >= Number(volumeCutoff || 0);
       if (id === "growth") return (metric?.yoy ?? -Infinity) > 0;
       if (id === "seasonal") return (metric?.peakRatio ?? 0) >= 1.35;
-      if (id === "recent") return !!metric?.latest && Date.now() - metric.latest.getTime() <= 120 * 86400000;
+      if (id === "recent") return !!metric?.latest && recencyAnchorMs - metric.latest.getTime() <= 120 * 86400000;
       if (id === "whitespace") return Number(p.shipments || 0) < Number(volumeCutoff || 0) && (metric?.yoy ?? -Infinity) > 0;
       return true;
     };
     return new Map(["all", "priority", "growth", "seasonal", "recent", "whitespace"].map((id) => [id, ranked.filter((p: any) => matches(id, p)).length]));
-  }, [ranked, realMetricsByPair, volumeCutoff]);
+  }, [ranked, realMetricsByPair, volumeCutoff, recencyAnchorMs]);
 
   const totalShipments = useMemo(
     () =>

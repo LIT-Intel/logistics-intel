@@ -87,9 +87,15 @@ export function useCompanyLaneMonths(
       if (!companyId) return [];
       const rollupId = await resolveRollupCompanyId(companyId);
       if (!rollupId) return [];
-      // month >= date_trunc('month', now()) - 23 months (24-month window).
+      // month >= date_trunc('month', now()) - 59 months (60-month / 5-year window).
+      // A rolling 24-month window used to clip the prior-year comparison bucket
+      // whenever a company's feed lagged, collapsing YoY / seasonality / recency
+      // to null (Growth/Seasonality/Whitespace chips all showed 0). Widen it so
+      // the trailing-12 vs prior-12 slices always have a full prior year to
+      // compare against, even for companies whose latest month is stale. The
+      // table is company-scoped and tiny, so the wider window is negligible.
       const now = new Date();
-      const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 23, 1));
+      const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 59, 1));
       const startIso = start.toISOString().slice(0, 10);
       // `.in()` with both the bare slug and the raw key — the rollup table
       // stores bare slugs today, but tolerate prefixed rows defensively.
