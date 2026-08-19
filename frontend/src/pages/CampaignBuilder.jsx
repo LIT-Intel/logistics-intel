@@ -48,6 +48,11 @@ import {
 import { INDUSTRY_OPTIONS, TONE_OPTIONS } from "@/features/outbound/data/templates";
 import { fontDisplay, fontBody } from "@/features/outbound/tokens";
 import {
+  GmailIcon,
+  OutlookIcon,
+  normalizeEmailProvider,
+} from "@/features/outbound/components/BrandIcons";
+import {
   saveCampaignDraft,
 } from "@/features/outbound/api/campaignActions";
 import { listPulseLists, getListCompanies } from "@/features/pulse/pulseListsApi";
@@ -675,6 +680,23 @@ export default function CampaignBuilder() {
     () => steps.find((s) => s.localId === selectedStepId) ?? null,
     [steps, selectedStepId],
   );
+
+  // Resolve the provider of the mailbox email steps will actually send
+  // through, so timeline chips can show the real Gmail / Outlook branding.
+  // Order mirrors the dispatcher: explicit sender override
+  // (metrics.sender_account_id) → primary connected mailbox → first
+  // connected mailbox. Null (unknown) falls back to a generic mail icon.
+  const senderProvider = useMemo(() => {
+    const picked = senderAccountId
+      ? senderAccounts.find((a) => a.id === senderAccountId)
+      : null;
+    const resolved =
+      picked ||
+      senderAccounts.find((a) => a.is_primary && a.status === "connected") ||
+      senderAccounts.find((a) => a.status === "connected") ||
+      null;
+    return resolved?.provider ?? null;
+  }, [senderAccounts, senderAccountId]);
 
   const selectedCompanies = useMemo(
     () => companies.filter((c) => c.company_id && selectedIds.has(c.company_id)),
@@ -1379,10 +1401,15 @@ export default function CampaignBuilder() {
         >
           <Chip variant="neutral" size="sm" tone="brand">SENDER</Chip>
           <label
-            className="text-[11px] text-slate-500"
+            className="inline-flex items-center gap-1.5 text-[11px] text-slate-500"
             htmlFor="sender-account-select"
             style={{ fontFamily: fontDisplay }}
           >
+            {normalizeEmailProvider(senderProvider) === "gmail" ? (
+              <GmailIcon size={14} />
+            ) : normalizeEmailProvider(senderProvider) === "outlook" ? (
+              <OutlookIcon size={13} />
+            ) : null}
             Send via:
           </label>
           <select
@@ -1561,6 +1588,7 @@ export default function CampaignBuilder() {
           onAddBelow={handleAddStep}
           onDelete={handleDeleteStep}
           onAddFirst={handleAddFirst}
+          emailProvider={senderProvider}
         />
         <div className="md:sticky md:top-2 md:self-start md:max-h-[calc(100vh-1rem)] md:overflow-y-auto">
           <StepInspector

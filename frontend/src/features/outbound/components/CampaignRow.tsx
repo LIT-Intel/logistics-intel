@@ -78,10 +78,13 @@ export function CampaignRow({
   campaign,
   onOpen,
   onAction,
+  emailProvider,
 }: {
   campaign: OutboundCampaign;
   onOpen: (c: OutboundCampaign) => void;
   onAction: (a: CampaignRowAction, c: OutboundCampaign) => void;
+  /** Provider of the workspace's sending mailbox (gmail | outlook | null). */
+  emailProvider?: string | null;
 }) {
   const c = campaign;
   const status = STATUS_STYLES[c.status];
@@ -95,9 +98,10 @@ export function CampaignRow({
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") onOpen(c);
       }}
-      className="cursor-pointer rounded-lg border bg-white px-3 py-2.5 transition hover:border-slate-300 hover:shadow-[0_2px_8px_rgba(15,23,42,0.06)]"
+      className="cursor-pointer rounded-[14px] border bg-white px-3.5 py-3 transition hover:border-[#BFDBFE]"
       style={{
         borderColor: c.alert ? "#FDE68A" : "#E5E7EB",
+        boxShadow: "0 8px 30px rgba(15,23,42,0.06)",
       }}
     >
       <div className="flex flex-wrap items-center gap-2.5">
@@ -116,7 +120,13 @@ export function CampaignRow({
         </div>
         <div className="flex gap-0.5">
           {c.channels.map((ch, i) => (
-            <ChannelChip key={`${c.id}-ch-${i}`} kind={ch} size={18} iconSize={9} />
+            <ChannelChip
+              key={`${c.id}-ch-${i}`}
+              kind={ch}
+              size={18}
+              iconSize={10}
+              provider={emailProvider}
+            />
           ))}
         </div>
         <span

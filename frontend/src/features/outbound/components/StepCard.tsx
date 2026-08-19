@@ -32,6 +32,7 @@ export function StepCard({
   onSelect,
   onAddBelow,
   onDelete,
+  emailProvider,
 }: {
   step: BuilderStep;
   index: number;
@@ -41,6 +42,8 @@ export function StepCard({
   onSelect: () => void;
   onAddBelow: (kind: ChannelKind) => void;
   onDelete: () => void;
+  /** Provider of the sending mailbox (gmail | outlook | null when unknown). */
+  emailProvider?: string | null;
 }) {
   const meta = CHANNEL[step.kind];
   const [adderOpen, setAdderOpen] = useState(false);
@@ -101,7 +104,7 @@ export function StepCard({
           }}
           aria-label={`Select step ${index + 1}`}
         >
-          <ChannelIcon kind={step.kind} size={18} />
+          <ChannelIcon kind={step.kind} size={18} provider={emailProvider} />
         </button>
         <span
           className="mt-1.5 text-[11px] font-bold uppercase tracking-[0.04em] text-slate-400"
@@ -133,7 +136,7 @@ export function StepCard({
               fontFamily: fontDisplay,
             }}
           >
-            <ChannelIcon kind={step.kind} size={10} />
+            <ChannelIcon kind={step.kind} size={10} provider={emailProvider} />
             {meta.label}
           </span>
           <div

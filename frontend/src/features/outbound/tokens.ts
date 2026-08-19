@@ -63,6 +63,9 @@ export const ob = {
   warningBorder: "#FDE68A",
 
   danger: "#EF4444",
+  dangerFg: "#B91C1C",
+  dangerBg: "#FEF2F2",
+  dangerBorder: "#FECACA",
   purple: "#8B5CF6",
   purpleBg: "#FAF5FF",
   purpleBorder: "#E9D5FF",

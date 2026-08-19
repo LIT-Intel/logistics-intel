@@ -13,6 +13,8 @@ interface Props {
   onAddBelow: (afterId: string, kind: ChannelKind) => void;
   onDelete: (id: string) => void;
   onAddFirst: (kind: ChannelKind) => void;
+  /** Provider of the sending mailbox (gmail | outlook | null when unknown). */
+  emailProvider?: string | null;
 }
 
 const ADD_OPTIONS: ChannelKind[] = [
@@ -30,6 +32,7 @@ export function TimelineCanvas({
   onAddBelow,
   onDelete,
   onAddFirst,
+  emailProvider,
 }: Props) {
   const days = computeDays(steps);
   const totalDays = days.length > 0 ? days[days.length - 1] : 0;
@@ -78,6 +81,7 @@ export function TimelineCanvas({
               onSelect={() => onSelect(step.localId)}
               onAddBelow={(kind) => onAddBelow(step.localId, kind)}
               onDelete={() => onDelete(step.localId)}
+              emailProvider={emailProvider}
             />
           ))
         )}

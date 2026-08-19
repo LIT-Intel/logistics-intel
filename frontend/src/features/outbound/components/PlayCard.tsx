@@ -24,16 +24,20 @@ const ICON_MAP: Record<string, LucideIcon> = {
 export function PlayCard({
   play,
   onUse,
+  emailProvider,
 }: {
   play: Play;
   onUse: () => void;
+  /** Provider of the workspace's sending mailbox (gmail | outlook | null). */
+  emailProvider?: string | null;
 }) {
   const Icon = ICON_MAP[play.icon] ?? Zap;
   return (
     <button
       type="button"
       onClick={onUse}
-      className="group relative flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-3 text-left transition hover:border-slate-300 hover:shadow-[0_2px_8px_rgba(15,23,42,0.06)]"
+      className="group relative flex flex-col gap-2 rounded-[14px] border border-slate-200 bg-white p-3.5 text-left transition hover:border-[#BFDBFE]"
+      style={{ boxShadow: "0 8px 30px rgba(15,23,42,0.06)" }}
     >
       {play.badge ? (
         <span
@@ -83,7 +87,13 @@ export function PlayCard({
 
       <div className="flex flex-wrap items-center gap-0.5">
         {play.channels.map((ch, i) => (
-          <ChannelChip key={i} kind={ch} size={18} iconSize={9} />
+          <ChannelChip
+            key={i}
+            kind={ch}
+            size={18}
+            iconSize={10}
+            provider={emailProvider}
+          />
         ))}
         <span
           className="ml-1 text-[11px] text-slate-400"

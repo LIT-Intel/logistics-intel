@@ -13,6 +13,7 @@ import {
 import LitEmptyState from "@/components/ui/LitEmptyState";
 import { LitSkeletonBlock, LitSkeletonCard, LitSkeletonRow } from "@/components/ui/LitSkeleton";
 import { useCampaigns } from "@/features/outbound/hooks/useCampaigns";
+import { useInboxStatus } from "@/features/outbound/hooks/useInboxStatus";
 import { PulseBar } from "@/features/outbound/components/PulseBar";
 import { PlayCard } from "@/features/outbound/components/PlayCard";
 import { CampaignRow } from "@/features/outbound/components/CampaignRow";
@@ -73,13 +74,13 @@ function PageHeader({ onNewCampaign, onOpenAnalytics, onOpenInbox }) {
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-1.5">
           <h1
-            className="text-[18px] font-bold leading-tight tracking-tight text-[#0F172A]"
+            className="text-[20px] font-bold leading-tight tracking-tight text-[#0F172A]"
             style={{ fontFamily: fontDisplay }}
           >
             Outbound Engine
           </h1>
           <span
-            className="rounded-full border border-[#BFDBFE] bg-[#EFF6FF] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-[#0A66C2]"
+            className="rounded-full border border-[#BFDBFE] bg-[#EFF6FF] px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.04em] text-[#1D4ED8]"
             style={{ fontFamily: fontDisplay }}
           >
             Email · LinkedIn · Calls
@@ -219,6 +220,9 @@ function EmptyCampaigns({ onNewCampaign }) {
 export default function CampaignsPage() {
   const navigate = useNavigate();
   const { campaigns, loading, error, refresh } = useCampaigns();
+  // Provider of the workspace's connected sending mailbox — drives the
+  // Gmail/Outlook branding on email channel chips (play cards + rows).
+  const { primaryProvider } = useInboxStatus();
   const { isSuperAdmin } = useAuth();
   const [filter, setFilter] = useState("all");
 
@@ -361,6 +365,7 @@ export default function CampaignsPage() {
                     key={p.id}
                     play={p}
                     onUse={() => handleNewCampaign(p.id)}
+                    emailProvider={primaryProvider}
                   />
                 ))}
               </div>
@@ -377,11 +382,11 @@ export default function CampaignsPage() {
                         key={f.k}
                         type="button"
                         onClick={() => setFilter(f.k)}
-                        className="rounded-full px-2.5 py-0.5 text-[10px] font-semibold transition"
+                        className="rounded-full px-2.5 py-1 text-[11px] font-semibold transition hover:border-[#BFDBFE]"
                         style={{
-                          background: isActive ? "#0F172A" : "#FFFFFF",
-                          color: isActive ? "#fff" : "#64748b",
-                          border: `1px solid ${isActive ? "#0F172A" : "#E5E7EB"}`,
+                          background: isActive ? "#EFF6FF" : "#FFFFFF",
+                          color: isActive ? "#1D4ED8" : "#64748B",
+                          border: `1px solid ${isActive ? "#BFDBFE" : "#E5E7EB"}`,
                           fontFamily: fontDisplay,
                         }}
                       >
@@ -421,6 +426,7 @@ export default function CampaignsPage() {
                       campaign={c}
                       onOpen={handleOpenCampaign}
                       onAction={handleRowAction}
+                      emailProvider={primaryProvider}
                     />
                   ))}
                 </div>

@@ -19,6 +19,7 @@ import {
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
 import RepliesTab from '@/pages/campaigns/RepliesTab';
+import { ob, fontDisplay, fontBody, fontMono } from '@/features/outbound/tokens';
 
 const RANGE_OPTIONS = [
   { id: '7d', label: 'Last 7 days', ms: 7 * 24 * 60 * 60 * 1000 },
@@ -27,18 +28,22 @@ const RANGE_OPTIONS = [
   { id: 'all', label: 'All time', ms: null },
 ];
 
+// Event palette — sourced from the outbound `ob` design tokens so analytics
+// chips match the rest of the campaign surface (no ad-hoc teal/off-palette
+// hexes). LinkedIn events keep the LinkedIn brand blue.
+const LINKEDIN_BLUE = '#0A66C2';
 const EVENT_LABEL = {
-  sent: { label: 'Sent', color: '#1d4ed8', bg: '#DBEAFE', Icon: Send },
-  invitation_sent: { label: 'LinkedIn invite sent', color: '#0A66C2', bg: '#E8F3FF', Icon: Linkedin },
-  connection_accepted: { label: 'LinkedIn connection accepted', color: '#0f766e', bg: '#CCFBF1', Icon: Linkedin },
-  approval_required: { label: 'LinkedIn approval required', color: '#b45309', bg: '#FEF3C7', Icon: Linkedin },
-  opened: { label: 'Opened', color: '#15803d', bg: '#DCFCE7', Icon: MailOpen },
-  clicked: { label: 'Clicked', color: '#7c3aed', bg: '#EDE9FE', Icon: MousePointer },
-  replied: { label: 'Replied', color: '#b45309', bg: '#FEF3C7', Icon: Reply },
-  meeting_booked: { label: 'Meeting', color: '#0f766e', bg: '#CCFBF1', Icon: CalendarClock },
-  bounced: { label: 'Bounced', color: '#991b1b', bg: '#FECACA', Icon: AlertTriangle },
-  send_failed: { label: 'Failed', color: '#991b1b', bg: '#FECACA', Icon: AlertTriangle },
-  suppressed: { label: 'Suppressed', color: '#64748b', bg: '#F1F5F9', Icon: AlertTriangle },
+  sent: { label: 'Sent', color: ob.blueDark, bg: ob.blueBg, Icon: Send },
+  invitation_sent: { label: 'LinkedIn invite sent', color: LINKEDIN_BLUE, bg: ob.blueBg, Icon: Linkedin },
+  connection_accepted: { label: 'LinkedIn connection accepted', color: ob.successFg, bg: ob.successBg, Icon: Linkedin },
+  approval_required: { label: 'LinkedIn approval required', color: ob.warningFg, bg: ob.warningBg, Icon: Linkedin },
+  opened: { label: 'Opened', color: ob.successFg, bg: ob.successBg, Icon: MailOpen },
+  clicked: { label: 'Clicked', color: ob.purpleFg, bg: ob.purpleBg, Icon: MousePointer },
+  replied: { label: 'Replied', color: ob.warningFg, bg: ob.warningBg, Icon: Reply },
+  meeting_booked: { label: 'Meeting', color: ob.successFg, bg: ob.successBg, Icon: CalendarClock },
+  bounced: { label: 'Bounced', color: ob.dangerFg, bg: ob.dangerBg, Icon: AlertTriangle },
+  send_failed: { label: 'Failed', color: ob.dangerFg, bg: ob.dangerBg, Icon: AlertTriangle },
+  suppressed: { label: 'Suppressed', color: ob.ink500, bg: ob.borderSoft, Icon: AlertTriangle },
 };
 
 function pct(num, denom) {
@@ -323,7 +328,7 @@ export default function CampaignAnalyticsPage() {
         />
 
         {activeTab === 'replies' ? (
-          <section className='rounded-xl border border-slate-200 bg-white'>
+          <section className='rounded-[14px] border border-slate-200 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.06)]'>
             <div className='border-b border-slate-100 px-4 py-3'>
               <div className='text-[12px] font-bold uppercase tracking-wider text-slate-500'>Replies</div>
               <div className='mt-0.5 text-[11px] text-slate-500'>Inbound responses across your campaigns.</div>
@@ -331,7 +336,7 @@ export default function CampaignAnalyticsPage() {
             <RepliesTab orgUserIds={orgUserIds} />
           </section>
         ) : loading ? (
-          <div className='flex items-center justify-center rounded-xl border border-slate-200 bg-white py-16'>
+          <div className='flex items-center justify-center rounded-[14px] border border-slate-200 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.06)] py-16'>
             <Loader2 className='h-5 w-5 animate-spin text-blue-500' />
           </div>
         ) : error ? (
@@ -347,11 +352,11 @@ export default function CampaignAnalyticsPage() {
         ) : (
           <>
             <div className='grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5'>
-              <KpiCard label='Sent' value={totals.sent.toLocaleString()} hint={`${totalRecipients} recipient${totalRecipients === 1 ? '' : 's'}`} Icon={Send} tone='#1d4ed8' />
-              <KpiCard label='Open rate' value={`${totals.openRate}%`} hint={`${totals.opened} unique opens`} Icon={MailOpen} tone='#15803d' />
-              <KpiCard label='Click rate' value={`${totals.clickRate}%`} hint={`${totals.clicked} unique clicks`} Icon={MousePointer} tone='#7c3aed' />
-              <KpiCard label='Reply rate' value={`${totals.replyRate}%`} hint={`${totals.replied} replies`} Icon={Reply} tone='#b45309' />
-              <KpiCard label='Bounce rate' value={`${totals.bounceRate}%`} hint={`${totals.bounced} bounces`} Icon={AlertTriangle} tone={totals.bounced > 0 ? '#991b1b' : '#64748b'} />
+              <KpiCard label='Sent' value={totals.sent.toLocaleString()} hint={`${totalRecipients} recipient${totalRecipients === 1 ? '' : 's'}`} Icon={Send} tone={ob.blueDark} />
+              <KpiCard label='Open rate' value={`${totals.openRate}%`} hint={`${totals.opened} unique opens`} Icon={MailOpen} tone={ob.successFg} />
+              <KpiCard label='Click rate' value={`${totals.clickRate}%`} hint={`${totals.clicked} unique clicks`} Icon={MousePointer} tone={ob.purpleFg} />
+              <KpiCard label='Reply rate' value={`${totals.replyRate}%`} hint={`${totals.replied} replies`} Icon={Reply} tone={ob.warningFg} />
+              <KpiCard label='Bounce rate' value={`${totals.bounceRate}%`} hint={`${totals.bounced} bounces`} Icon={AlertTriangle} tone={totals.bounced > 0 ? ob.dangerFg : ob.ink500} />
             </div>
 
             <div className='mt-3 flex flex-wrap items-center gap-2'>
@@ -394,11 +399,14 @@ function PageHeader({ activeTab, lastEventAt, lastLoadedAt, navigate, rangeId, r
           <ArrowLeft className='h-3.5 w-3.5' />
         </button>
         <div className='min-w-0 flex-1'>
-          <div className='flex items-center gap-2 text-[15px] font-bold text-[#0F172A]'>
-            <BarChart3 className='h-4 w-4 text-blue-600' />
+          <h1
+            className='flex items-center gap-2 text-[20px] font-bold leading-tight tracking-tight text-[#0F172A]'
+            style={{ fontFamily: fontDisplay }}
+          >
+            <BarChart3 className='h-4 w-4 text-[#2563EB]' />
             Campaign analytics
-          </div>
-          <div className='text-[11px] text-slate-500'>
+          </h1>
+          <div className='mt-0.5 text-[12px] text-slate-500' style={{ fontFamily: fontBody }}>
             Live workspace analytics. {lastEventAt ? `Last activity ${fmtAgo(lastEventAt)}.` : 'No activity yet in this range.'}
             {lastLoadedAt ? ` Refreshed ${fmtAgo(lastLoadedAt)}.` : ''}
           </div>
@@ -428,7 +436,7 @@ function PageHeader({ activeTab, lastEventAt, lastLoadedAt, navigate, rangeId, r
 
 function AcquisitionFunnel({ totals, totalRecipients }) {
   return (
-    <section className='mt-4 rounded-xl border border-slate-200 bg-white p-3'>
+    <section className='mt-4 rounded-[14px] border border-slate-200 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.06)] p-3'>
       <div className='mb-3 flex items-center justify-between gap-2'>
         <div>
           <div className='text-[12px] font-bold uppercase tracking-wider text-slate-500'>Acquisition funnel</div>
@@ -452,7 +460,7 @@ function AcquisitionFunnel({ totals, totalRecipients }) {
 
 function RecentActivity({ events, recipients }) {
   return (
-    <section className='rounded-xl border border-slate-200 bg-white'>
+    <section className='rounded-[14px] border border-slate-200 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.06)]'>
       <div className='border-b border-slate-100 px-4 py-3'>
         <div className='text-[12px] font-bold uppercase tracking-wider text-slate-500'>Recent activity</div>
       </div>
@@ -491,7 +499,7 @@ function ActivityItem({ event, recipients }) {
 
 function CampaignTable({ campaigns, events, expanded, navigate, recipients, setExpanded }) {
   return (
-    <section className='rounded-xl border border-slate-200 bg-white'>
+    <section className='rounded-[14px] border border-slate-200 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.06)]'>
       <div className='border-b border-slate-100 px-4 py-3'>
         <div className='text-[12px] font-bold uppercase tracking-wider text-slate-500'>Per campaign</div>
       </div>
@@ -547,14 +555,35 @@ function CampaignTable({ campaigns, events, expanded, navigate, recipients, setE
 }
 
 function KpiCard({ label, value, hint, Icon, tone }) {
+  // Dashboard KPI card language — white rounded-[14px] card, soft shadow,
+  // Space Grotesk label, JetBrains Mono numeral, tinted icon square.
   return (
-    <div className='rounded-xl border border-slate-200 bg-white p-3.5'>
-      <div className='flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500'>
-        <Icon className='h-3 w-3' style={{ color: tone }} />
+    <div
+      className='rounded-[14px] border border-slate-200 p-3.5 transition-all duration-200 hover:border-[#BFDBFE]'
+      style={{
+        background: 'linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%)',
+        boxShadow: '0 8px 30px rgba(15,23,42,0.06)',
+      }}
+    >
+      <span
+        className='flex h-7 w-7 items-center justify-center rounded-lg'
+        style={{ background: `${tone}14` }}
+      >
+        <Icon className='h-3.5 w-3.5' style={{ color: tone }} />
+      </span>
+      <div
+        className='mt-2 text-[22px] font-bold leading-none text-[#0F172A]'
+        style={{ fontFamily: fontMono, letterSpacing: '-0.01em' }}
+      >
+        {value}
+      </div>
+      <div
+        className='mt-1 text-[11px] font-semibold text-slate-700'
+        style={{ fontFamily: fontDisplay }}
+      >
         {label}
       </div>
-      <div className='mt-1.5 text-[20px] font-bold leading-none' style={{ color: tone }}>{value}</div>
-      <div className='mt-1 text-[10.5px] text-slate-500'>{hint}</div>
+      <div className='mt-0.5 text-[11px] text-slate-400' style={{ fontFamily: fontBody }}>{hint}</div>
     </div>
   );
 }
