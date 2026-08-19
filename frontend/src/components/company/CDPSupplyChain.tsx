@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import {
@@ -9,6 +16,10 @@ import {
   Container,
   Maximize2,
   Sparkles,
+  SlidersHorizontal,
+  Ship,
+  Anchor,
+  Package,
   LineChart as LineChartIcon,
   X,
 } from "lucide-react";
@@ -16,6 +27,9 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -49,6 +63,10 @@ import {
   useCompanyLaneMonths,
   type CompanyLaneMonthRow,
 } from "@/api/laneHistory";
+import {
+  useLaneShipmentIntel,
+  type LaneShipmentIntel,
+} from "@/api/laneIntel";
 import {
   aggregateSuppliers,
   supplierNameToSlug,
@@ -3991,6 +4009,7 @@ function TopLanesCard({
       {mapDialogOpen && (
         <TradeLanesMapDialog
           pairs={viewPairs}
+          companyId={sourceCompanyKey ?? null}
           cityRoutesByPair={cityRoutesEffective}
           lastActivityByPair={lastActivityEffective}
           initialSelected={selectedPair}
@@ -4056,6 +4075,325 @@ function ScopedEmptyState({
   );
 }
 
+/* ── Lane intelligence (Central Intelligence Hub) ────────────────────────
+ *
+ * On-click BOL-level detail for the selected lane, backed by the
+ * `lit_lane_shipment_intel` RPC. Every section is DATA-DRIVEN: a block
+ * renders only when its array is non-empty / value non-null — no fake pies,
+ * no "0" placeholders (mirrors the map's "no fake mode toggles" rule).
+ *
+ * Extracted as its own subcomponent so the dashboard map could reuse it. */
+
+/** Tasteful ~8-hex palette (blues → teals → greens → ambers) for pie slices. */
+const LANE_INTEL_PALETTE = [
+  "#2563EB", // brand blue
+  "#0EA5E9",
+  "#06B6D4",
+  "#14B8A6",
+  "#10B981",
+  "#84CC16",
+  "#F59E0B",
+  "#F97316",
+];
+
+/** kg → tonnes with a compact label, e.g. 376004 → "376 t". */
+function formatWeightTonnes(kg: number | null | undefined): string | null {
+  if (kg == null || !Number.isFinite(kg) || kg <= 0) return null;
+  const t = kg / 1000;
+  if (t >= 1000) return `${(t / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })}k t`;
+  if (t >= 10) return `${Math.round(t).toLocaleString()} t`;
+  return `${t.toLocaleString(undefined, { maximumFractionDigits: 1 })} t`;
+}
+
+function LaneIntelStat({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="min-w-0">
+      <div className="font-mono text-[13px] font-bold leading-none text-slate-900">
+        {value}
+      </div>
+      <div className="font-body mt-1 text-[9px] font-semibold uppercase tracking-wide text-slate-400">
+        {label}
+      </div>
+    </div>
+  );
+}
+
+function LaneIntelSectionTitle({ children }: { children: ReactNode }) {
+  return (
+    <div className="font-display mb-1.5 text-[11px] font-bold text-slate-900">
+      {children}
+    </div>
+  );
+}
+
+/**
+ * LaneIntelligenceCard — compact intelligence panel for the selected lane.
+ * Fetches `lit_lane_shipment_intel(companyId, originCountry, destCountry)`
+ * via useLaneShipmentIntel and renders each section only if data is present.
+ */
+function LaneIntelligenceCard({
+  companyId,
+  originCountry,
+  destCountry,
+}: {
+  companyId?: string | null;
+  originCountry?: string | null;
+  destCountry?: string | null;
+}) {
+  const { data, isLoading } = useLaneShipmentIntel(
+    companyId,
+    originCountry,
+    destCountry,
+  );
+
+  // No company key or countries → nothing to fetch; render nothing.
+  if (!companyId || !originCountry || !destCountry) return null;
+
+  if (isLoading) {
+    return (
+      <div className="font-body text-[10px] text-slate-400">
+        Loading lane intelligence…
+      </div>
+    );
+  }
+
+  const intel: LaneShipmentIntel | null = data ?? null;
+  if (!intel) return null;
+
+  const t = intel.totals;
+
+  // No BOL-level detail for this lane yet — subtle line, no empty charts.
+  if ((t?.bols ?? 0) <= 0) {
+    return (
+      <div className="font-body text-[10px] text-slate-400">
+        No shipment-level detail for this lane yet.
+      </div>
+    );
+  }
+
+  // Data-driven guards — build a stat row only from present values.
+  const stats: { label: string; value: string }[] = [];
+  if (t.bols > 0) stats.push({ label: "BOLs", value: t.bols.toLocaleString() });
+  if (t.teu != null && t.teu > 0)
+    stats.push({ label: "TEU", value: Math.round(t.teu).toLocaleString() });
+  const weight = formatWeightTonnes(t.weight_kg);
+  if (weight) stats.push({ label: "Weight", value: weight });
+  if (t.containers != null && t.containers > 0)
+    stats.push({ label: "Containers", value: t.containers.toLocaleString() });
+  if (t.spend_usd != null && t.spend_usd > 0)
+    stats.push({
+      label: "Est. spend",
+      value: `$${t.spend_usd.toLocaleString()}`,
+    });
+
+  const carriers = intel.carriers.filter((c) => c.bols > 0).slice(0, 8);
+  const modes = intel.modes.filter((m) => m.bols > 0);
+  const commodities = intel.commodities.filter((c) => c.bols > 0);
+  const loadTypes = intel.load_types.filter((l) => l.bols > 0);
+  const originPorts = intel.origin_ports.filter((p) => p.bols > 0);
+  const commodityMax = Math.max(1, ...commodities.map((c) => c.bols));
+  const loadTotal = loadTypes.reduce((s, l) => s + l.bols, 0);
+
+  return (
+    <div className="space-y-3">
+      {/* Stat row — only present figures. */}
+      {stats.length > 0 && (
+        <div className="grid grid-cols-3 gap-x-3 gap-y-3 sm:grid-cols-5">
+          {stats.map((s) => (
+            <LaneIntelStat key={s.label} label={s.label} value={s.value} />
+          ))}
+        </div>
+      )}
+
+      {/* Carrier mix — donut + name/bol list. */}
+      {carriers.length > 0 && (
+        <div className="border-t border-slate-100 pt-2.5">
+          <LaneIntelSectionTitle>
+            <span className="inline-flex items-center gap-1">
+              <Ship className="h-3 w-3 text-blue-600" /> Carrier mix
+            </span>
+          </LaneIntelSectionTitle>
+          <div className="flex items-center gap-3">
+            <div className="h-24 w-24 shrink-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={carriers}
+                    dataKey="bols"
+                    nameKey="name"
+                    innerRadius={26}
+                    outerRadius={44}
+                    paddingAngle={1}
+                    stroke="none"
+                  >
+                    {carriers.map((_, i) => (
+                      <Cell
+                        key={i}
+                        fill={LANE_INTEL_PALETTE[i % LANE_INTEL_PALETTE.length]}
+                      />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    formatter={(v: any, n: any) => [`${v} BOLs`, n]}
+                    contentStyle={{ fontSize: 11 }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="min-w-0 flex-1 space-y-0.5">
+              {carriers.map((c, i) => (
+                <div key={c.name} className="flex items-center gap-1.5">
+                  <span
+                    className="h-2 w-2 shrink-0 rounded-full"
+                    style={{
+                      background:
+                        LANE_INTEL_PALETTE[i % LANE_INTEL_PALETTE.length],
+                    }}
+                  />
+                  <span className="font-body min-w-0 flex-1 truncate text-[10px] text-slate-600">
+                    {c.name}
+                  </span>
+                  <span className="font-mono shrink-0 text-[10px] font-semibold text-slate-500">
+                    {c.bols}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Transport mode — segmented bar, only if present. */}
+      {modes.length > 0 && (
+        <div className="border-t border-slate-100 pt-2.5">
+          <LaneIntelSectionTitle>Transport mode</LaneIntelSectionTitle>
+          <div className="flex flex-wrap gap-1.5">
+            {modes.map((m, i) => (
+              <span
+                key={m.name}
+                className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600"
+              >
+                <span
+                  className="h-2 w-2 rounded-full"
+                  style={{
+                    background:
+                      LANE_INTEL_PALETTE[i % LANE_INTEL_PALETTE.length],
+                  }}
+                />
+                {m.name}
+                <span className="font-mono text-slate-400">{m.bols}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Top commodities — horizontal bar list, only if present. */}
+      {commodities.length > 0 && (
+        <div className="border-t border-slate-100 pt-2.5">
+          <LaneIntelSectionTitle>
+            <span className="inline-flex items-center gap-1">
+              <Package className="h-3 w-3 text-blue-600" /> Top commodities
+            </span>
+          </LaneIntelSectionTitle>
+          <div className="space-y-1.5">
+            {commodities.map((c) => (
+              <div key={c.code + c.description}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-body min-w-0 flex-1 truncate text-[10px] text-slate-600">
+                    {c.code ? (
+                      <span className="font-mono mr-1 font-semibold text-slate-500">
+                        {c.code}
+                      </span>
+                    ) : null}
+                    {c.description}
+                  </span>
+                  <span className="font-mono shrink-0 text-[10px] font-semibold text-slate-500">
+                    {c.bols}
+                  </span>
+                </div>
+                <div className="mt-0.5 h-1 w-full overflow-hidden rounded-full bg-slate-100">
+                  <div
+                    className="h-full rounded-full bg-blue-600"
+                    style={{ width: `${(c.bols / commodityMax) * 100}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* FCL/LCL split — stacked bar + pills. */}
+      {loadTypes.length > 0 && loadTotal > 0 && (
+        <div className="border-t border-slate-100 pt-2.5">
+          <LaneIntelSectionTitle>FCL / LCL split</LaneIntelSectionTitle>
+          <div className="flex h-2 w-full overflow-hidden rounded-full bg-slate-100">
+            {loadTypes.map((l, i) => (
+              <div
+                key={l.name}
+                className="h-full"
+                style={{
+                  width: `${(l.bols / loadTotal) * 100}%`,
+                  background: LANE_INTEL_PALETTE[i % LANE_INTEL_PALETTE.length],
+                }}
+              />
+            ))}
+          </div>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {loadTypes.map((l, i) => (
+              <span
+                key={l.name}
+                className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600"
+              >
+                <span
+                  className="h-2 w-2 rounded-full"
+                  style={{
+                    background:
+                      LANE_INTEL_PALETTE[i % LANE_INTEL_PALETTE.length],
+                  }}
+                />
+                {l.name}
+                <span className="font-mono text-slate-400">{l.bols}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Top origin ports — compact list, only if present. */}
+      {originPorts.length > 0 && (
+        <div className="border-t border-slate-100 pt-2.5">
+          <LaneIntelSectionTitle>
+            <span className="inline-flex items-center gap-1">
+              <Anchor className="h-3 w-3 text-blue-600" /> Top origin ports
+            </span>
+          </LaneIntelSectionTitle>
+          <div className="space-y-0.5">
+            {originPorts.map((p) => (
+              <div key={p.name} className="flex items-center gap-1.5">
+                <span className="h-1 w-1 shrink-0 rounded-full bg-blue-500/70" />
+                <span className="font-body min-w-0 flex-1 truncate text-[10px] text-slate-600">
+                  {p.name}
+                </span>
+                <span className="font-mono shrink-0 text-[10px] font-semibold text-slate-500">
+                  {p.bols}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
  * TradeLanesMapDialog — full-screen expansion of the trade-lanes map.
  *
@@ -4073,6 +4411,7 @@ function ScopedEmptyState({
  */
 function TradeLanesMapDialog({
   pairs,
+  companyId,
   cityRoutesByPair,
   lastActivityByPair,
   initialSelected,
@@ -4092,6 +4431,8 @@ function TradeLanesMapDialog({
   scope,
 }: {
   pairs: any[];
+  /** ImportYeti slug (source_company_key) — drives the lane intelligence RPC. */
+  companyId?: string | null;
   cityRoutesByPair: Map<string, any[]>;
   lastActivityByPair: Map<string, Date>;
   initialSelected: string | null;
@@ -4130,6 +4471,8 @@ function TradeLanesMapDialog({
   const [minShipments, setMinShipments] = useState<number>(0);
   const [strategyFilter, setStrategyFilter] = useState<string>("all");
   const [analysisOpen, setAnalysisOpen] = useState(false);
+  // Left "Filters" glass card (Central Intelligence Hub) collapse state.
+  const [filtersCollapsed, setFiltersCollapsed] = useState(false);
 
   // Escape closes; lock body scroll while open.
   useEffect(() => {
@@ -4352,6 +4695,13 @@ function TradeLanesMapDialog({
     ? { top: 24, right: 380, bottom: 96, left: 40 }
     : { top: 20, right: 20, bottom: 40, left: 20 };
 
+  // Count of non-default filters — shown on the collapsed Filters pill.
+  const activeFilterCount =
+    (originFilter ? 1 : 0) +
+    (modeFilter ? 1 : 0) +
+    (minShipments > 0 ? 1 : 0) +
+    (strategyFilter !== "all" ? 1 : 0);
+
   const chipClass = (active: boolean) =>
     [
       "inline-flex h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 text-[11px] font-semibold transition-colors md:h-7",
@@ -4438,6 +4788,25 @@ function TradeLanesMapDialog({
             View monthly history →
           </button>
         )}
+
+        {/* Central Intelligence Hub — BOL-level detail for this lane.
+            Fetches lit_lane_shipment_intel(company, origin, dest) using the
+            selected pair's raw display country names. Renders nothing when
+            there's no company key / no detail; each inner section is
+            individually data-driven. */}
+        <div className="mt-3 border-t border-slate-100 pt-3">
+          <div className="font-display mb-2 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+            <Sparkles className="h-3 w-3 text-blue-600" />
+            Lane intelligence
+          </div>
+          <div className="max-h-[46vh] overflow-y-auto pr-0.5">
+            <LaneIntelligenceCard
+              companyId={companyId}
+              originCountry={selPair.fromMeta?.countryName}
+              destCountry={selPair.toMeta?.countryName}
+            />
+          </div>
+        </div>
       </div>
     ) : null;
 
@@ -4476,9 +4845,10 @@ function TradeLanesMapDialog({
         </button>
       </div>
 
-      {/* Filter chips — year/month scope + focus toggle (shared with the
-          hero), then origin country, min shipments, mode (when data
-          carries it). Horizontal-scroll row on mobile. */}
+      {/* Top toolbar — year/month scope + focus toggle (shared with the
+          hero), plus Monthly-chart + Ask-Pulse. The origin / min-shipment /
+          mode / executive-view filters now live in the floating "Filters"
+          card pinned to the left of the map (Central Intelligence Hub). */}
       <div className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-slate-100 px-4 py-2">
         {scope && onToggleShowAllLanes && (
           <>
@@ -4500,75 +4870,6 @@ function TradeLanesMapDialog({
             <span className="mx-1 h-4 w-px shrink-0 bg-slate-200" />
           </>
         )}
-        <span className="font-display shrink-0 text-[9.5px] font-bold uppercase tracking-wide text-slate-400">
-          Origin
-        </span>
-        <button
-          type="button"
-          className={chipClass(originFilter === null)}
-          onClick={() => setOriginFilter(null)}
-        >
-          All
-        </button>
-        {originChips.map((o) => (
-          <button
-            key={o.key}
-            type="button"
-            className={chipClass(originFilter === o.key)}
-            onClick={() =>
-              setOriginFilter((prev) => (prev === o.key ? null : o.key))
-            }
-          >
-            <LitFlag code={o.code} size={12} label={o.name} />
-            {o.name}
-          </button>
-        ))}
-        <span className="mx-1 h-4 w-px shrink-0 bg-slate-200" />
-        <span className="font-display shrink-0 text-[9.5px] font-bold uppercase tracking-wide text-slate-400">
-          Min shipments
-        </span>
-        {[0, 5, 25, 100].map((n) => (
-          <button
-            key={n}
-            type="button"
-            className={chipClass(minShipments === n)}
-            onClick={() => setMinShipments(n)}
-          >
-            {n === 0 ? "All" : `${n}+`}
-          </button>
-        ))}
-        {modeChips.length > 0 && (
-          <>
-            <span className="mx-1 h-4 w-px shrink-0 bg-slate-200" />
-            <span className="font-display shrink-0 text-[9.5px] font-bold uppercase tracking-wide text-slate-400">
-              Mode
-            </span>
-            <button
-              type="button"
-              className={chipClass(modeFilter === null)}
-              onClick={() => setModeFilter(null)}
-            >
-              All
-            </button>
-            {modeChips.map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                className={chipClass(modeFilter === mode)}
-                onClick={() =>
-                  setModeFilter((prev) => (prev === mode ? null : mode))
-                }
-              >
-                {mode}
-              </button>
-            ))}
-          </>
-        )}
-        <span className="mx-1 h-4 w-px shrink-0 bg-slate-200" />
-        <span className="font-display shrink-0 text-[9.5px] font-bold uppercase tracking-wide text-slate-400">Executive view</span>
-        {[["all","All"],["priority","Priority lanes"],["growth","Growth"],["seasonal","Seasonality"],["recent","Recent activity"],["whitespace","Whitespace"]].map(([id,label]) => (
-          <button key={id} type="button" className={chipClass(strategyFilter === id)} onClick={() => setStrategyFilter(id)}>{label} ({strategyCounts.get(id) || 0})</button>
-        ))}
         <button type="button" className={chipClass(analysisOpen)} onClick={() => setAnalysisOpen((v) => !v)}><LineChartIcon className="h-3 w-3" />Monthly chart</button>
         <button type="button" className={chipClass(false)} onClick={() => window.dispatchEvent(new CustomEvent("lit:pulse-coach-open", { detail: { surface: "company-map", lane: selPair?.pairKey || null } }))}><Sparkles className="h-3 w-3" />Ask Pulse</button>
       </div>
@@ -4599,6 +4900,157 @@ function TradeLanesMapDialog({
             unselectedStyle={showAllLanes ? "fade" : "ghost"}
             flow
           />
+
+          {/* Floating "Filters" card — pinned to the LEFT edge of the map.
+              Collapses to a compact pill (with active-filter count) via the
+              header chevron. Holds origin country, min shipments, transport
+              mode (when data carries it), and the executive-view strategy
+              chips — all state preserved, controls merely relocated. */}
+          <div
+            className={[
+              "absolute left-4 top-4 z-[700] w-[248px] max-w-[calc(100%-2rem)] overflow-hidden",
+              GLASS_PANEL,
+            ].join(" ")}
+          >
+            <button
+              type="button"
+              onClick={() => setFiltersCollapsed((v) => !v)}
+              aria-expanded={!filtersCollapsed}
+              aria-label={filtersCollapsed ? "Expand filters" : "Collapse filters"}
+              className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left hover:bg-slate-50/60"
+            >
+              <span className="font-display flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                <SlidersHorizontal className="h-3.5 w-3.5 text-blue-600" />
+                Filters
+                {activeFilterCount > 0 && (
+                  <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-600 px-1 font-mono text-[9px] font-bold text-white">
+                    {activeFilterCount}
+                  </span>
+                )}
+              </span>
+              <ChevronDown
+                className={[
+                  "h-4 w-4 shrink-0 text-slate-400 transition-transform",
+                  filtersCollapsed ? "-rotate-90" : "",
+                ].join(" ")}
+                aria-hidden
+              />
+            </button>
+
+            {!filtersCollapsed && (
+              <div className="max-h-[calc(100vh-9rem)] space-y-2.5 overflow-y-auto border-t border-slate-100 px-3 py-2.5">
+                {/* Origin country */}
+                <div>
+                  <div className="font-display mb-1 text-[9.5px] font-bold uppercase tracking-wide text-slate-400">
+                    Origin
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      className={chipClass(originFilter === null)}
+                      onClick={() => setOriginFilter(null)}
+                    >
+                      All
+                    </button>
+                    {originChips.map((o) => (
+                      <button
+                        key={o.key}
+                        type="button"
+                        className={chipClass(originFilter === o.key)}
+                        onClick={() =>
+                          setOriginFilter((prev) =>
+                            prev === o.key ? null : o.key,
+                          )
+                        }
+                      >
+                        <LitFlag code={o.code} size={12} label={o.name} />
+                        {o.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Min shipments */}
+                <div>
+                  <div className="font-display mb-1 text-[9.5px] font-bold uppercase tracking-wide text-slate-400">
+                    Min shipments
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[0, 5, 25, 100].map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        className={chipClass(minShipments === n)}
+                        onClick={() => setMinShipments(n)}
+                      >
+                        {n === 0 ? "All" : `${n}+`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Transport mode — only when lane data carries it */}
+                {modeChips.length > 0 && (
+                  <div>
+                    <div className="font-display mb-1 text-[9.5px] font-bold uppercase tracking-wide text-slate-400">
+                      Mode
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      <button
+                        type="button"
+                        className={chipClass(modeFilter === null)}
+                        onClick={() => setModeFilter(null)}
+                      >
+                        All
+                      </button>
+                      {modeChips.map((mode) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          className={chipClass(modeFilter === mode)}
+                          onClick={() =>
+                            setModeFilter((prev) =>
+                              prev === mode ? null : mode,
+                            )
+                          }
+                        >
+                          {mode}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Executive view — strategy chips with match counts */}
+                <div>
+                  <div className="font-display mb-1 text-[9.5px] font-bold uppercase tracking-wide text-slate-400">
+                    Executive view
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(
+                      [
+                        ["all", "All"],
+                        ["priority", "Priority lanes"],
+                        ["growth", "Growth"],
+                        ["seasonal", "Seasonality"],
+                        ["recent", "Recent activity"],
+                        ["whitespace", "Whitespace"],
+                      ] as [string, string][]
+                    ).map(([id, label]) => (
+                      <button
+                        key={id}
+                        type="button"
+                        className={chipClass(strategyFilter === id)}
+                        onClick={() => setStrategyFilter(id)}
+                      >
+                        {label} ({strategyCounts.get(id) || 0})
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Desktop: floating lane cards, right side. */}
           <div
