@@ -64,6 +64,11 @@ import {
   useCompanyLaneMonths,
   type CompanyLaneMonthRow,
 } from "@/api/laneHistory";
+import {
+  makePlaceKey,
+  usePlaceCentroids,
+  type PlaceCentroid,
+} from "@/api/geoCentroids";
 import { useLaneShipmentIntel } from "@/api/laneIntel";
 import LaneIntelligenceCard from "@/components/maps/LaneIntelligenceCard";
 import {
@@ -2374,6 +2379,167 @@ function cleanRollupCity(raw: string | null | undefined, meta: any): string | nu
   return s;
 }
 
+/* ── City-precision endpoint keys (2026-08 map accuracy fix) ──────────
+ * The map used to plot every lane endpoint at the COUNTRY centroid from
+ * COUNTRY_COORDS (resolveEndpoint), so a "→ Atlanta, GA" lane landed
+ * near the geographic center of the US while its detail card said
+ * Atlanta. lit_geo_place_centroids stores exact city/region centroids
+ * keyed by:
+ *   origins:  `lower(city)|lower(country)`     e.g. "hangzhou shi|china"
+ *   US dests: `lower(city)|lower(state_code)`  e.g. "atlanta|ga"
+ * The helpers below derive those keys from each pair's TOP city route
+ * (routes arrive sorted by shipments desc). Verified against
+ * lit_unified_shipments / lit_company_lane_months (2026-08-19):
+ * origin_country is the full name ("China", "South Korea",
+ * "United Kingdom"), origin_city is the raw city ("Qingdao Shi",
+ * "Tai'an"), dest_city/dest_state are "Atlanta" / "GA". Missing keys
+ * fall back to the country centroid — never a wrong-city dot.
+ */
+
+/**
+ * Lower-cased country-name candidates for one resolved endpoint, ordered
+ * most-likely-to-match first. Rollup-built pairs carry the raw DB
+ * country string as `label` (exactly what the seed table keys on);
+ * countryName / canonicalKey cover snapshot-built pairs and the short
+ * canonical forms ("usa", "uae") whose display names differ from the
+ * full names the shipment feed stores.
+ */
+function endpointCountryForms(meta: any): string[] {
+  const out = new Set<string>();
+  const label = String(meta?.label || "").trim().toLowerCase();
+  if (label && !label.includes(",") && !/→|->/.test(label)) out.add(label);
+  const name = String(meta?.countryName || "").trim().toLowerCase();
+  if (name) out.add(name);
+  const key = String(meta?.canonicalKey || "").trim().toLowerCase();
+  if (key) out.add(key);
+  if (key === "usa") out.add("united states of america");
+  if (key === "uae") out.add("united arab emirates");
+  return [...out];
+}
+
+/**
+ * Origin CITY of a per-pair city route. Rollup/sample routes carry the
+ * bare city in `rawFrom`; snapshot canonical routes embed it in
+ * `fromMeta.label` ("Tangshan, CN" / "Tangshan, China"). Null when the
+ * route has no usable origin city (country-only rows).
+ */
+function routeOriginCity(route: any): string | null {
+  const raw = String(route?.rawFrom || "").trim();
+  if (raw) return raw.split(",")[0].trim() || null;
+  const meta = route?.fromMeta;
+  const label = String(meta?.label || "").trim();
+  if (!label.includes(",")) return null;
+  const first = label.split(",")[0].trim();
+  if (!first) return null;
+  const lc = first.toLowerCase();
+  if (lc === String(meta?.countryName || "").toLowerCase()) return null;
+  if (lc === String(meta?.countryCode || "").toLowerCase()) return null;
+  return first;
+}
+
+/**
+ * Destination CITY + US state code of a per-pair city route. Rollup
+ * routes store `rawTo` as "City, ST" (dest_state appended in
+ * buildPairsFromRollup); snapshot labels ("Atlanta, US",
+ * "Atlanta, United States of America") carry no state → state=null.
+ * A trailing "US"/country token is never treated as a state.
+ */
+function routeDestCityState(
+  route: any,
+): { city: string; state: string | null } | null {
+  const meta = route?.toMeta;
+  const raw = String(route?.rawTo || meta?.label || "").trim();
+  if (!raw) return null;
+  const parts = raw.split(",").map((s: string) => s.trim()).filter(Boolean);
+  const city = parts[0] || "";
+  if (!city) return null;
+  const lcCity = city.toLowerCase();
+  if (
+    lcCity === String(meta?.countryName || "").toLowerCase() ||
+    lcCity === "united states" ||
+    lcCity === "united states of america" ||
+    lcCity === "usa"
+  ) {
+    return null;
+  }
+  let state: string | null = null;
+  const tail = parts.length > 1 ? parts[parts.length - 1] : "";
+  if (/^[A-Za-z]{2}$/.test(tail) && tail.toUpperCase() !== "US") {
+    state = tail.toLowerCase();
+  }
+  return { city, state };
+}
+
+type PairEndpointKeys = { fromKeys: string[]; toKeys: string[] };
+
+/**
+ * For each country pair, the candidate place_keys of its TOP city route
+ * (highest shipment count — cityRoutes arrive sorted desc). Each side
+ * resolves independently: the origin uses the first route with a usable
+ * origin city, the destination the first route with a usable dest city
+ * (US dests additionally require a state code — a bare "Atlanta" could
+ * be one of several states, and a wrong-city dot is worse than the
+ * country-centroid fallback). Several country-name forms are emitted
+ * per side; the first fetched hit wins.
+ */
+function buildPairEndpointKeys(
+  pairs: any[],
+  cityRoutesByPair: Map<string, any[]>,
+): Map<string, PairEndpointKeys> {
+  const out = new Map<string, PairEndpointKeys>();
+  for (const p of pairs || []) {
+    const routes = cityRoutesByPair.get(p?.pairKey) || [];
+    if (routes.length === 0) continue;
+    const fromKeys: string[] = [];
+    const toKeys: string[] = [];
+    for (const r of routes) {
+      const city = routeOriginCity(r);
+      if (!city) continue;
+      for (const c of endpointCountryForms(p.fromMeta)) {
+        const k = makePlaceKey(city, c);
+        if (k) fromKeys.push(k);
+      }
+      break;
+    }
+    const destIsUs =
+      String(p?.toMeta?.countryCode || "").toUpperCase() === "US";
+    for (const r of routes) {
+      const d = routeDestCityState(r);
+      if (!d) continue;
+      if (destIsUs) {
+        // Keep scanning for a state-carrying route (snapshot labels have
+        // none; rollup routes always do when a real dest city exists).
+        if (!d.state) continue;
+        const k = makePlaceKey(d.city, d.state);
+        if (k) toKeys.push(k);
+        break;
+      }
+      for (const c of endpointCountryForms(p.toMeta)) {
+        const k = makePlaceKey(d.city, c);
+        if (k) toKeys.push(k);
+      }
+      break;
+    }
+    if (fromKeys.length || toKeys.length) {
+      out.set(p.pairKey, { fromKeys, toKeys });
+    }
+  }
+  return out;
+}
+
+/** First fetched centroid among ordered candidate keys, else null. */
+function firstCentroidHit(
+  keys: string[],
+  centroids: Map<string, PlaceCentroid> | undefined,
+): PlaceCentroid | null {
+  if (!centroids || centroids.size === 0) return null;
+  for (const k of keys) {
+    const hit = centroids.get(k);
+    if (hit) return hit;
+  }
+  return null;
+}
+
 type ScopedLaneData = {
   /** Country-pair lanes shaped like canonicalizeLanes() output. */
   pairs: any[];
@@ -3308,8 +3474,87 @@ function TopLanesCard({
     () => reconcilePairsToTotal(rawViewPairs, scopeTotal),
     [rawViewPairs, scopeTotal],
   );
-  /** Pairs the hero + dialog actually render: reconciled to the real total. */
-  const viewPairs = reconciledPairs;
+
+  // City routes per pair — the granular rows whose resolved endpoints
+  // collapse into this country pair. Rendered in the expand-in-place
+  // drawer under a lane-card row AND (2026-08 accuracy fix) the source
+  // of each pair's exact endpoint coordinates on the map.
+  const cityRoutesByPair = useMemo(() => {
+    const m = new Map<string, any[]>();
+    for (const l of canonicalLanes) {
+      const fk = l?.fromMeta?.canonicalKey;
+      const tk = l?.toMeta?.canonicalKey;
+      if (!fk || !tk) continue;
+      const key = `${fk}::${tk}`;
+      const arr = m.get(key) || [];
+      arr.push(l);
+      m.set(key, arr);
+    }
+    for (const arr of m.values()) {
+      arr.sort(
+        (a: any, b: any) =>
+          (Number(b?.shipments) || 0) - (Number(a?.shipments) || 0),
+      );
+    }
+    return m;
+  }, [canonicalLanes]);
+
+  // Scoped views override the snapshot-derived route map while filtering.
+  // When the scoped sample was empty and we modeled lanes off the all-time
+  // split, keep the all-time city-route map so the expand drawer still has
+  // route detail (the reconciled pairs share the same pairKeys).
+  const cityRoutesEffective =
+    scoped && !usedAllTimeSplit ? scoped.cityRoutesByPair : cityRoutesByPair;
+
+  // ── City-precision endpoint override (2026-08 map accuracy fix) ──────
+  // Country-pair endpoints resolve to COUNTRY centroids (resolveEndpoint →
+  // COUNTRY_COORDS), which drew every "→ Atlanta, GA" lane into mid-US and
+  // every China origin onto one dot in central China. Look up each pair's
+  // TOP city route in lit_geo_place_centroids and, when a city/region-
+  // precision centroid exists, override that endpoint's coords. Missing
+  // keys (table still seeding, unknown city, failed geocode) keep today's
+  // country-centroid behavior; labels/tooltips are untouched.
+  const pairEndpointKeys = useMemo(
+    () => buildPairEndpointKeys(reconciledPairs, cityRoutesEffective),
+    [reconciledPairs, cityRoutesEffective],
+  );
+  const allPlaceKeys = useMemo(() => {
+    const keys: string[] = [];
+    for (const k of pairEndpointKeys.values()) {
+      keys.push(...k.fromKeys, ...k.toKeys);
+    }
+    return keys;
+  }, [pairEndpointKeys]);
+  const { data: placeCentroids } = usePlaceCentroids(allPlaceKeys);
+  /** Pairs the hero + dialog actually render: reconciled to the real total,
+   *  endpoint coords upgraded to the top city route's centroid when known. */
+  const viewPairs = useMemo(() => {
+    if (!placeCentroids || placeCentroids.size === 0) return reconciledPairs;
+    return reconciledPairs.map((p: any) => {
+      const keys = pairEndpointKeys.get(p?.pairKey);
+      if (!keys) return p;
+      const fromHit = firstCentroidHit(keys.fromKeys, placeCentroids);
+      const toHit = firstCentroidHit(keys.toKeys, placeCentroids);
+      if (!fromHit && !toHit) return p;
+      return {
+        ...p,
+        // GlobeLane coord order is [lng, lat] (LaneMap's laneArcPoints takes
+        // [lon, lat]) — the centroid table stores lat/lng, so flip here.
+        fromMeta: fromHit
+          ? {
+              ...p.fromMeta,
+              coords: [fromHit.lng, fromHit.lat] as [number, number],
+            }
+          : p.fromMeta,
+        toMeta: toHit
+          ? {
+              ...p.toMeta,
+              coords: [toHit.lng, toHit.lat] as [number, number],
+            }
+          : p.toMeta,
+      };
+    });
+  }, [reconciledPairs, pairEndpointKeys, placeCentroids]);
 
   // ── Year-over-year toggle (CEO new, 2026-08-14) ──────────────────────
   const [yoyMode, setYoyMode] = useState(false);
@@ -3427,29 +3672,6 @@ function TopLanesCard({
     [rankedPairs],
   );
 
-  // City routes per pair — the granular rows whose resolved endpoints
-  // collapse into this country pair. Rendered in the expand-in-place
-  // drawer under a lane-card row.
-  const cityRoutesByPair = useMemo(() => {
-    const m = new Map<string, any[]>();
-    for (const l of canonicalLanes) {
-      const fk = l?.fromMeta?.canonicalKey;
-      const tk = l?.toMeta?.canonicalKey;
-      if (!fk || !tk) continue;
-      const key = `${fk}::${tk}`;
-      const arr = m.get(key) || [];
-      arr.push(l);
-      m.set(key, arr);
-    }
-    for (const arr of m.values()) {
-      arr.sort(
-        (a: any, b: any) =>
-          (Number(b?.shipments) || 0) - (Number(a?.shipments) || 0),
-      );
-    }
-    return m;
-  }, [canonicalLanes]);
-
   // Granular routes that resolved to no pair (unresolvable endpoint) —
   // surfaced as one muted, non-selectable remainder row so counts stay
   // honest against the "N routes" the snapshot reports.
@@ -3484,12 +3706,10 @@ function TopLanesCard({
     return m;
   }, [rankedPairs, recentBols]);
 
-  // Scoped views override the snapshot-derived maps while filtering. When the
-  // scoped sample was empty and we modeled lanes off the all-time split, keep
-  // the all-time city-route / last-activity maps so the expand drawer still
-  // has route detail (the reconciled pairs share the same pairKeys).
-  const cityRoutesEffective =
-    scoped && !usedAllTimeSplit ? scoped.cityRoutesByPair : cityRoutesByPair;
+  // Scoped views override the snapshot-derived last-activity map while
+  // filtering (cityRoutesEffective is derived earlier, above the centroid
+  // override, since map endpoint keys depend on it). Same all-time-split
+  // caveat: the reconciled pairs share the same pairKeys.
   const lastActivityEffective =
     scoped && !usedAllTimeSplit ? scoped.lastActivityByPair : lastActivityByPair;
 
