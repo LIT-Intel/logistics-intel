@@ -4,6 +4,89 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ────────────────────────────────────────────────────────────────────────
+ * shadcn/ui design-system tokens.
+ * tailwind.config.js maps color utilities via `hsl(var(--token))`, so every
+ * color variable below MUST be an HSL triple WITHOUT the hsl() wrapper
+ * (e.g. `221 83% 53%`). `--radius` is consumed directly as `var(--radius)`
+ * so it carries its unit. Values derived from the canonical Lead-CRM palette
+ * (frontend/src/pages/leadcrm/leadCrmFormat.ts); brand accent = #2563EB.
+ * ──────────────────────────────────────────────────────────────────────── */
+:root {
+  --background: 210 40% 98%;            /* #F8FAFC */
+  --foreground: 222 47% 11%;           /* #0F172A */
+  --card: 0 0% 100%;                   /* #FFFFFF */
+  --card-foreground: 222 47% 11%;      /* #0F172A */
+  --popover: 0 0% 100%;                /* #FFFFFF */
+  --popover-foreground: 222 47% 11%;   /* #0F172A */
+  --primary: 221 83% 53%;              /* #2563EB brand accent */
+  --primary-foreground: 0 0% 100%;     /* #FFFFFF */
+  --secondary: 210 40% 96%;            /* #F1F5F9 */
+  --secondary-foreground: 222 47% 11%; /* #0F172A */
+  --muted: 210 40% 96%;                /* #F1F5F9 */
+  --muted-foreground: 215 16% 47%;     /* #64748B */
+  --accent: 210 40% 96%;               /* #F1F5F9 */
+  --accent-foreground: 222 47% 11%;    /* #0F172A */
+  --destructive: 0 72% 51%;            /* #DC2626 */
+  --destructive-foreground: 0 0% 100%; /* #FFFFFF */
+  --border: 220 13% 91%;               /* #E5E7EB */
+  --input: 220 13% 91%;                /* #E5E7EB */
+  --ring: 221 83% 53%;                 /* #2563EB (= primary) */
+  --radius: 0.5rem;
+
+  --chart-1: 217 91% 60%;              /* blue #2563EB */
+  --chart-2: 199 89% 48%;              /* sky #0EA5E9 */
+  --chart-3: 258 90% 66%;             /* violet #8B5CF6 */
+  --chart-4: 160 84% 39%;             /* emerald #10B981 */
+  --chart-5: 25 95% 53%;              /* amber-orange #F97316 */
+
+  --sidebar-background: 222 47% 11%;         /* #0F172A */
+  --sidebar-foreground: 214 32% 91%;         /* #E2E8F0 */
+  --sidebar-primary: 221 83% 53%;            /* #2563EB */
+  --sidebar-primary-foreground: 0 0% 100%;   /* #FFFFFF */
+  --sidebar-accent: 217 33% 24%;             /* slate hover */
+  --sidebar-accent-foreground: 0 0% 100%;    /* #FFFFFF */
+  --sidebar-border: 217 33% 20%;             /* slate divider */
+  --sidebar-ring: 221 83% 53%;               /* #2563EB */
+}
+
+.dark {
+  --background: 220 49% 8%;            /* #0B1220 */
+  --foreground: 216 63% 94%;           /* #E5EDF9 */
+  --card: 222 47% 11%;                 /* #0F172A */
+  --card-foreground: 216 63% 94%;      /* #E5EDF9 */
+  --popover: 222 47% 11%;              /* #0F172A */
+  --popover-foreground: 216 63% 94%;   /* #E5EDF9 */
+  --primary: 217 91% 60%;              /* #3B82F6 brand on dark */
+  --primary-foreground: 0 0% 100%;     /* #FFFFFF */
+  --secondary: 219 42% 18%;            /* #1A2740 */
+  --secondary-foreground: 216 63% 94%; /* #E5EDF9 */
+  --muted: 219 42% 18%;                /* #1A2740 */
+  --muted-foreground: 215 20% 65%;     /* #94A3B8 */
+  --accent: 219 42% 18%;               /* #1A2740 */
+  --accent-foreground: 216 63% 94%;    /* #E5EDF9 */
+  --destructive: 0 91% 71%;            /* #F87171 */
+  --destructive-foreground: 0 0% 100%; /* #FFFFFF */
+  --border: 221 39% 19%;               /* #1E2A44 */
+  --input: 221 39% 19%;                /* #1E2A44 */
+  --ring: 217 91% 60%;                 /* brand (= primary) */
+
+  --chart-1: 217 91% 60%;
+  --chart-2: 199 89% 48%;
+  --chart-3: 258 90% 66%;
+  --chart-4: 160 84% 39%;
+  --chart-5: 25 95% 53%;
+
+  --sidebar-background: 222 47% 6%;          /* #080E1A */
+  --sidebar-foreground: 214 32% 91%;         /* #E2E8F0 */
+  --sidebar-primary: 217 91% 60%;            /* #3B82F6 */
+  --sidebar-primary-foreground: 0 0% 100%;   /* #FFFFFF */
+  --sidebar-accent: 217 33% 17%;             /* slate hover */
+  --sidebar-accent-foreground: 0 0% 100%;    /* #FFFFFF */
+  --sidebar-border: 217 33% 14%;             /* slate divider */
+  --sidebar-ring: 217 91% 60%;               /* brand */
+}
+
 /* Existing base styles */
 @layer base {
   * {
@@ -40,7 +123,7 @@
   --lit-dashboard-text: #344054;
   --lit-dashboard-muted: #667085;
 
-  --lit-dashboard-brand: #465fff;
+  --lit-dashboard-brand: #2563EB;
   --lit-dashboard-brand-hover: #3641f5;
   --lit-dashboard-brand-soft: #ecf3ff;
 
