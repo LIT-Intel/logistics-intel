@@ -3,14 +3,20 @@
 // POST { company_id, force? } (user JWT required):
 //   1. Rate limit: one refresh per company per 7 days. A fresh cached row is
 //      returned with cached=true; force=true bypasses the cache but ONLY for
-//      platform admins (this fn spends Anthropic web-search credits per call).
+//      platform admins (this fn spends paid web-search credits per call —
+//      Anthropic bills per 1k searches; OpenAI bills per web_search tool call).
 //   2. Loads BOL context (display name, top delivery cities, top commodities)
 //      from lit_unified_shipments / lit_companies.
-//   3. Calls Claude (claude-sonnet-4-6) WITH the web_search server tool to
-//      research: company type, published warehouse/DC network (corroborating
-//      the BOL-observed facilities), PUBLISHED client/distributor/retail
-//      relationships (source URL + quote required — never invented), and an
-//      outbound-FTL likelihood 0-100 with rationale.
+//   3. Calls an LLM WITH a server-side web-search tool to research: company
+//      type, published warehouse/DC network (corroborating the BOL-observed
+//      facilities), PUBLISHED client/distributor/retail relationships (source
+//      URL + quote required — never invented), and an outbound-FTL likelihood
+//      0-100 with rationale. DUAL-VENDOR: the key is resolved from
+//      OPENAI_API_KEY first, then ANTHROPIC_API_KEY, and the vendor is
+//      auto-detected from the key prefix — 'sk-ant-…' → Anthropic Messages
+//      API (claude-sonnet-4-6 + web_search server tool, pause_turn loop);
+//      anything else (e.g. 'sk-proj-…') → OpenAI Responses API (gpt-4o +
+//      web_search_preview, single call).
 //   4. Upserts lit_company_relationship_intel (service role) and returns it.
 //
 // verify_jwt=true (default — do NOT add to .verify-jwt-manifest no_verify_jwt).
@@ -19,7 +25,9 @@ import { handlePreflight, isUserAdmin, json, requireUser } from "../_shared/auth
 import { createLogger, requestId } from "../_shared/logger.ts";
 
 const ANTHROPIC_MODEL = "claude-sonnet-4-6";
+const OPENAI_MODEL = "gpt-4o";
 const MAX_TOKENS = 8192;
+const OPENAI_MAX_OUTPUT_TOKENS = 4096;
 const WEB_SEARCH_MAX_USES = 8;
 const REFRESH_WINDOW_MS = 7 * 24 * 60 * 60 * 1000; // one refresh per company per 7 days
 const MAX_CONTINUATIONS = 4; // pause_turn guard for the server-side search loop
@@ -93,7 +101,7 @@ function topCounted(values: (string | null | undefined)[], limit: number): strin
   return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, limit).map(([v]) => v);
 }
 
-/** Extract the final JSON object from Claude's answer (tolerates fences/prose). */
+/** Extract the final JSON object from the model's answer (tolerates fences/prose). */
 function extractJson(text: string): Record<string, unknown> {
   const cleaned = text.trim()
     .replace(/^```(?:json)?\s*/i, "")
@@ -185,7 +193,9 @@ After researching, respond with STRICT JSON only — no prose before or after, n
   "outbound_ftl_likelihood": 0-100,
   "outbound_ftl_rationale": "...",
   "sources": [{"url": "https://...", "title": "..."}]
-}`;
+}
+
+Output ONLY the JSON object — no markdown fences, no prose before or after.`;
 
 Deno.serve(async (req) => {
   const log = createLogger("company-relationship-intel", { request_id: requestId() });
@@ -234,13 +244,18 @@ Deno.serve(async (req) => {
     }
 
     // Auto-repair the common paste mistakes (stray whitespace/newlines,
-    // wrapping quotes) — a raw pasted value like "sk-ant-..." (with quotes)
+    // wrapping quotes) — a raw pasted value like "sk-proj-..." (with quotes)
     // reads as a syntactically-sent-but-invalid key and 401s.
-    const anthropicKey = (Deno.env.get("ANTHROPIC_API_KEY") ?? "")
-      .trim()
-      .replace(/^["']+|["']+$/g, "")
-      .trim();
-    if (!anthropicKey) return json({ ok: false, code: "NOT_CONFIGURED", error: "ANTHROPIC_API_KEY not configured" }, 500);
+    const sanitizeKey = (raw: string | undefined | null) =>
+      String(raw ?? "").trim().replace(/^["']+|["']+$/g, "").trim();
+    // Key resolution: OPENAI_API_KEY first, then ANTHROPIC_API_KEY (which may
+    // currently hold an OpenAI sk-proj key). Vendor is auto-detected from the
+    // key's prefix, so either vendor's key works in either secret slot.
+    const apiKey = sanitizeKey(Deno.env.get("OPENAI_API_KEY")) ||
+      sanitizeKey(Deno.env.get("ANTHROPIC_API_KEY"));
+    if (!apiKey) return json({ ok: false, code: "NOT_CONFIGURED", error: "OPENAI_API_KEY / ANTHROPIC_API_KEY not configured" }, 500);
+    // 'sk-ant-…' → Anthropic Messages API; anything else → OpenAI Responses API.
+    const useAnthropic = apiKey.startsWith("sk-ant-");
 
     // Safe fingerprint of the key AS THE FUNCTION SEES IT — never the key
     // itself. Appended to error_detail on auth failures so we can tell a
@@ -248,9 +263,98 @@ Deno.serve(async (req) => {
     // is itself bad) from a propagation problem (sha differs => the function
     // is still running with an older env).
     const keyFingerprint = async (): Promise<string> => {
-      const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(anthropicKey));
+      const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(apiKey));
       const hex = Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
-      return `len=${anthropicKey.length}, starts='${anthropicKey.slice(0, 7)}', ends='${anthropicKey.slice(-4)}', sha256=${hex.slice(0, 16)}…`;
+      return `len=${apiKey.length}, starts='${apiKey.slice(0, 7)}', ends='${apiKey.slice(-4)}', sha256=${hex.slice(0, 16)}…`;
+    };
+
+    // ── Vendor call paths. Each returns the model's answer text block(s) (or
+    // an error string); the parse → sanitize → upsert pipeline below is shared.
+    type ModelResult =
+      | { ok: true; texts: string[]; usage: Record<string, unknown> }
+      | { ok: false; error: string };
+
+    // Anthropic Messages API + web_search server tool (pause_turn loop).
+    const callAnthropic = async (userPrompt: string): Promise<ModelResult> => {
+      const messages: Array<{ role: string; content: unknown }> = [{ role: "user", content: userPrompt }];
+      let aData: Record<string, unknown> | null = null;
+      for (let attempt = 0; attempt <= MAX_CONTINUATIONS; attempt++) {
+        const aRes = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: ANTHROPIC_MODEL,
+            max_tokens: MAX_TOKENS,
+            system: SYSTEM_PROMPT,
+            tools: [{ type: "web_search_20250305", name: "web_search", max_uses: WEB_SEARCH_MAX_USES }],
+            messages,
+          }),
+        });
+        if (!aRes.ok) {
+          const t = await aRes.text();
+          const fp = aRes.status === 401 || aRes.status === 403 ? ` [key seen by fn: ${await keyFingerprint()}]` : "";
+          return { ok: false, error: `Anthropic API HTTP ${aRes.status}: ${t.slice(0, 300)}${fp}` };
+        }
+        aData = await aRes.json();
+        if (aData?.stop_reason !== "pause_turn") break;
+        // Server-side search loop paused — resume by echoing the assistant turn.
+        messages.push({ role: "assistant", content: aData.content });
+      }
+      const content = Array.isArray(aData?.content) ? (aData!.content as Array<Record<string, unknown>>) : [];
+      const texts = content.filter((b) => b?.type === "text").map((b) => String(b.text ?? ""));
+      if (texts.length === 0) {
+        return { ok: false, error: `Model returned no text (stop_reason: ${aData?.stop_reason ?? "unknown"})` };
+      }
+      return { ok: true, texts, usage: (aData?.usage ?? {}) as Record<string, unknown> };
+    };
+
+    // OpenAI Responses API + web_search_preview server tool (single call —
+    // OpenAI runs the search loop server-side, no continuation needed).
+    const callOpenAI = async (userPrompt: string): Promise<ModelResult> => {
+      const oRes = await fetch("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: OPENAI_MODEL,
+          tools: [{ type: "web_search_preview" }],
+          max_output_tokens: OPENAI_MAX_OUTPUT_TOKENS,
+          instructions: SYSTEM_PROMPT,
+          input: userPrompt,
+        }),
+      });
+      if (!oRes.ok) {
+        const t = await oRes.text();
+        const fp = oRes.status === 401 || oRes.status === 403 ? ` [key seen by fn: ${await keyFingerprint()}]` : "";
+        return { ok: false, error: `OpenAI API HTTP ${oRes.status}: ${t.slice(0, 300)}${fp}` };
+      }
+      const oData = (await oRes.json()) as Record<string, unknown>;
+      // Final text lives in output[] items of type "message" → content[] of
+      // type "output_text" → .text (plus a convenience output_text field on
+      // some responses). On status 'incomplete' we still try any text found.
+      const texts: string[] = [];
+      const output = Array.isArray(oData.output) ? (oData.output as Array<Record<string, unknown>>) : [];
+      for (const item of output) {
+        if (item?.type !== "message") continue;
+        const parts = Array.isArray(item.content) ? (item.content as Array<Record<string, unknown>>) : [];
+        for (const part of parts) {
+          if (part?.type === "output_text" && String(part.text ?? "").trim()) texts.push(String(part.text));
+        }
+      }
+      if (texts.length === 0 && String(oData.output_text ?? "").trim()) texts.push(String(oData.output_text));
+      if (texts.length === 0) {
+        const reason = oData.status === "incomplete"
+          ? `incomplete: ${String((oData.incomplete_details as Record<string, unknown> | null | undefined)?.reason ?? "unknown")}`
+          : `status: ${oData.status ?? "unknown"}`;
+        return { ok: false, error: `Model returned no text (${reason})` };
+      }
+      return { ok: true, texts, usage: (oData.usage ?? {}) as Record<string, unknown> };
     };
 
     // ── Start-and-poll: the research takes 30-90s (up to 8 web searches),
@@ -315,45 +419,22 @@ BOL-observed US delivery locations (most frequent first): ${topCities.length ? t
 Top imported commodities (from BOL descriptions): ${topCommodities.length ? topCommodities.join("; ") : "unknown"}
 Top HS chapters/headings: ${topHs.length ? topHs.join(", ") : "unknown"}`;
 
-      log.info("research_started", { company_id: companyId, user_id: auth.user.id, bol_rows: rows.length });
+      const modelUsed = useAnthropic ? ANTHROPIC_MODEL : OPENAI_MODEL;
+      log.info("research_started", {
+        company_id: companyId,
+        user_id: auth.user.id,
+        bol_rows: rows.length,
+        vendor: useAnthropic ? "anthropic" : "openai",
+        model: modelUsed,
+      });
 
-      // ── Claude + web search (server tool). Loop on pause_turn. ──────────
-      const messages: Array<{ role: string; content: unknown }> = [{ role: "user", content: userPrompt }];
-      let aData: Record<string, unknown> | null = null;
-      for (let attempt = 0; attempt <= MAX_CONTINUATIONS; attempt++) {
-        const aRes = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": anthropicKey,
-            "anthropic-version": "2023-06-01",
-          },
-          body: JSON.stringify({
-            model: ANTHROPIC_MODEL,
-            max_tokens: MAX_TOKENS,
-            system: SYSTEM_PROMPT,
-            tools: [{ type: "web_search_20250305", name: "web_search", max_uses: WEB_SEARCH_MAX_USES }],
-            messages,
-          }),
-        });
-        if (!aRes.ok) {
-          const t = await aRes.text();
-          const fp = aRes.status === 401 || aRes.status === 403 ? ` [key seen by fn: ${await keyFingerprint()}]` : "";
-          await failRun(`Anthropic API HTTP ${aRes.status}: ${t.slice(0, 300)}${fp}`);
-          return;
-        }
-        aData = await aRes.json();
-        if (aData?.stop_reason !== "pause_turn") break;
-        // Server-side search loop paused — resume by echoing the assistant turn.
-        messages.push({ role: "assistant", content: aData.content });
-      }
-
-      const content = Array.isArray(aData?.content) ? (aData!.content as Array<Record<string, unknown>>) : [];
-      const textBlocks = content.filter((b) => b?.type === "text").map((b) => String(b.text ?? ""));
-      if (textBlocks.length === 0) {
-        await failRun(`Model returned no text (stop_reason: ${aData?.stop_reason ?? "unknown"})`);
+      // ── Vendor dispatch (auto-detected from key prefix) ──────────────────
+      const result = useAnthropic ? await callAnthropic(userPrompt) : await callOpenAI(userPrompt);
+      if (!result.ok) {
+        await failRun(result.error);
         return;
       }
+      const textBlocks = result.texts;
 
       let parsed: Record<string, unknown>;
       try {
@@ -372,7 +453,7 @@ Top HS chapters/headings: ${topHs.length ? topHs.join(", ") : "unknown"}`;
       const row = {
         company_id: companyId,
         ...clean,
-        model: ANTHROPIC_MODEL,
+        model: modelUsed,
         research_status: "ok",
         error_detail: null,
         refreshed_at: new Date().toISOString(),
@@ -387,7 +468,7 @@ Top HS chapters/headings: ${topHs.length ? topHs.join(", ") : "unknown"}`;
         return;
       }
 
-      const usage = (aData?.usage ?? {}) as Record<string, unknown>;
+      const usage = result.usage;
       log.info("research_completed", {
         company_id: companyId,
         user_id: auth.user.id,

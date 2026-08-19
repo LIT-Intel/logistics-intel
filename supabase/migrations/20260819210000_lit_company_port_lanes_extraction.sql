@@ -1,0 +1,12 @@
+-- Port-level lane extraction (2026-08-19) — APPLIED TO PROD via MCP.
+-- The ImportYeti /company snapshot we already fetch and store carries
+-- `lane_permutations` (REAL port-pair lanes: exit port -> US entry port with
+-- shipments/weight/TEU) and `other_addresses_contact_info` (facility network
+-- with last-shipment recency + contacts). Neither was ever parsed; the maps
+-- used the ~50-BOL recent_bols sample. This migration extracts both into real
+-- tables, backfills from all stored snapshots (zero new IY credits: 18,537
+-- port lanes / 372 companies + 6,814 facilities / 418 companies), and keeps
+-- them fresh via trigger on snapshot upsert. See prod for the applied DDL:
+-- tables lit_company_port_lanes + lit_company_iy_facilities, function
+-- lit_extract_iy_snapshot_intel, trigger lit_iy_snapshot_extract.
+-- (Full SQL mirrored in the MCP migration 'lit_company_port_lanes_extraction'.)
