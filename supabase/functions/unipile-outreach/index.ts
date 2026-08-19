@@ -133,8 +133,11 @@ async function resolveTarget(auth: any, body: Record<string, unknown>): Promise<
   return json({ ok: false, code: "TARGET_REQUIRED", error: "lead_id or campaign_contact_id is required" }, 400);
 }
 
-async function chooseAccount(admin: any, target: Target, requestedId: unknown) {
-  let query = admin.from("lit_unipile_accounts").select("*").eq("org_id", target.orgId).eq("status", "OK");
+async function chooseAccount(admin: any, target: Target, requestedId: unknown, userId: string) {
+  // Per-user: a member may only draft/send from their OWN connected LinkedIn
+  // account, never a teammate's — even within the same org/workspace.
+  let query = admin.from("lit_unipile_accounts").select("*")
+    .eq("org_id", target.orgId).eq("owner_user_id", userId).eq("status", "OK");
   if (requestedId) query = query.eq("id", String(requestedId));
   else query = query.eq(target.leadId ? "use_for_lead_crm" : "use_for_campaigns", true);
   const { data } = await query.order("connected_at", { ascending: true }).limit(1).maybeSingle();
@@ -150,6 +153,11 @@ async function dispatch(auth: any, actionId: string) {
   if (action.status === "sent") return json({ ok: true, action, already_sent: true });
   if (action.status !== "approved") return json({ ok: false, code: "APPROVAL_REQUIRED", error: "A human must approve this draft before it can be sent" }, 409);
   if (!action.account || action.account.status !== "OK") return json({ ok: false, code: "ACCOUNT_NOT_READY", error: "LinkedIn account needs reconnection" }, 409);
+  // Per-user: never send from a teammate's LinkedIn. The sender account bound
+  // to this action must belong to the current user.
+  if (action.account.owner_user_id !== auth.user.id) {
+    return json({ ok: false, code: "ACCOUNT_FORBIDDEN", error: "You can only send from your own connected LinkedIn account" }, 403);
+  }
 
   const start = new Date(); start.setUTCHours(0, 0, 0, 0);
   const { count } = await auth.admin.from("lit_linkedin_outreach_actions").select("id", { count: "exact", head: true })
@@ -271,7 +279,7 @@ Deno.serve(async (req) => {
 
     if (operation === "draft") {
       const target = await resolveTarget(auth, body); if (target instanceof Response) return target;
-      const account = await chooseAccount(auth.admin, target, body.account_id);
+      const account = await chooseAccount(auth.admin, target, body.account_id, auth.user.id);
       if (!account) return json({ ok: false, code: "LINKEDIN_ACCOUNT_REQUIRED", error: "Connect a LinkedIn account in Settings first" }, 409);
       const actionType = body.action_type === "message" ? "message" : "invite";
       const baseKey = await sha256([target.leadId || target.campaignContactId, target.campaignStepId || "manual", actionType].join(":"));

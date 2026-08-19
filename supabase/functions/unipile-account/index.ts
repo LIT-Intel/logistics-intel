@@ -53,9 +53,11 @@ Deno.serve(async (req) => {
     if (!orgId) return json({ ok: false, code: "ORG_REQUIRED", error: "Active workspace membership required" }, 403);
 
     if (action === "list") {
+      // Per-user: a member only ever sees their OWN connected LinkedIn
+      // accounts, never a teammate's — even within a shared workspace.
       const { data, error } = await auth.admin.from("lit_unipile_accounts")
         .select("id,org_id,owner_user_id,unipile_account_id,provider,display_name,email,status,use_for_campaigns,use_for_lead_crm,daily_invite_cap,daily_message_cap,connected_at,last_synced_at")
-        .eq("org_id", orgId).order("created_at", { ascending: false });
+        .eq("org_id", orgId).eq("owner_user_id", auth.user.id).order("created_at", { ascending: false });
       if (error) throw error;
       return json({ ok: true, accounts: data || [] });
     }
@@ -64,7 +66,8 @@ Deno.serve(async (req) => {
       let reconnectAccount: { id: string; unipile_account_id: string } | null = null;
       if (body.account_id) {
         const { data } = await auth.admin.from("lit_unipile_accounts")
-          .select("id,unipile_account_id").eq("id", String(body.account_id)).eq("org_id", orgId).maybeSingle();
+          .select("id,unipile_account_id").eq("id", String(body.account_id))
+          .eq("org_id", orgId).eq("owner_user_id", auth.user.id).maybeSingle();
         reconnectAccount = data;
         if (!reconnectAccount) return json({ ok: false, code: "ACCOUNT_NOT_FOUND", error: "LinkedIn account not found" }, 404);
       }
@@ -100,7 +103,8 @@ Deno.serve(async (req) => {
     if (action === "refresh") {
       const localId = String(body.account_id || "");
       const { data: local } = await auth.admin.from("lit_unipile_accounts")
-        .select("id,unipile_account_id").eq("id", localId).eq("org_id", orgId).maybeSingle();
+        .select("id,unipile_account_id").eq("id", localId)
+        .eq("org_id", orgId).eq("owner_user_id", auth.user.id).maybeSingle();
       if (!local) return json({ ok: false, code: "ACCOUNT_NOT_FOUND", error: "LinkedIn account not found" }, 404);
       const remote = await unipileRequest<Record<string, unknown>>(`/accounts/${encodeURIComponent(local.unipile_account_id)}`);
       const status = String(remote.sources ? "OK" : remote.status || "OK").toUpperCase();
@@ -118,12 +122,12 @@ Deno.serve(async (req) => {
 
     if (action === "update") {
       const localId = String(body.account_id || "");
+      // Per-user: only the owning user may change their own sender settings.
+      // A personal LinkedIn login is not an org-admin-managed resource.
       const { data: local } = await auth.admin.from("lit_unipile_accounts")
-        .select("id,owner_user_id").eq("id", localId).eq("org_id", orgId).maybeSingle();
+        .select("id,owner_user_id").eq("id", localId)
+        .eq("org_id", orgId).eq("owner_user_id", auth.user.id).maybeSingle();
       if (!local) return json({ ok: false, code: "ACCOUNT_NOT_FOUND", error: "LinkedIn account not found" }, 404);
-      if (local.owner_user_id !== auth.user.id && membership?.role !== "owner" && membership?.role !== "admin") {
-        return json({ ok: false, code: "ACCOUNT_FORBIDDEN", error: "Only the account owner or a workspace admin can change sender settings" }, 403);
-      }
       const wantsLeadCrm = body.use_for_lead_crm === true;
       if (wantsLeadCrm) {
         const { data: access } = await auth.userClient.rpc("lit_my_lead_crm_access");

@@ -2264,7 +2264,7 @@ function LinkedInUnipileSection() {
   return (
     <SCard
       title="LinkedIn"
-      subtitle="Connection requests and messages are delivered through Unipile after human approval."
+      subtitle="Connect your own LinkedIn account. It is private to you — teammates connect their own and never send from yours. Requests and messages are delivered through Unipile after human approval."
       right={<SBadge tone={connected ? "green" : "slate"} dot>{loading ? "Checking…" : connected ? "Connected" : "Not connected"}</SBadge>}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "2px 0 10px" }}>
