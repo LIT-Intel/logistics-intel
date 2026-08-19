@@ -2259,6 +2259,33 @@ function LinkedInUnipileSection() {
     finally { setBusy(false); }
   }
 
+  // Sending-limit editor state. The caps are per-user (the LinkedIn login is
+  // private to the current user) and clamped server-side (invites 1–40,
+  // messages 1–80) — we mirror those bounds here so the Save can't submit a
+  // value the edge fn would silently reject.
+  const INVITE_MIN = 1, INVITE_MAX = 40, MSG_MIN = 1, MSG_MAX = 80;
+  const [caps, setCaps] = useState<{ invite: number; message: number } | null>(null);
+  const [savingCaps, setSavingCaps] = useState(false);
+
+  async function saveCaps(account: UnipileAccount) {
+    if (!caps) return;
+    const invite = Math.max(INVITE_MIN, Math.min(INVITE_MAX, Math.round(caps.invite)));
+    const message = Math.max(MSG_MIN, Math.min(MSG_MAX, Math.round(caps.message)));
+    setSavingCaps(true); setError(null);
+    try {
+      await updateUnipileAccount({
+        accountId: account.id,
+        useForCampaigns: account.use_for_campaigns,
+        useForLeadCrm: account.use_for_lead_crm,
+        dailyInviteCap: invite,
+        dailyMessageCap: message,
+      });
+      await load(true);
+      setCaps(null);
+    } catch (e: any) { setError(e?.message || "Could not update sending limits"); }
+    finally { setSavingCaps(false); }
+  }
+
   const connected = accounts.find((a) => a.status === "OK" && a.use_for_campaigns);
   const reconnect = accounts.find((a) => a.status !== "OK");
   return (
@@ -2304,6 +2331,54 @@ function LinkedInUnipileSection() {
           ))}
         </div>
       ) : null}
+      {connected ? (() => {
+        const inviteVal = caps ? caps.invite : connected.daily_invite_cap;
+        const messageVal = caps ? caps.message : connected.daily_message_cap;
+        const dirty = caps !== null && (Math.round(caps.invite) !== connected.daily_invite_cap || Math.round(caps.message) !== connected.daily_message_cap);
+        const setCap = (key: "invite" | "message", v: number) => setCaps((prev) => ({
+          invite: connected.daily_invite_cap,
+          message: connected.daily_message_cap,
+          ...(prev || {}),
+          [key]: v,
+        }));
+        const stepperLabel = { fontFamily: "Space Grotesk,sans-serif", fontSize: 12.5, fontWeight: 700, color: "#0F172A" } as const;
+        const stepperHint = { fontFamily: "DM Sans,sans-serif", fontSize: 11, color: "#94A3B8", marginTop: 2 } as const;
+        const numInput: React.CSSProperties = { width: 64, padding: "6px 8px", border: "1px solid #E2E8F0", borderRadius: 8, fontFamily: "DM Sans,sans-serif", fontSize: 13, color: "#0F172A", textAlign: "center", background: "#fff" };
+        return (
+          <div style={{ margin: "4px 0 12px", padding: 12, border: "1px solid #E2E8F0", background: "#F8FAFC", borderRadius: 10 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 18, alignItems: "flex-end" }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <span style={stepperLabel}>Daily connection requests</span>
+                <input
+                  type="number" min={INVITE_MIN} max={INVITE_MAX} step={1} value={inviteVal}
+                  disabled={busy || savingCaps} style={numInput}
+                  onChange={(e) => setCap("invite", Number(e.target.value))}
+                />
+                <span style={stepperHint}>{INVITE_MIN}–{INVITE_MAX} invitations/day</span>
+              </label>
+              <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <span style={stepperLabel}>Daily messages</span>
+                <input
+                  type="number" min={MSG_MIN} max={MSG_MAX} step={1} value={messageVal}
+                  disabled={busy || savingCaps} style={numInput}
+                  onChange={(e) => setCap("message", Number(e.target.value))}
+                />
+                <span style={stepperHint}>{MSG_MIN}–{MSG_MAX} messages/day</span>
+              </label>
+              <button
+                style={{ ...sBtnPrimary, opacity: dirty && !savingCaps ? 1 : 0.5, cursor: dirty && !savingCaps ? "pointer" : "not-allowed" }}
+                disabled={!dirty || savingCaps || busy}
+                onClick={() => void saveCaps(connected)}
+              >
+                {savingCaps ? "Saving…" : "Save limits"}
+              </button>
+            </div>
+            <div style={{ fontFamily: "DM Sans,sans-serif", fontSize: 11, color: "#94A3B8", marginTop: 8 }}>
+              These limits are private to your account. Provider errors stop delivery instead of retrying aggressively.
+            </div>
+          </div>
+        );
+      })() : null}
       <div style={{ fontFamily: "DM Sans,sans-serif", fontSize: 11.5, color: "#94A3B8" }}>
         Safety limits: {connected?.daily_invite_cap ?? 20} invitations/day and {connected?.daily_message_cap ?? 40} messages/day. Provider errors stop delivery instead of retrying aggressively.
       </div>
