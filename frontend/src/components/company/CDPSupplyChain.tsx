@@ -20,7 +20,6 @@ import {
   Ship,
   Anchor,
   Package,
-  LineChart as LineChartIcon,
   X,
 } from "lucide-react";
 import {
@@ -4027,6 +4026,7 @@ function TopLanesCard({
           laneMonthsByPair={laneMonthsByPair}
           monthWindow={monthWindow}
           sampleMode={!hasRollup}
+          reconciled={isReconciled}
           showAllLanes={showAllLanes}
           onToggleShowAllLanes={() => setShowAllLanes((v) => !v)}
           yoyMode={yoyMode}
@@ -4422,6 +4422,7 @@ function TradeLanesMapDialog({
   laneMonthsByPair,
   monthWindow,
   sampleMode = false,
+  reconciled = false,
   showAllLanes = false,
   onToggleShowAllLanes,
   yoyMode = false,
@@ -4444,6 +4445,10 @@ function TradeLanesMapDialog({
   laneMonthsByPair?: Map<string, Record<string, number>>;
   monthWindow?: string[];
   sampleMode?: boolean;
+  /** True when lane shipments/TEU were reconciled to a real monthly_volumes
+   *  total (modeled estimate), so the headline reads "est." and never
+   *  contradicts the BOL-sample count in the intelligence card. */
+  reconciled?: boolean;
   showAllLanes?: boolean;
   onToggleShowAllLanes?: () => void;
   yoyMode?: boolean;
@@ -4470,7 +4475,6 @@ function TradeLanesMapDialog({
   const [modeFilter, setModeFilter] = useState<string | null>(null);
   const [minShipments, setMinShipments] = useState<number>(0);
   const [strategyFilter, setStrategyFilter] = useState<string>("all");
-  const [analysisOpen, setAnalysisOpen] = useState(false);
   // Left "Filters" glass card (Central Intelligence Hub) collapse state.
   const [filtersCollapsed, setFiltersCollapsed] = useState(false);
 
@@ -4630,6 +4634,21 @@ function TradeLanesMapDialog({
     return new Map(["all", "priority", "growth", "seasonal", "recent", "whitespace"].map((id) => [id, ranked.filter((p: any) => matches(id, p)).length]));
   }, [ranked, realMetricsByPair, volumeCutoff, recencyAnchorMs]);
 
+  // The trend-based strategy chips (Growth / Seasonality / Recent activity /
+  // Whitespace) are only meaningful when this company has real lane-month
+  // history — YoY, seasonality peak ratio and recency all derive from
+  // realMetricsByPair (lit_company_lane_months). For companies with no rollup
+  // history those metrics are absent and every chip reads "(0)", which looks
+  // broken. Detect real trend signal (any lane with a computable yoy /
+  // peakRatio / latest) and, when there's none, hide the trend chips and show
+  // a single subtle note instead of a row of zeroes.
+  const hasTrendData = useMemo(() => {
+    for (const m of realMetricsByPair.values()) {
+      if (m.yoy != null || m.peakRatio != null || m.latest != null) return true;
+    }
+    return false;
+  }, [realMetricsByPair]);
+
   const totalShipments = useMemo(
     () =>
       filtered.reduce((s: number, p: any) => s + (Number(p?.shipments) || 0), 0),
@@ -4690,6 +4709,12 @@ function TradeLanesMapDialog({
     const keys = monthWindow?.length ? monthWindow : Object.keys(values).sort();
     return keys.map((month) => ({ month: month.slice(5), shipments: Number(values[month] || 0) }));
   }, [selPair, laneMonthsByPair, monthWindow]);
+  // Only render the bar chart when this lane has a real monthly series with at
+  // least one non-zero month — otherwise hide it (no empty axes).
+  const hasMonthlyChart =
+    monthlyChartData.length > 0 &&
+    monthlyChartData.some((d) => d.shipments > 0);
+  const selMetric = selPair ? realMetricsByPair.get(selPair.pairKey) : null;
 
   const fitPadding = isMdUp
     ? { top: 24, right: 380, bottom: 96, left: 40 }
@@ -4740,7 +4765,8 @@ function TradeLanesMapDialog({
           </button>
         </div>
         <div className="font-mono mt-1 text-[11px] text-slate-600">
-          {(Number(selPair.shipments) || 0).toLocaleString()} shipments
+          {(Number(selPair.shipments) || 0).toLocaleString()}{" "}
+          {reconciled ? "est. total shipments" : sampleMode ? "shipments (sample)" : "shipments"}
           {Number(selPair.teu) > 0 && (
             <> · {Math.round(Number(selPair.teu)).toLocaleString()} TEU</>
           )}
@@ -4787,6 +4813,42 @@ function TradeLanesMapDialog({
             <History className="h-3 w-3" />
             View monthly history →
           </button>
+        )}
+
+        {/* Monthly shipment pattern — relocated here from the old toolbar
+            "Monthly chart" strip so it appears automatically with the lane.
+            Rendered only when this lane actually has a monthly rollup series
+            (no empty axes). Keeps the Data-score / YoY badge alongside it. */}
+        {hasMonthlyChart && (
+          <div className="mt-3 border-t border-slate-100 pt-3">
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+              <div className="font-display text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                Monthly shipments
+              </div>
+              {selMetric && (
+                <span
+                  title="Score formula: 50 points from relative 12-month volume, 30 from positive YoY momentum, and 20 from shipment recency."
+                  className="shrink-0 rounded-full bg-blue-50 px-2 py-0.5 text-[9.5px] font-semibold text-blue-700"
+                >
+                  Score {selMetric.score}/100 ·{" "}
+                  {selMetric.yoy == null
+                    ? "YoY n/a"
+                    : `YoY ${selMetric.yoy >= 0 ? "+" : ""}${selMetric.yoy.toFixed(1)}%`}
+                </span>
+              )}
+            </div>
+            <div className="h-28">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={monthlyChartData}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="month" fontSize={9} />
+                  <YAxis fontSize={9} width={28} />
+                  <Tooltip />
+                  <Bar dataKey="shipments" fill="#2563EB" radius={[3, 3, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
         )}
 
         {/* Central Intelligence Hub — BOL-level detail for this lane.
@@ -4846,9 +4908,10 @@ function TradeLanesMapDialog({
       </div>
 
       {/* Top toolbar — year/month scope + focus toggle (shared with the
-          hero), plus Monthly-chart + Ask-Pulse. The origin / min-shipment /
-          mode / executive-view filters now live in the floating "Filters"
-          card pinned to the left of the map (Central Intelligence Hub). */}
+          hero) + Ask-Pulse. The monthly bar chart now lives INSIDE the
+          selected-lane detail card (appears automatically on selection); the
+          origin / min-shipment / mode / executive-view filters live in the
+          floating "Filters" card pinned to the left of the map. */}
       <div className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-slate-100 px-4 py-2">
         {scope && onToggleShowAllLanes && (
           <>
@@ -4870,18 +4933,8 @@ function TradeLanesMapDialog({
             <span className="mx-1 h-4 w-px shrink-0 bg-slate-200" />
           </>
         )}
-        <button type="button" className={chipClass(analysisOpen)} onClick={() => setAnalysisOpen((v) => !v)}><LineChartIcon className="h-3 w-3" />Monthly chart</button>
         <button type="button" className={chipClass(false)} onClick={() => window.dispatchEvent(new CustomEvent("lit:pulse-coach-open", { detail: { surface: "company-map", lane: selPair?.pairKey || null } }))}><Sparkles className="h-3 w-3" />Ask Pulse</button>
       </div>
-
-      {analysisOpen && (
-        <div className="shrink-0 border-b border-slate-200 bg-white px-4 py-3">
-          <div className="mb-2 flex items-center justify-between"><div><div className="font-display text-[11px] font-bold text-slate-900">Monthly shipment pattern</div><div className="font-body text-[10px] text-slate-500">{selPair ? "Selected lane · actual monthly shipment rollups" : "Select a lane to view its monthly history"}</div></div>{selPair && realMetricsByPair.get(selPair.pairKey) && <span title="Score formula: 50 points from relative 12-month volume, 30 from positive YoY momentum, and 20 from shipment recency." className="rounded-full bg-blue-50 px-2 py-1 text-[10px] font-semibold text-blue-700">Data score {realMetricsByPair.get(selPair.pairKey)!.score}/100 · {realMetricsByPair.get(selPair.pairKey)!.yoy == null ? "YoY unavailable" : `YoY ${realMetricsByPair.get(selPair.pairKey)!.yoy! >= 0 ? "+" : ""}${realMetricsByPair.get(selPair.pairKey)!.yoy!.toFixed(1)}%`}</span>}</div>
-          <div className="h-32">
-            <ResponsiveContainer width="100%" height="100%"><BarChart data={monthlyChartData}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="month" fontSize={9} /><YAxis fontSize={9} width={32} /><Tooltip /><Bar dataKey="shipments" fill="#2563EB" radius={[3,3,0,0]} /></BarChart></ResponsiveContainer>
-          </div>
-        </div>
-      )}
 
       {/* Body — maximized map with floating tools; mobile stacks the
           lane sheet below the map. */}
@@ -5021,21 +5074,32 @@ function TradeLanesMapDialog({
                   </div>
                 )}
 
-                {/* Executive view — strategy chips with match counts */}
+                {/* Executive view — strategy chips with match counts. The
+                    trend-based chips (Growth / Seasonality / Recent activity /
+                    Whitespace) derive from real lane-month history; when the
+                    company has none they'd all read "(0)" and look broken, so
+                    we hide them and show a subtle note instead. "All" and
+                    "Priority lanes" work off shipment volume alone and always
+                    show. */}
                 <div>
                   <div className="font-display mb-1 text-[9.5px] font-bold uppercase tracking-wide text-slate-400">
                     Executive view
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {(
-                      [
-                        ["all", "All"],
-                        ["priority", "Priority lanes"],
-                        ["growth", "Growth"],
-                        ["seasonal", "Seasonality"],
-                        ["recent", "Recent activity"],
-                        ["whitespace", "Whitespace"],
-                      ] as [string, string][]
+                      (hasTrendData
+                        ? [
+                            ["all", "All"],
+                            ["priority", "Priority lanes"],
+                            ["growth", "Growth"],
+                            ["seasonal", "Seasonality"],
+                            ["recent", "Recent activity"],
+                            ["whitespace", "Whitespace"],
+                          ]
+                        : [
+                            ["all", "All"],
+                            ["priority", "Priority lanes"],
+                          ]) as [string, string][]
                     ).map(([id, label]) => (
                       <button
                         key={id}
@@ -5047,6 +5111,11 @@ function TradeLanesMapDialog({
                       </button>
                     ))}
                   </div>
+                  {!hasTrendData && (
+                    <div className="font-body mt-1 text-[9.5px] leading-snug text-slate-400">
+                      Trend views need shipment history.
+                    </div>
+                  )}
                 </div>
               </div>
             )}
