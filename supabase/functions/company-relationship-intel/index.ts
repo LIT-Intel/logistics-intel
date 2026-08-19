@@ -233,8 +233,25 @@ Deno.serve(async (req) => {
       }
     }
 
-    const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY");
+    // Auto-repair the common paste mistakes (stray whitespace/newlines,
+    // wrapping quotes) — a raw pasted value like "sk-ant-..." (with quotes)
+    // reads as a syntactically-sent-but-invalid key and 401s.
+    const anthropicKey = (Deno.env.get("ANTHROPIC_API_KEY") ?? "")
+      .trim()
+      .replace(/^["']+|["']+$/g, "")
+      .trim();
     if (!anthropicKey) return json({ ok: false, code: "NOT_CONFIGURED", error: "ANTHROPIC_API_KEY not configured" }, 500);
+
+    // Safe fingerprint of the key AS THE FUNCTION SEES IT — never the key
+    // itself. Appended to error_detail on auth failures so we can tell a
+    // wrong-value problem (sha matches the dashboard digest => stored value
+    // is itself bad) from a propagation problem (sha differs => the function
+    // is still running with an older env).
+    const keyFingerprint = async (): Promise<string> => {
+      const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(anthropicKey));
+      const hex = Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+      return `len=${anthropicKey.length}, starts='${anthropicKey.slice(0, 7)}', ends='${anthropicKey.slice(-4)}', sha256=${hex.slice(0, 16)}…`;
+    };
 
     // ── Start-and-poll: the research takes 30-90s (up to 8 web searches),
     // too long to hold one request open reliably (gateway timeouts read as a
@@ -321,7 +338,8 @@ Top HS chapters/headings: ${topHs.length ? topHs.join(", ") : "unknown"}`;
         });
         if (!aRes.ok) {
           const t = await aRes.text();
-          await failRun(`Anthropic API HTTP ${aRes.status}: ${t.slice(0, 400)}`);
+          const fp = aRes.status === 401 || aRes.status === 403 ? ` [key seen by fn: ${await keyFingerprint()}]` : "";
+          await failRun(`Anthropic API HTTP ${aRes.status}: ${t.slice(0, 300)}${fp}`);
           return;
         }
         aData = await aRes.json();
