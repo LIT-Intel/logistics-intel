@@ -76,6 +76,30 @@ export type LaneMapExtraMarker = {
   label: string;
 };
 
+/**
+ * Extra relationship arc (e.g. the inland-network port→facility flows and
+ * hub→spoke transfers from the inland-freight model). Rendered as a gently
+ * curved polyline (same bezier as the trade lanes). Non-invasive: arcs never
+ * participate in lane selection, hover styling, or bounds fitting.
+ */
+export type LaneMapExtraArc = {
+  id: string;
+  /** [lat, lng] — Leaflet order. */
+  from: [number, number];
+  /** [lat, lng] — Leaflet order. */
+  to: [number, number];
+  /** Stroke color (any CSS color). */
+  color: string;
+  /** Dashed stroke (modeled/estimated relationships). Defaults solid. */
+  dashed?: boolean;
+  /** Stroke weight in px. Defaults 1.5. */
+  weight?: number;
+  /** Stroke opacity 0..1. Defaults 0.6. */
+  opacity?: number;
+  /** Tooltip text (plain text — HTML is escaped). */
+  tooltip?: string;
+};
+
 export type LaneMapProps = {
   lanes: GlobeLane[];
   selectedLane?: string | null;
@@ -139,6 +163,12 @@ export type LaneMapProps = {
    * {@link LaneMapExtraMarker}). Lanes behavior is unchanged.
    */
   extraMarkers?: LaneMapExtraMarker[];
+  /**
+   * Optional relationship arcs overlaid on the map (see
+   * {@link LaneMapExtraArc}). Lanes behavior is unchanged; arcs are NOT
+   * included in fitBounds.
+   */
+  extraArcs?: LaneMapExtraArc[];
 };
 
 // ── Palettes ──────────────────────────────────────────────────────────
@@ -399,6 +429,7 @@ export default function LaneMap({
   flow = false,
   linesMode = "always",
   extraMarkers,
+  extraArcs,
 }: LaneMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<LeafletMap | null>(null);
@@ -762,6 +793,75 @@ export default function LaneMap({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [extraKey]);
+
+  // ── Extra relationship arcs (inland network) ────────────────────────
+  // Gently curved polylines drawn with the SAME bezier as the trade lanes
+  // (laneArcPoints) so they read as siblings. Dashed = modeled. Fully
+  // rebuilt when the arc set changes; never touches lane layers, selection,
+  // or bounds fitting (extra arcs are NOT part of fitBounds).
+  const extraArcLayersRef = useRef<LeafletPolyline[]>([]);
+  const extraArcKey = useMemo(
+    () =>
+      (extraArcs ?? [])
+        .map(
+          (a) =>
+            `${a.id}|${a.from.join(",")}>${a.to.join(",")}|${a.color}|${
+              a.dashed ? "d" : "s"
+            }|${a.weight ?? ""}|${a.opacity ?? ""}|${a.tooltip ?? ""}`,
+        )
+        .join(";"),
+    [extraArcs],
+  );
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    for (const line of extraArcLayersRef.current) map.removeLayer(line);
+    extraArcLayersRef.current = [];
+    if (!extraArcs || extraArcs.length === 0) return;
+    const escapeHtml = (s: string) =>
+      s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    for (const a of extraArcs) {
+      const [fromLat, fromLng] = a.from;
+      const [toLat, toLng] = a.to;
+      if (
+        !Number.isFinite(fromLat) ||
+        !Number.isFinite(fromLng) ||
+        !Number.isFinite(toLat) ||
+        !Number.isFinite(toLng)
+      ) {
+        continue;
+      }
+      // laneArcPoints takes [lon, lat] pairs — same helper as the lanes.
+      const points = laneArcPoints([fromLng, fromLat], [toLng, toLat]);
+      const line = L.polyline(points, {
+        color: a.color,
+        weight: a.weight ?? 1.5,
+        opacity: a.opacity ?? 0.6,
+        dashArray: a.dashed ? "6 6" : undefined,
+        lineCap: "round",
+        lineJoin: "round",
+        interactive: Boolean(a.tooltip),
+        bubblingMouseEvents: false,
+      });
+      if (a.tooltip) {
+        line.bindTooltip(escapeHtml(a.tooltip), {
+          sticky: true,
+          direction: "top",
+          opacity: 0.95,
+        });
+      }
+      line.addTo(map);
+      extraArcLayersRef.current.push(line);
+    }
+    return () => {
+      const live = mapRef.current;
+      if (live) {
+        for (const line of extraArcLayersRef.current) live.removeLayer(line);
+      }
+      extraArcLayersRef.current = [];
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [extraArcKey]);
 
   /**
    * Restyle pass. Walks every lane's layers and reconciles them with

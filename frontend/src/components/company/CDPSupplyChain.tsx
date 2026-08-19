@@ -50,6 +50,7 @@ import {
 import BuyingIntentTile from "@/components/intent/BuyingIntentTile";
 import { type GlobeLane } from "@/components/GlobeCanvas";
 import LaneMap, {
+  type LaneMapExtraArc,
   type LaneMapExtraMarker,
   type LaneMapLaneColor,
 } from "@/components/LaneMap";
@@ -57,6 +58,7 @@ import { canonicalizeLanes, resolveEndpoint } from "@/lib/laneGlobe";
 import { lookupCentroid } from "@/lib/explorer/normalizeCompanySearch";
 import { useInlandFreight } from "@/api/inlandFreight";
 import InlandFreightCard from "@/components/company/InlandFreightCard";
+import RelationshipIntelCard from "@/components/company/RelationshipIntelCard";
 import { laneRegionColor } from "@/lib/laneRegions";
 import {
   useCompanyLaneMonths,
@@ -566,6 +568,10 @@ function SummaryView({
           lit_company_inland_freight, keyed on the same source_company_key
           as lane history. Self-hiding when the RPC has no data. */}
       <InlandFreightCard companyId={sourceCompanyKey ?? null} />
+      {/* Network & Relationships — AI-researched company type, warehouse
+          network & published partners (lit_company_relationship_intel).
+          Shows a "Research network (AI)" button until a row exists. */}
+      <RelationshipIntelCard companyId={sourceCompanyKey ?? null} />
       {companyName && (
         <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-2">
           <MxTransborderKpi companyName={companyName} />
@@ -4429,6 +4435,92 @@ function TradeLanesMapDialog({
       ({ confidence: _conf, ...marker }) => marker,
     );
   }, [inlandFreight]);
+  // INLAND NETWORK arcs — the relationships between the dots above.
+  //
+  // Port of entry: `origin_port` from the RPC is polluted (dropped in
+  // normalization — see api/inlandFreight.ts), so the company's primary US
+  // entry point stands in for every flow: the US destination endpoint of the
+  // dominant (top-ranked-by-shipments) ocean lane. Pair endpoint coords are
+  // GlobeLane-shaped `[lng, lat]` (toMeta.coords), flipped to Leaflet's
+  // [lat, lng] here.
+  const portOfEntry = useMemo<[number, number] | null>(() => {
+    const usPair =
+      ranked.find(
+        (p: any) =>
+          String(p?.toMeta?.countryCode || "").toUpperCase() === "US" &&
+          Array.isArray(p?.toMeta?.coords),
+      ) ?? ranked.find((p: any) => Array.isArray(p?.toMeta?.coords));
+    const c = usPair?.toMeta?.coords;
+    if (!Array.isArray(c) || c.length !== 2) return null;
+    const lng = Number(c[0]);
+    const lat = Number(c[1]);
+    return Number.isFinite(lat) && Number.isFinite(lng) ? [lat, lng] : null;
+  }, [ranked]);
+  // Same gates as the facility markers: confidence >= 60 and a CITY-level
+  // geocode (state/country "approximate" centroids skip silently — an arc
+  // into a state centroid would read as a real destination).
+  //  - OBSERVED port→facility flows: solid blue-500 @ 60%, weight scaled by
+  //    est_tl_month (1.5–4px, linear against the set max).
+  //  - MODELED hub→spoke transfers: DASHED amber @ 55%, always labeled
+  //    "modeled" in the tooltip — visually distinct from observed flows
+  //    regardless of any card-level "show modeled" toggle.
+  const inlandArcs = useMemo<LaneMapExtraArc[]>(() => {
+    const geocode = (
+      city: string,
+      state: string,
+    ): { lat: number; lng: number } | null => {
+      if (!city) return null;
+      const c = lookupCentroid(city, state, "US");
+      return c && c.mapStatus === "mapped" ? { lat: c.lat, lng: c.lng } : null;
+    };
+    const arcs: LaneMapExtraArc[] = [];
+    if (portOfEntry) {
+      const flows = (inlandFreight?.flows ?? []).filter(
+        (f) => Math.round(Number(f.confidence) || 0) >= 60,
+      );
+      const maxTl = flows.reduce(
+        (m, f) => Math.max(m, Number(f.est_tl_month) || 0),
+        0,
+      );
+      for (const f of flows) {
+        const dest = geocode(f.dest_city, f.dest_state);
+        if (!dest) continue;
+        const tl = Number(f.est_tl_month) || 0;
+        const ratio = maxTl > 0 ? tl / maxTl : 0;
+        const tlLabel = tl >= 10 ? String(Math.round(tl)) : tl.toFixed(1);
+        arcs.push({
+          id: `inland-flow:${f.dest_city.toLowerCase()}::${f.dest_state}`,
+          from: portOfEntry,
+          to: [dest.lat, dest.lng],
+          color: "#3B82F6", // blue-500
+          opacity: 0.6,
+          weight: 1.5 + ratio * 2.5,
+          tooltip: `Port of entry → ${f.dest_city}, ${f.dest_state} · ~${tlLabel} TL/mo · confidence ${Math.round(f.confidence)}`,
+        });
+      }
+    }
+    const seenTransfers = new Set<string>();
+    for (const t of inlandFreight?.transfers ?? []) {
+      if (Math.round(Number(t.confidence) || 0) < 60) continue;
+      const key = `${t.from_city.toLowerCase()}::${t.from_state}>${t.to_city.toLowerCase()}::${t.to_state}`;
+      if (seenTransfers.has(key)) continue;
+      seenTransfers.add(key);
+      const from = geocode(t.from_city, t.from_state);
+      const to = geocode(t.to_city, t.to_state);
+      if (!from || !to) continue;
+      arcs.push({
+        id: `inland-transfer:${key}`,
+        from: [from.lat, from.lng],
+        to: [to.lat, to.lng],
+        color: "#F59E0B", // amber-500
+        opacity: 0.55,
+        dashed: true,
+        weight: 1.5,
+        tooltip: `${t.from_city} → ${t.to_city} · modeled replenishment · confidence ${Math.round(t.confidence)}`,
+      });
+    }
+    return arcs;
+  }, [inlandFreight, portOfEntry]);
   const monthlyChartData = useMemo(() => {
     if (!selPair) return [];
     const values = laneMonthsByPair?.get(selPair.pairKey) || {};
@@ -4679,6 +4771,7 @@ function TradeLanesMapDialog({
             unselectedStyle={showAllLanes ? "fade" : "ghost"}
             flow
             extraMarkers={facilityMarkers}
+            extraArcs={inlandArcs}
           />
 
           {/* Floating "Filters" card — pinned to the LEFT edge of the map.
@@ -4926,6 +5019,28 @@ function TradeLanesMapDialog({
                   Selected lane
                 </span>
               </div>
+              {/* Inland network — estimated facilities + flows (only when
+                  the inland-freight model produced markers/arcs). */}
+              {facilityMarkers.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="flex w-9 items-center justify-center">
+                    <span className="h-2.5 w-2.5 rounded-[3px] border-2 border-white bg-amber-500 shadow" />
+                  </span>
+                  <span className="font-body text-[10px] text-slate-600">
+                    Facility
+                  </span>
+                </div>
+              )}
+              {inlandArcs.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="flex w-9 items-center">
+                    <span className="h-[2px] w-full rounded bg-blue-500/60" />
+                  </span>
+                  <span className="font-body text-[10px] text-slate-600">
+                    Inland flow (est.)
+                  </span>
+                </div>
+              )}
             </div>
             {/* Origin-region color key — one swatch per region present in
                 the filtered lane set (deterministic laneRegions palette). */}
