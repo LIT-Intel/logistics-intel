@@ -33,30 +33,76 @@ export const INTEREST_OPTIONS: { value: string; label: string }[] = [
 
 export const DEMO_BOOKING_URL = "https://cal.com/logisticintel/30min";
 
+/**
+ * Gate launch date (2026-08-18). Profiles created before this predate the
+ * mandatory onboarding flow and are grandfathered client-side — a
+ * belt-and-braces check on top of the migration backfill (20260819130000
+ * stamped onboarding_completed_at = now() for all pre-existing accounts).
+ */
+export const ONBOARDING_GATE_LAUNCH = "2026-08-18T00:00:00Z";
+
 export interface OnboardingStatus {
   /** null => onboarding not yet completed (app must be gated). */
   completedAt: string | null;
   demoBooked: boolean;
+  /** profiles.created_at — used for the grandfathering cutoff. */
+  profileCreatedAt: string | null;
 }
 
 /**
- * Read the caller's onboarding gate flag from their own profile row (RLS
- * self-select). Returns completedAt=null when the row can't be read or the
- * flag is unset — the guard treats that as "must onboard". On a hard backend
- * error we deliberately return completedAt as a sentinel so we never lock a
- * real user out of the app on a transient read failure (see guard).
+ * Read the caller's onboarding gate flag from their own profile row,
+ * explicitly scoped to the authed user's id.
+ *
+ * Returns null on ANY failure: no client, no session, PostgREST/RLS error,
+ * or a missing profile row. Callers must FAIL CLOSED on null (treat as "must
+ * onboard"). The previous fail-open contract ("error => pretend completed")
+ * is exactly what let every new signup silently bypass the wizard when this
+ * read failed in production. Re-showing the wizard to an already-onboarded
+ * user on a transient error is safe — lit_complete_onboarding is idempotent
+ * and preserves the original completion timestamp — while silently skipping
+ * it for a new user defeats the gate entirely.
  */
 export async function fetchOnboardingStatus(): Promise<OnboardingStatus | null> {
   if (!supabase) return null;
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("onboarding_completed_at, demo_booked")
-    .maybeSingle();
-  if (error) return null; // caller decides how to treat an unreadable status
-  return {
-    completedAt: (data?.onboarding_completed_at as string | null) ?? null,
-    demoBooked: Boolean(data?.demo_booked),
-  };
+  try {
+    const { data: userData } = await supabase.auth.getUser();
+    const uid = userData?.user?.id;
+    if (!uid) return null;
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("onboarding_completed_at, demo_booked, created_at")
+      .eq("id", uid)
+      .maybeSingle();
+    if (error) {
+      console.warn("[onboarding] status read failed:", error.message);
+      return null;
+    }
+    if (!data) {
+      // Profile row missing (handle_new_user_profile trigger failed?) —
+      // fail closed: the wizard's completion RPC will surface the problem.
+      console.warn("[onboarding] no profiles row for user", uid);
+      return null;
+    }
+    return {
+      completedAt: (data.onboarding_completed_at as string | null) ?? null,
+      demoBooked: Boolean(data.demo_booked),
+      profileCreatedAt: (data.created_at as string | null) ?? null,
+    };
+  } catch (err) {
+    console.warn("[onboarding] status read threw:", err);
+    return null;
+  }
+}
+
+/**
+ * True when the profile predates the gate launch — the user existed before
+ * the mandatory onboarding shipped and must never be re-gated, even if the
+ * migration backfill somehow missed their row.
+ */
+export function isGrandfathered(status: OnboardingStatus | null): boolean {
+  if (!status?.profileCreatedAt) return false;
+  const created = Date.parse(status.profileCreatedAt);
+  return Number.isFinite(created) && created < Date.parse(ONBOARDING_GATE_LAUNCH);
 }
 
 export interface CompleteOnboardingInput {

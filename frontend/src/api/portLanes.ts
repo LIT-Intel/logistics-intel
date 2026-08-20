@@ -199,7 +199,10 @@ export function useCompanyPortLanes(
  * around {@link usePlaceCentroids} (which already handles chunking, caching
  * and dropping precision='failed' rows) — the port keys are just another
  * place_key shape in the same table. Returns Map<place_key, PlaceCentroid>
- * containing ONLY keys with usable coordinates.
+ * containing ONLY keys with usable coordinates. Port rows are seeded at
+ * precision 'city' or 'failed' only, but consumers should still require
+ * `precision === "city"` before plotting (usePlaceCentroids also surfaces
+ * 'region' rows for the lane-endpoint key shape).
  */
 export function usePortCentroids(
   lanes: CompanyPortLane[] | null | undefined,

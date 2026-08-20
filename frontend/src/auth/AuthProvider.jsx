@@ -12,7 +12,7 @@ import { getStoredRef, clearStoredRef } from '@/lib/affiliateRef';
 import { getAnonId } from '@/lib/anonId';
 import { identifySentryUser, clearSentryUser } from '@/lib/sentry';
 import { captureAppAttribution, readAttribution } from '@/lib/attribution';
-import { fetchOnboardingStatus } from '@/api/onboarding';
+import { fetchOnboardingStatus, isGrandfathered } from '@/api/onboarding';
 
 // Record first-touch source (UTMs / referrer / landing) for visitors who
 // land directly on the app without passing through the marketing site.
@@ -213,9 +213,14 @@ export function AuthProvider({ children }) {
   const [orgId, setOrgId] = useState(null);
   const [plan, setPlan] = useState(null);
   const [pagePermissions, setPagePermissions] = useState(null);
-  // Post-signup onboarding gate (2026-08-19). null = unknown/not-yet-loaded,
-  // true = onboarding done (or grandfathered / unreadable → fail-open so we
-  // never lock a real user out of the app on a transient read error).
+  // Post-signup onboarding gate (2026-08-19). true = onboarding done (or
+  // grandfathered / platform admin), false = must complete the 3-step wizard.
+  // Starts true only because the route guards render nothing while `loading`
+  // is true — the signed-in branch below ALWAYS resolves this flag before
+  // setLoading(false), so the default is never used to admit a user.
+  // FAIL CLOSED (2026-08-20): an unreadable/missing status now resolves to
+  // false. The old fail-open behavior ("error => completed") let every new
+  // signup silently bypass the wizard whenever the profiles read failed.
   const [onboardingCompleted, setOnboardingCompleted] = useState(true);
 
   useEffect(() => {
@@ -262,18 +267,23 @@ export function AuthProvider({ children }) {
         const membership = await fetchPrimaryOrgMembership(u.id);
 
         // Onboarding gate: read the profiles.onboarding_completed_at flag.
-        // Platform admins are never gated. On an unreadable status we fail
-        // OPEN (treat as completed) so a transient error can't lock anyone
-        // out. Invited/legacy users are grandfathered by the migration
-        // backfill, so their flag is already set.
+        // Platform admins are never gated. FAIL CLOSED (2026-08-20): an
+        // unreadable or missing status means "must onboard" — the wizard is
+        // idempotent (lit_complete_onboarding preserves an earlier completion
+        // timestamp), so re-showing it on a transient error is harmless,
+        // whereas the old fail-open path silently skipped the gate for every
+        // new signup when the read errored. Legacy users are grandfathered by
+        // the migration backfill AND by the created_at cutoff check here.
         if (superAdminByEmail) {
           setOnboardingCompleted(true);
         } else {
           try {
             const status = await fetchOnboardingStatus();
-            setOnboardingCompleted(status ? Boolean(status.completedAt) : true);
+            setOnboardingCompleted(
+              Boolean(status?.completedAt) || isGrandfathered(status)
+            );
           } catch {
-            setOnboardingCompleted(true);
+            setOnboardingCompleted(false);
           }
         }
 

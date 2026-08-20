@@ -66,6 +66,10 @@ type ListRow = {
   companyName: string;
   stage: string;
   address: string | null;
+  /** Structured location fields (lit_companies.city / .state) — drive the
+   *  City and State/Region filters + the free-text search haystack. */
+  city: string | null;
+  state: string | null;
   domain: string | null;
   website: string | null;
   countryCode: string | null;
@@ -83,9 +87,40 @@ type ListRow = {
   sharedBy: string | null;
   /** lit_saved_companies.id for the row — links a new deal to the account. */
   savedId: string | null;
+  /** lit_saved_companies.created_at — when the viewer (or org-mate) saved
+   *  this company. Drives the default "Recently saved" sort. */
+  savedAt: string | null;
 };
 
-type SortableKey = keyof Pick<ListRow, 'companyName' | 'lastActivity' | 'shipments12m' | 'teu12m' | 'estSpend12m' | 'topRoute12m'>;
+type SortableKey = keyof Pick<ListRow, 'companyName' | 'lastActivity' | 'shipments12m' | 'teu12m' | 'estSpend12m' | 'topRoute12m' | 'savedAt'>;
+
+// Sort keys that hold ISO date strings — compared as timestamps, never via
+// the numeric/locale fallback (parseFloat("2026-08-01") === 2026 would make
+// same-year dates compare equal).
+const DATE_SORT_KEYS: ReadonlySet<SortableKey> = new Set(['savedAt', 'lastActivity']);
+
+// Human labels for the header subtitle ("… · Sorted by recently saved") and
+// the sort <select> in the toolbar.
+const SORT_LABELS: Record<SortableKey, string> = {
+  savedAt:      'recently saved',
+  shipments12m: 'shipments 12M',
+  teu12m:       'TEU 12M',
+  estSpend12m:  'est. spend',
+  lastActivity: 'last shipment',
+  companyName:  'company name',
+  topRoute12m:  'top route',
+};
+
+// Toolbar sort options (order = menu order). Column-header clicks can still
+// reach every sortable column; this select covers the common cases.
+const SORT_OPTIONS: Array<{ key: SortableKey; label: string }> = [
+  { key: 'savedAt',      label: 'Recently saved' },
+  { key: 'shipments12m', label: 'Shipments 12M' },
+  { key: 'teu12m',       label: 'TEU 12M' },
+  { key: 'estSpend12m',  label: 'Est. spend' },
+  { key: 'lastActivity', label: 'Last shipment' },
+  { key: 'companyName',  label: 'Company name' },
+];
 
 // Phase B.3 — table trimmed to 9 columns. Stage and Contacts dropped per the
 // validated design source (LIT Platform.html). Stage data still gets fetched
@@ -93,21 +128,31 @@ type SortableKey = keyof Pick<ListRow, 'companyName' | 'lastActivity' | 'shipmen
 // counts are still loaded and stored in `contactCounts` so we never break
 // the upstream lit_contacts probe.
 //
-// Phase B.6 — column widths re-tuned. The B.3 split squeezed Top Route into
-// 11% which overlapped Activity/Status/View on common 1280–1440 viewports.
-// New split (sums to 100%) gives Top Route a comfortable 15% with explicit
-// truncation, while clamping the right-hand badges/actions to 9% each.
+// Phase B.8 — column widths re-tuned again (overflow fix). The B.6 split gave
+// the actions column 9% of the 1200px table min-width (~108px) with
+// overflow:hidden on the cell, which permanently clipped the third (Deal)
+// button — users had to zoom the browser out to widen the percentage column.
+// Fix: every data column gets a fixed px width sized to its content, the
+// actions column gets a width that actually fits all three buttons, and
+// Company is the single flex column that absorbs the remaining space. Table
+// min-width drops to 1080 so the whole grid (actions included) fits a 1440px
+// window with the sidebar open; the overflow-x wrapper stays as a safety net
+// for anything narrower.
 const TABLE_COLS: Array<{ key: SortableKey | 'activity' | 'status' | 'actions'; label: string; width: string; sortable: boolean }> = [
-  { key: 'companyName',  label: 'Company',       width: '22%', sortable: true },
-  { key: 'lastActivity', label: 'Last Shipment', width: '10%', sortable: true },
-  { key: 'shipments12m', label: 'Shipments 12M', width: '9%',  sortable: true },
-  { key: 'teu12m',       label: 'TEU 12M',       width: '8%',  sortable: true },
-  { key: 'estSpend12m',  label: 'Est. Spend',    width: '9%',  sortable: true },
-  { key: 'topRoute12m',  label: 'Top Route',     width: '15%', sortable: true },
-  { key: 'activity',     label: 'Activity',      width: '9%',  sortable: false },
-  { key: 'status',       label: 'Status',        width: '9%',  sortable: false },
-  { key: 'actions',      label: 'View',          width: '9%',  sortable: false },
+  { key: 'companyName',  label: 'Company',       width: 'auto',  sortable: true },
+  { key: 'lastActivity', label: 'Last Shipment', width: '102px', sortable: true },
+  { key: 'shipments12m', label: 'Shipments 12M', width: '106px', sortable: true },
+  { key: 'teu12m',       label: 'TEU 12M',       width: '76px',  sortable: true },
+  { key: 'estSpend12m',  label: 'Est. Spend',    width: '88px',  sortable: true },
+  { key: 'topRoute12m',  label: 'Top Route',     width: '140px', sortable: true },
+  { key: 'activity',     label: 'Activity',      width: '90px',  sortable: false },
+  { key: 'status',       label: 'Status',        width: '96px',  sortable: false },
+  { key: 'actions',      label: 'View',          width: '208px', sortable: false },
 ];
+
+// Fixed px columns above sum to 906; at the 1080px table min-width the flex
+// Company column keeps ≥174px, which still fits avatar + truncated name.
+const TABLE_MIN_WIDTH = 1080;
 
 const STATUS_STYLE = {
   active:   { bg: '#F0FDF4', color: '#15803d', border: '#BBF7D0', dot: '#22C55E', label: 'Active'   },
@@ -197,6 +242,8 @@ function buildListRow(record: CommandCenterRecord): ListRow {
     companyName: company?.name || (company as any)?.company_name || "Company",
     stage: String((record as any)?.stage || "prospect"),
     address: company?.address || null,
+    city: ((company as any)?.city as string | null) ?? null,
+    state: ((company as any)?.state as string | null) ?? null,
     domain: (company as any)?.domain || null,
     website: (company as any)?.website || null,
     countryCode: company?.country_code || null,
@@ -213,6 +260,13 @@ function buildListRow(record: CommandCenterRecord): ListRow {
       ((record as any)?.saved_id as string | undefined) ??
       ((record as any)?.saved_company_id as string | undefined) ??
       ((record as any)?.id as string | undefined) ??
+      null,
+    // lit_saved_companies.created_at. getSavedCompanies() maps it to
+    // `saved_at`; the dev-mode path and org-shared records also expose it
+    // as `created_at` on the record root.
+    savedAt:
+      ((record as any)?.saved_at as string | undefined) ??
+      (record?.created_at as string | undefined) ??
       null,
   };
 }
@@ -462,13 +516,21 @@ function AccountsView() {
   const [savedError, setSavedError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const [sortKey, setSortKey] = useState<SortableKey>('shipments12m');
+  // Default sort: most recently saved first (lit_saved_companies.created_at,
+  // desc). Shipment volume and every other column stay one click away via
+  // the toolbar select or the column headers.
+  const [sortKey, setSortKey] = useState<SortableKey>('savedAt');
   const [sortDir, setSortDir] = useState<1 | -1>(-1);
   // Filters panel — collapsible below the search row. Active filters
   // narrow the visible saved-company list. Reset clears every filter
   // including the search term.
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filterCountry, setFilterCountry] = useState<string>("");
+  const [filterCity, setFilterCity] = useState<string>("");
+  const [filterState, setFilterState] = useState<string>("");
+  // Route country — matched against the route/lane strings (top + recent),
+  // so "CN" narrows to lanes touching China regardless of direction.
+  const [filterRouteCountry, setFilterRouteCountry] = useState<string>("");
   const [filterStatus, setFilterStatus] = useState<"all" | "active" | "pending" | "inactive">("all");
   const [filterHasContacts, setFilterHasContacts] = useState<"all" | "yes" | "no">("all");
   const [filterMinShipments, setFilterMinShipments] = useState<string>("");
@@ -651,18 +713,49 @@ function AccountsView() {
     return Array.from(set).sort();
   }, [listRows]);
 
-  // Filtering pipeline. Order: text search -> country -> status ->
-  // contacts presence -> mode (FCL/LCL share) -> lane substring ->
-  // min-shipments threshold. Empty / "all" filters short-circuit.
+  // City / state options — derived from the structured lit_companies fields
+  // on the loaded list, same idiom as countryOptions.
+  const cityOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of listRows) {
+      const c = r.city?.trim();
+      if (c) set.add(c);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [listRows]);
+
+  const stateOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of listRows) {
+      const s = r.state?.trim();
+      if (s) set.add(s);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [listRows]);
+
+  // Filtering pipeline. Order: text search -> country -> city -> state ->
+  // route country -> status -> contacts presence -> mode (FCL/LCL share) ->
+  // lane substring -> min-shipments threshold. Empty / "all" filters
+  // short-circuit. All client-side over the loaded list (the list is
+  // loaded in full, then paginated client-side).
   const filteredRows = useMemo(() => {
     const lower = searchTerm.trim().toLowerCase();
     const minShipmentsNum = filterMinShipments.trim() === "" ? null : Number(filterMinShipments);
     const laneLower = filterLane.trim().toLowerCase();
+    const routeCountryLower = filterRouteCountry.trim().toLowerCase();
     return listRows.filter((row) => {
-      const haystack = [row.companyName, row.domain, row.website, row.address, row.countryCode, row.topRoute12m, row.recentRoute]
+      // Free-text search covers: company name, city, state, full address,
+      // country, route/lane strings (top + recent), domain and website.
+      const haystack = [row.companyName, row.domain, row.website, row.address, row.city, row.state, row.countryCode, row.topRoute12m, row.recentRoute]
         .filter(Boolean).join(" ").toLowerCase();
       if (lower && !haystack.includes(lower)) return false;
       if (filterCountry && row.countryCode !== filterCountry) return false;
+      if (filterCity && (row.city?.trim() || "") !== filterCity) return false;
+      if (filterState && (row.state?.trim() || "") !== filterState) return false;
+      if (routeCountryLower) {
+        const lanes = [row.topRoute12m, row.recentRoute].filter(Boolean).join(" ").toLowerCase();
+        if (!lanes.includes(routeCountryLower)) return false;
+      }
       if (filterStatus !== "all" && statusForRow(row) !== filterStatus) return false;
       if (filterHasContacts !== "all") {
         const cnt = row.companyUuid ? contactCountsMap[row.companyUuid] || 0 : 0;
@@ -680,13 +773,16 @@ function AccountsView() {
       }
       return true;
     });
-  }, [listRows, searchTerm, filterCountry, filterStatus, filterHasContacts, filterMode, filterLane, filterMinShipments, contactCountsMap]);
+  }, [listRows, searchTerm, filterCountry, filterCity, filterState, filterRouteCountry, filterStatus, filterHasContacts, filterMode, filterLane, filterMinShipments, contactCountsMap]);
 
   // Reset every filter at once. Search term included so "Reset
   // filters" actually clears the visible list view.
   const resetFilters = useCallback(() => {
     setSearchTerm("");
     setFilterCountry("");
+    setFilterCity("");
+    setFilterState("");
+    setFilterRouteCountry("");
     setFilterStatus("all");
     setFilterHasContacts("all");
     setFilterMinShipments("");
@@ -696,6 +792,9 @@ function AccountsView() {
 
   const activeFilterCount = (
     (filterCountry ? 1 : 0) +
+    (filterCity ? 1 : 0) +
+    (filterState ? 1 : 0) +
+    (filterRouteCountry.trim() ? 1 : 0) +
     (filterStatus !== "all" ? 1 : 0) +
     (filterHasContacts !== "all" ? 1 : 0) +
     (filterMode !== "all" ? 1 : 0) +
@@ -705,6 +804,20 @@ function AccountsView() {
 
   const sortedRows = useMemo(() => {
     return [...filteredRows].sort((a, b) => {
+      // Date keys (savedAt / lastActivity) compare as timestamps — the
+      // numeric fallback below would reduce ISO dates to their year via
+      // parseFloat and treat same-year dates as equal. Missing/unparseable
+      // dates always sink to the bottom regardless of direction.
+      if (DATE_SORT_KEYS.has(sortKey)) {
+        const at = Date.parse(String(a[sortKey] ?? ''));
+        const bt = Date.parse(String(b[sortKey] ?? ''));
+        const aOk = !Number.isNaN(at);
+        const bOk = !Number.isNaN(bt);
+        if (aOk && bOk) return sortDir * (at - bt);
+        if (aOk) return -1;
+        if (bOk) return 1;
+        return 0;
+      }
       const av = a[sortKey] ?? '';
       const bv = b[sortKey] ?? '';
       const an = parseFloat(String(av).replace(/[^0-9.-]/g, ''));
@@ -716,7 +829,7 @@ function AccountsView() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, filterCountry, filterStatus, filterHasContacts, filterMode, filterLane, filterMinShipments]);
+  }, [searchTerm, filterCountry, filterCity, filterState, filterRouteCountry, filterStatus, filterHasContacts, filterMode, filterLane, filterMinShipments]);
 
   const totalPages = Math.max(1, Math.ceil(sortedRows.length / PAGE_SIZE));
 
@@ -798,7 +911,7 @@ function AccountsView() {
               Command Center
             </div>
             <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: theme.textMuted, marginTop: 2 }}>
-              {sortedRows.length} saved companies · Sorted by shipments
+              {sortedRows.length} saved companies · Sorted by {SORT_LABELS[sortKey]}
             </div>
           </div>
 
@@ -849,6 +962,28 @@ function AccountsView() {
             ) : null}
           </button>
 
+          {/* Sort control — mirrors (and drives) the column-header sort.
+              Selecting an option applies the natural direction for it:
+              newest/biggest first, except company name which sorts A→Z. */}
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: theme.textMuted }}>
+              Sort
+            </span>
+            <select
+              value={sortKey}
+              onChange={(e) => {
+                const key = e.target.value as SortableKey;
+                setSortKey(key);
+                setSortDir(key === 'companyName' ? 1 : -1);
+              }}
+              style={{ ...fieldControlStyle(theme), width: 'auto', minWidth: 150 }}
+            >
+              {SORT_OPTIONS.map((o) => (
+                <option key={o.key} value={o.key}>{o.label}</option>
+              ))}
+            </select>
+          </label>
+
           <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: theme.textFaint, fontFamily: "'DM Sans', sans-serif", marginLeft: 'auto' }}>
             {formatNumber(sortedRows.length)} shown
           </div>
@@ -879,6 +1014,42 @@ function AccountsView() {
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>
+            </FilterField>
+
+            <FilterField label="City">
+              <select
+                value={filterCity}
+                onChange={(e) => setFilterCity(e.target.value)}
+                style={fieldControlStyle(theme)}
+              >
+                <option value="">All cities</option>
+                {cityOptions.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </FilterField>
+
+            <FilterField label="State / Region">
+              <select
+                value={filterState}
+                onChange={(e) => setFilterState(e.target.value)}
+                style={fieldControlStyle(theme)}
+              >
+                <option value="">All states</option>
+                {stateOptions.map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </FilterField>
+
+            <FilterField label="Route country">
+              <input
+                type="text"
+                value={filterRouteCountry}
+                onChange={(e) => setFilterRouteCountry(e.target.value)}
+                placeholder="e.g. CN or China"
+                style={fieldControlStyle(theme)}
+              />
             </FilterField>
 
             <FilterField label="Status">
@@ -985,7 +1156,7 @@ function AccountsView() {
               renders compact cards instead so narrow viewports don't have to
               horizontally scroll a 1200px table. */}
           <div className="hidden md:block" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 1200 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: TABLE_MIN_WIDTH }}>
             <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
               <tr style={{ background: theme.panel, borderBottom: `1px solid ${theme.border}` }}>
                 {TABLE_COLS.map((col) => {
@@ -994,7 +1165,7 @@ function AccountsView() {
                     <th
                       key={col.key}
                       style={{
-                        width: col.width, textAlign: 'left', padding: '10px 14px',
+                        width: col.width, textAlign: 'left', padding: '10px 10px',
                         fontSize: 9, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase',
                         color: theme.textFaint, fontFamily: "'Space Grotesk', sans-serif",
                         cursor: col.sortable ? 'pointer' : 'default',
@@ -1028,7 +1199,7 @@ function AccountsView() {
                     onMouseLeave={(e) => (e.currentTarget.style.background = theme.panel)}
                   >
                     {/* Company */}
-                    <td style={{ padding: '8px 12px', verticalAlign: 'middle' }}>
+                    <td style={{ padding: '8px 10px', verticalAlign: 'middle' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
                         <CompanyAvatar
                           name={row.companyName}
@@ -1065,28 +1236,28 @@ function AccountsView() {
                     </td>
 
                     {/* Last Shipment */}
-                    <td style={{ padding: '8px 12px', verticalAlign: 'middle' }}>
+                    <td style={{ padding: '8px 10px', verticalAlign: 'middle' }}>
                       <span style={{ fontSize: 12, color: theme.textMuted, fontFamily: "'DM Sans', sans-serif" }}>
                         {formatDate(row.lastActivity)}
                       </span>
                     </td>
 
                     {/* Shipments 12M */}
-                    <td style={{ padding: '8px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                    <td style={{ padding: '8px 10px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
                       <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 600, color: mode === 'dark' ? '#93C5FD' : '#1d4ed8' }}>
                         {formatNumber(row.shipments12m)}
                       </span>
                     </td>
 
                     {/* TEU 12M */}
-                    <td style={{ padding: '8px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                    <td style={{ padding: '8px 10px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
                       <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: mode === 'dark' ? '#CBD5E1' : '#374151' }}>
                         {formatNumber(row.teu12m, 1)}
                       </span>
                     </td>
 
                     {/* Est. Spend */}
-                    <td style={{ padding: '8px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                    <td style={{ padding: '8px 10px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
                       <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: mode === 'dark' ? '#CBD5E1' : '#374151' }}>
                         {formatCurrency(row.estSpend12m)}
                       </span>
@@ -1097,7 +1268,7 @@ function AccountsView() {
                         Activity column. The <span> wraps on its container so
                         the chip background sizes to text up to the column
                         edge, then ellipses; full label surfaces via title. */}
-                    <td style={{ padding: '8px 12px', verticalAlign: 'middle', overflow: 'hidden' }}>
+                    <td style={{ padding: '8px 10px', verticalAlign: 'middle', overflow: 'hidden' }}>
                       <span
                         title={row.topRoute12m || row.recentRoute || ''}
                         style={{
@@ -1123,7 +1294,7 @@ function AccountsView() {
                         content within the 9% column width without ever
                         pushing into Status/View, and never collapses below
                         legibility on narrow viewports. */}
-                    <td style={{ padding: '8px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap', overflow: 'hidden', minWidth: 84 }}>
+                    <td style={{ padding: '8px 10px', verticalAlign: 'middle', whiteSpace: 'nowrap', overflow: 'hidden', minWidth: 84 }}>
                       <span style={{
                         display: 'inline-flex', alignItems: 'center',
                         fontSize: 11, fontWeight: 700, fontFamily: "'Space Grotesk', sans-serif",
@@ -1139,7 +1310,7 @@ function AccountsView() {
                     {/* Status — Phase B.6: minWidth 96 floors the column
                         so the dot+label pill always renders in full at any
                         viewport above the 1200px table min-width. */}
-                    <td style={{ padding: '8px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap', overflow: 'hidden', minWidth: 96 }}>
+                    <td style={{ padding: '8px 10px', verticalAlign: 'middle', whiteSpace: 'nowrap', overflow: 'hidden', minWidth: 96 }}>
                       <span style={{
                         display: 'inline-flex', alignItems: 'center', gap: 4,
                         fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 9999,
@@ -1151,10 +1322,13 @@ function AccountsView() {
                       </span>
                     </td>
 
-                    {/* View action — Phase B.6: minWidth 80 keeps the
-                        "View →" + Add buttons on a single line at narrow
-                        viewports. */}
-                    <td style={{ padding: '8px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap', overflow: 'hidden', minWidth: 80 }}>
+                    {/* View action — Phase B.8: the column is a fixed 208px
+                        (see TABLE_COLS), sized so all three buttons
+                        (View → / Add / Deal) render in full on one line.
+                        Previously 9% of the table min-width (~108px) with
+                        overflow:hidden, which clipped the Deal button at
+                        normal zoom. */}
+                    <td style={{ padding: '8px 10px', verticalAlign: 'middle', whiteSpace: 'nowrap', overflow: 'hidden' }}>
                       <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
                         <button
                           onClick={(e) => { e.stopPropagation(); handleOpenCompany(row); }}

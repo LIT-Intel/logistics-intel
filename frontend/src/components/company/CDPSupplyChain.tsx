@@ -71,7 +71,10 @@ import {
   type CompanyLaneMonthRow,
 } from "@/api/laneHistory";
 import {
+  centroidUsableForCity,
+  iso2SeedCountryName,
   makePlaceKey,
+  normalizeSeedCountrySegment,
   usePlaceCentroids,
   type PlaceCentroid,
 } from "@/api/geoCentroids";
@@ -2409,18 +2412,55 @@ function cleanRollupCity(raw: string | null | undefined, meta: any): string | nu
  * countryName / canonicalKey cover snapshot-built pairs and the short
  * canonical forms ("usa", "uae") whose display names differ from the
  * full names the shipment feed stores.
+ *
+ * ISO2 normalization (2026-08 fix): the seed's country segment is ALWAYS
+ * the full lowercase name — 'ahmadabad|india', never 'ahmadabad|in'. Any
+ * 2-letter form here ("Ahmadabad, IN" labels, code-only rollup rows) is
+ * mapped through iso2SeedCountryName; the resolved countryCode is also
+ * always expanded, which covers seed names that differ from display
+ * names ("Hong Kong" → 'hong kong s.a.r.', "USA" → 'united states of
+ * america'). This function is only ever called for COUNTRY-keyed sides
+ * (foreign origins + non-US destinations — buildPairEndpointKeys routes
+ * US destinations through the `city|state` branch instead), so a
+ * 2-letter token is a country code by construction, never a US state.
  */
 function endpointCountryForms(meta: any): string[] {
   const out = new Set<string>();
+  const add = (raw: string | null | undefined) => {
+    const v = String(raw ?? "").trim().toLowerCase();
+    if (!v) return;
+    // Bare 2-letter tokens can never match the seed — map or drop them.
+    if (/^[a-z]{2}$/.test(v)) {
+      const mapped = iso2SeedCountryName(v);
+      if (mapped) out.add(mapped);
+      return;
+    }
+    out.add(v);
+  };
   const label = String(meta?.label || "").trim().toLowerCase();
-  if (label && !label.includes(",") && !/→|->/.test(label)) out.add(label);
-  const name = String(meta?.countryName || "").trim().toLowerCase();
-  if (name) out.add(name);
+  if (label && !label.includes(",") && !/→|->/.test(label)) add(label);
+  add(meta?.countryName);
   const key = String(meta?.canonicalKey || "").trim().toLowerCase();
-  if (key) out.add(key);
+  add(key);
   if (key === "usa") out.add("united states of america");
   if (key === "uae") out.add("united arab emirates");
+  // The ISO code is the most reliable field on resolved endpoints — its
+  // seed-form expansion is what rescues codes-only lane data.
+  const fromCode = iso2SeedCountryName(meta?.countryCode);
+  if (fromCode) out.add(fromCode);
   return [...out];
+}
+
+/**
+ * The single seed-form country name for an endpoint — used to decide
+ * whether a 'region'-precision centroid row is trustworthy (its key's
+ * country segment must equal this). Prefers the resolved ISO code, then
+ * any non-code country name. Null when the endpoint has neither.
+ */
+function endpointSeedCountry(meta: any): string | null {
+  const fromCode = iso2SeedCountryName(meta?.countryCode);
+  if (fromCode) return fromCode;
+  return normalizeSeedCountrySegment(meta?.countryName);
 }
 
 /**
@@ -2476,7 +2516,17 @@ function routeDestCityState(
   return { city, state };
 }
 
-type PairEndpointKeys = { fromKeys: string[]; toKeys: string[] };
+type PairEndpointKeys = {
+  fromKeys: string[];
+  toKeys: string[];
+  /** Seed-form country name whose 'region'-precision rows are trusted
+   *  for the origin side (e.g. 'india' accepts 'pune district|india').
+   *  Null = city-precision hits only. */
+  fromRegionCountry: string | null;
+  /** Same for the destination side. Always null for US destinations —
+   *  their `city|state` keys can never legitimately hit a region row. */
+  toRegionCountry: string | null;
+};
 
 /**
  * For each country pair, the candidate place_keys of its TOP city route
@@ -2527,21 +2577,34 @@ function buildPairEndpointKeys(
       break;
     }
     if (fromKeys.length || toKeys.length) {
-      out.set(p.pairKey, { fromKeys, toKeys });
+      out.set(p.pairKey, {
+        fromKeys,
+        toKeys,
+        fromRegionCountry: endpointSeedCountry(p.fromMeta),
+        toRegionCountry: destIsUs ? null : endpointSeedCountry(p.toMeta),
+      });
     }
   }
   return out;
 }
 
-/** First fetched centroid among ordered candidate keys, else null. */
+/**
+ * First fetched centroid among ordered candidate keys that is safe to
+ * plot as a CITY dot, else null. 'city'-precision hits always qualify;
+ * 'region' hits only when the key's country segment matches
+ * `regionCountry` (see centroidUsableForCity) — junk region rows like
+ * 'beijing|united states' stay rejected while legit ones like
+ * 'pune district|india' now land on the map.
+ */
 function firstCentroidHit(
   keys: string[],
   centroids: Map<string, PlaceCentroid> | undefined,
+  regionCountry: string | null,
 ): PlaceCentroid | null {
   if (!centroids || centroids.size === 0) return null;
   for (const k of keys) {
     const hit = centroids.get(k);
-    if (hit) return hit;
+    if (hit && centroidUsableForCity(k, hit, regionCountry)) return hit;
   }
   return null;
 }
@@ -3539,8 +3602,16 @@ function TopLanesCard({
     return reconciledPairs.map((p: any) => {
       const keys = pairEndpointKeys.get(p?.pairKey);
       if (!keys) return p;
-      const fromHit = firstCentroidHit(keys.fromKeys, placeCentroids);
-      const toHit = firstCentroidHit(keys.toKeys, placeCentroids);
+      const fromHit = firstCentroidHit(
+        keys.fromKeys,
+        placeCentroids,
+        keys.fromRegionCountry,
+      );
+      const toHit = firstCentroidHit(
+        keys.toKeys,
+        placeCentroids,
+        keys.toRegionCountry,
+      );
       if (!fromHit && !toHit) return p;
       return {
         ...p,

@@ -196,6 +196,10 @@ export async function listOrgSharedCompanyRecords(): Promise<any[]> {
           domain: c.domain,
           website: c.website || null,
           address: c.address_line1 || `${c.city || ""}, ${c.state || ""}`.replace(/^, |, $/g, "").trim(),
+          // Structured location fields — mirror getSavedCompanies() so
+          // Command Center city/state filters cover shared rows too.
+          city: c.city ?? null,
+          state: c.state ?? null,
           country_code: c.country_code,
           kpis: {
             shipments_12m: c.shipments_12m ?? 0,

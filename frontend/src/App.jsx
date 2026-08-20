@@ -99,9 +99,10 @@ function RequireAuth({ children }) {
   // Post-signup onboarding gate (2026-08-19). Every NEW confirmed user must
   // finish the mandatory 3-step qualification flow (anti-spam + sales data)
   // before reaching the app. `onboardingCompleted` comes from AuthProvider,
-  // which reads profiles.onboarding_completed_at (grandfathered to now() for
-  // all pre-existing accounts, and fail-open on read errors — see migration
-  // 20260819130000). Preserve where they were headed via ?next=.
+  // which reads profiles.onboarding_completed_at (grandfathered for accounts
+  // created before 2026-08-18, and FAIL-CLOSED on read errors as of
+  // 2026-08-20 — see migration 20260819130000 + api/onboarding.ts).
+  // Preserve where they were headed via ?next=.
   if (onboardingCompleted === false) {
     const next = encodeURIComponent(location.pathname + (location.search || ""));
     return <Navigate to={`/onboarding?next=${next}`} replace />;

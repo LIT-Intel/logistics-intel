@@ -231,7 +231,12 @@ export default function RelationshipIntelCard({
     });
     const topEntryPort = dominantEntryPort(portLanes);
     const portKey = topEntryPort ? entryPortKey(topEntryPort) : null;
-    const portPoint = (portKey && portCentroids?.get(portKey)) || null;
+    const portHit = (portKey && portCentroids?.get(portKey)) || null;
+    // Port keys are seeded at 'city' or 'failed' precision only, but
+    // usePlaceCentroids now also surfaces 'region' rows for lane keys —
+    // require city precision so mileage is never computed off a
+    // region-approximate point.
+    const portPoint = portHit && portHit.precision === "city" ? portHit : null;
     const portMiles =
       hqPoint && portPoint ? Math.round(haversineMiles(portPoint, hqPoint)) : null;
     return { milesFromHq, topEntryPort, portMiles };

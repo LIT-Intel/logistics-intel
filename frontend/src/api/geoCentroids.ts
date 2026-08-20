@@ -11,16 +11,29 @@
  *     origins:  `lower(city)|lower(country)`     e.g. "hangzhou shi|china"
  *     US dests: `lower(city)|lower(state_code)`  e.g. "atlanta|ga"
  *   lat/lng double precision — NULL when precision='failed'
- *   precision text — 'city' | 'region' | 'failed'
+ *   precision text — 'city' | 'region' | 'country' | 'failed'
  *
  * RLS: authenticated SELECT — safe to query directly from the frontend.
  *
- * Only rows with non-null coords and precision='city' are returned.
- * 'failed' rows are treated exactly like missing keys, and 'region' rows
- * are ALSO dropped (2026-08 tightening): the seed contains junk
- * city|country pairs (e.g. "beijing|united states" region-geocoded to
- * NYC) that must never place a dot. Port keys are unaffected — they only
- * ever carry precision 'city' or 'failed'.
+ * Only rows with non-null coords and precision 'city' or 'region' are
+ * returned. 'failed' and 'country' rows are treated exactly like missing
+ * keys (a country-precision row must never masquerade as a city dot —
+ * callers already have their own country-centroid fallback). 'region'
+ * rows are returned WITH their precision so callers can gate them: the
+ * seed contains junk city|country pairs (e.g. "beijing|united states"
+ * region-geocoded to NYC) that must never place a dot, but legitimate
+ * region rows ("pune district|india") are real endpoints. Use
+ * {@link centroidUsableForCity} to accept a region row ONLY when the
+ * key's country segment matches the lane's resolved country. Port keys
+ * are unaffected — they only ever carry precision 'city' or 'failed',
+ * and port consumers require `precision === "city"` explicitly.
+ *
+ * KEY NORMALIZATION: the seed's country segment is always the FULL
+ * lowercase country name ('india', 'united kingdom', 'hong kong
+ * s.a.r.'), NEVER an ISO2 code — but lane/shipment data often carries
+ * ISO2-ish codes ("Ahmadabad, IN"). Use {@link iso2SeedCountryName} /
+ * the candidate builders below instead of hand-rolling `city|cc` keys,
+ * which silently miss and fall back to the country centroid.
  *
  * Lives under frontend/src/api/ per CLAUDE.md — new domain code must NOT
  * be added to frontend/src/lib/api.ts.
@@ -37,9 +50,131 @@ const IN_CHUNK = 200;
 export type PlaceCentroid = {
   lat: number;
   lng: number;
-  /** Only 'city'-precision rows are ever returned (see module docs). */
-  precision: "city";
+  /**
+   * Only 'city' and 'region' rows are ever returned (see module docs).
+   * 'city' is always safe to plot; gate 'region' rows through
+   * {@link centroidUsableForCity} before placing a dot.
+   */
+  precision: "city" | "region";
 };
+
+/* ── ISO2 → seed country-name normalization ─────────────────────────────
+ * The seed table keys foreign places as `lower(city)|lower(country)` with
+ * the FULL country name — 'ahmadabad|india', never 'ahmadabad|in'. Lane
+ * and shipment feeds frequently carry 2-letter codes instead, so every
+ * key builder must run its country segment through these helpers.
+ *
+ * US-STATE COLLISION ('IN' = India AND Indiana, 'CA' = Canada AND
+ * California…): these helpers are for COUNTRY-segment contexts only —
+ * i.e. foreign origins and non-US destinations, where the seed keys on
+ * the country name. US destination keys use `lower(city)|lower(state)`
+ * ('austin|tx') and are built in a separate code path that treats
+ * 2-letter tokens as state codes; callers must pick the branch from the
+ * lane's resolved destination country BEFORE calling this (see
+ * CDPSupplyChain.buildPairEndpointKeys — `destIsUs`).
+ */
+
+/** ISO2 (plus 'uk') → the exact lowercase country name the seed uses. */
+const ISO2_SEED_COUNTRY_NAMES: Record<string, string> = {
+  in: "india",
+  cn: "china",
+  vn: "vietnam",
+  tr: "turkey",
+  es: "spain",
+  it: "italy",
+  de: "germany",
+  gb: "united kingdom",
+  uk: "united kingdom",
+  kr: "south korea",
+  jp: "japan",
+  tw: "taiwan",
+  th: "thailand",
+  my: "malaysia",
+  id: "indonesia",
+  ph: "philippines",
+  bd: "bangladesh",
+  pk: "pakistan",
+  mx: "mexico",
+  ca: "canada",
+  br: "brazil",
+  cl: "chile",
+  co: "colombia",
+  au: "australia",
+  nz: "new zealand",
+  fr: "france",
+  nl: "netherlands",
+  be: "belgium",
+  pl: "poland",
+  se: "sweden",
+  fi: "finland",
+  dk: "denmark",
+  at: "austria",
+  ch: "switzerland",
+  pt: "portugal",
+  gr: "greece",
+  eg: "egypt",
+  za: "south africa",
+  sa: "saudi arabia",
+  ae: "united arab emirates",
+  il: "israel",
+  sg: "singapore",
+  hk: "hong kong s.a.r.",
+  us: "united states of america",
+};
+
+/**
+ * Map a 2-letter ISO country code ('IN', 'gb', also 'UK') to the full
+ * lowercase country name used in the seed's `city|country` keys. Returns
+ * null for unknown codes — callers should then fall back to whatever
+ * full-name string they already have. NEVER call this with a US state
+ * code (see the collision note above).
+ */
+export function iso2SeedCountryName(
+  code: string | null | undefined,
+): string | null {
+  const c = String(code ?? "").trim().toLowerCase();
+  if (!/^[a-z]{2}$/.test(c)) return null;
+  return ISO2_SEED_COUNTRY_NAMES[c] ?? null;
+}
+
+/**
+ * Normalize one raw country segment (full name OR 2-letter code) into the
+ * form the seed keys on. Full names pass through lowercased; known ISO2
+ * codes map to the full name; UNKNOWN 2-letter tokens return null (a
+ * bare code can never match the seed, so a `city|xx` key is pure waste).
+ * Country-segment contexts only — never US states.
+ */
+export function normalizeSeedCountrySegment(
+  raw: string | null | undefined,
+): string | null {
+  const v = String(raw ?? "").trim().toLowerCase();
+  if (!v) return null;
+  if (/^[a-z]{2}$/.test(v)) return iso2SeedCountryName(v);
+  return v;
+}
+
+/**
+ * Whether a fetched centroid may place a CITY dot for a lane endpoint.
+ *  - 'city' precision: always usable.
+ *  - 'region' precision: usable ONLY when the key's country segment
+ *    equals the lane's resolved full country name (seed form) — accepts
+ *    legit rows like 'pune district|india' for an India lane while still
+ *    rejecting junk like 'beijing|united states' for a China lane.
+ *    US `city|state` keys never match a country name, so region rows
+ *    are conservatively rejected there.
+ * ('country'/'failed' rows are never fetched — see usePlaceCentroids.)
+ */
+export function centroidUsableForCity(
+  placeKey: string,
+  centroid: PlaceCentroid,
+  laneSeedCountry: string | null | undefined,
+): boolean {
+  if (centroid.precision === "city") return true;
+  const country = String(laneSeedCountry ?? "").trim().toLowerCase();
+  if (!country) return false;
+  const seg = String(placeKey ?? "").split("|")[1]?.trim() ?? "";
+  return seg === country;
+}
 
 /**
  * Great-circle (haversine) distance in statute MILES between two points.
@@ -75,13 +210,15 @@ export function makePlaceKey(
 }
 
 /**
- * Resolve a set of place_keys to city-precision centroids.
+ * Resolve a set of place_keys to city/region-precision centroids.
  *
  * Returns a Map<place_key, PlaceCentroid> containing ONLY the keys that
  * exist with usable coordinates — missing keys and precision 'failed' /
- * 'region' rows are simply absent, so callers fall back to their current
- * (country-centroid) behavior. Disabled (resolves an empty Map) when the
- * key list is empty; errors degrade to whatever was already fetched.
+ * 'country' rows are simply absent, so callers fall back to their
+ * current (country-centroid) behavior. 'region' rows are returned with
+ * `precision: "region"`; gate them via {@link centroidUsableForCity}.
+ * Disabled (resolves an empty Map) when the key list is empty; errors
+ * degrade to whatever was already fetched.
  */
 export function usePlaceCentroids(
   keys: string[],
@@ -114,10 +251,13 @@ export function usePlaceCentroids(
           continue;
         }
         for (const r of (data ?? []) as any[]) {
-          // CITY precision only — 'region' rows are junk-prone (e.g.
-          // "beijing|united states" → NYC) and must never place a dot.
+          // 'city' + 'region' only. 'country'/'failed' behave like missing
+          // keys (country dots come from the callers' own fallback).
+          // 'region' rows are junk-prone (e.g. "beijing|united states" →
+          // NYC) so they carry their precision out — callers must gate
+          // them via centroidUsableForCity() before placing a dot.
           const precision = String(r?.precision ?? "");
-          if (precision !== "city") continue;
+          if (precision !== "city" && precision !== "region") continue;
           const lat = Number(r?.lat);
           const lng = Number(r?.lng);
           if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;

@@ -27,6 +27,130 @@ export const supabase = authClient;
 // Legacy alias — keep existing imports that use `auth` working.
 export const auth = authClient;
 
+// ── Session-expiry resilience (2026-08-20) ──────────────────────────────────
+// When a refresh-token grant definitively fails (400 "Invalid Refresh Token:
+// Refresh Token Not Found" — e.g. token family revoked while the site was
+// down), supabase-js drops the session and emits SIGNED_OUT. Previously the
+// app silently swallowed that: components kept their mounted state, every
+// RLS-gated query returned empty rows, and users saw a "working" app with no
+// data. Now: if the user WAS authenticated (in this tab, or via a persisted
+// session found at boot) and the sign-out was not user-initiated, we clear the
+// stale local session and hard-redirect to /login with a friendly
+// "session expired" notice. Anonymous/marketing/auth routes are never
+// redirected, and /login itself is excluded, so no redirect loops.
+
+const SESSION_EXPIRED_REASON = 'session_expired';
+
+function findStoredSupabaseAuthKeys(): string[] {
+  const keys: string[] = [];
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return keys;
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const key = window.localStorage.key(i);
+      // supabase-js v2 persists the session under "sb-<project-ref>-auth-token"
+      if (key && /^sb-.+-auth-token/.test(key)) keys.push(key);
+    }
+  } catch {
+    // storage unavailable (private mode / SSR) — treat as no stored session
+  }
+  return keys;
+}
+
+// Snapshot BEFORE createClient's initialize() runs its recover+refresh, which
+// removes the storage key when the refresh token turns out to be dead. This is
+// how we know "this browser believed it was signed in" even when the very
+// first event we see is a session-less SIGNED_OUT / INITIAL_SESSION.
+const hadStoredSessionAtBoot = findStoredSupabaseAuthKeys().length > 0;
+
+let wasAuthenticatedThisTab = false;
+let intentionalSignOut = false;
+let sessionExpiredRedirectFired = false;
+
+// Only genuinely-authenticated app surfaces may force-redirect. Marketing
+// pages, /login (+ its /app/login alias), /signup, /reset-password,
+// /auth/callback, /accept-invite, etc. must never bounce an anonymous visitor.
+function isProtectedAppPath(pathname: string): boolean {
+  if (pathname === '/app/login') return false;
+  return (
+    pathname === '/app' ||
+    pathname.startsWith('/app/') ||
+    pathname === '/admin' ||
+    pathname.startsWith('/admin/') ||
+    pathname === '/onboarding'
+  );
+}
+
+// Definitive refresh-token failure — NOT transient network errors (supabase-js
+// retries those on its own; killing the session for them would sign users out
+// on flaky wifi).
+export function isRefreshTokenError(error: unknown): boolean {
+  if (!error) return false;
+  const err = error as { code?: string; message?: string };
+  const code = String(err.code || '');
+  const message = String(err.message || '');
+  return (
+    code === 'refresh_token_not_found' ||
+    code === 'refresh_token_already_used' ||
+    /invalid refresh token/i.test(message) ||
+    /refresh token not found/i.test(message)
+  );
+}
+
+// Clear the dead local session and (only on authenticated app routes) redirect
+// to /login with a friendly message. Full page navigation on purpose: it
+// guarantees every mounted component's in-memory "authenticated" state is
+// discarded rather than left rendering empty data.
+export function handleSessionExpired() {
+  if (typeof window === 'undefined' || sessionExpiredRedirectFired) return;
+
+  // Remove any lingering sb-* auth keys so the client stops replaying a
+  // doomed refresh (the repeated 400s seen in prod auth logs).
+  try {
+    for (const key of findStoredSupabaseAuthKeys()) {
+      window.localStorage.removeItem(key);
+    }
+  } catch {
+    // best-effort
+  }
+
+  const path = window.location.pathname;
+  if (!isProtectedAppPath(path)) return; // public/auth route — never redirect
+
+  sessionExpiredRedirectFired = true;
+  const next = encodeURIComponent(path + (window.location.search || ''));
+  console.warn('[LIT Auth] Session expired (refresh token invalid) — redirecting to login');
+  window.location.replace(`/login?reason=${SESSION_EXPIRED_REASON}&next=${next}`);
+}
+
+// Global watcher — registered once on the singleton client.
+if (authClient) {
+  authClient.auth.onAuthStateChange((event: string, session: Session | null) => {
+    if (session) {
+      // Any live session re-arms the watcher and clears the logout flag.
+      wasAuthenticatedThisTab = true;
+      intentionalSignOut = false;
+      sessionExpiredRedirectFired = false;
+      return;
+    }
+
+    // Session-less events. Two shapes of "refresh definitively failed":
+    //   - SIGNED_OUT emitted mid-session when the auto-refresh gets a
+    //     terminal AuthApiError (refresh_token_not_found), and
+    //   - INITIAL_SESSION with NO session at boot even though storage held a
+    //     persisted session (initialize() tried to recover it, the refresh
+    //     failed, and supabase-js dropped it before telling us).
+    const definitiveSignOut =
+      event === 'SIGNED_OUT' ||
+      (event === 'INITIAL_SESSION' && hadStoredSessionAtBoot);
+
+    if (!definitiveSignOut) return;
+    if (intentionalSignOut) return; // user clicked "Log out" — their flow handles navigation
+    if (!wasAuthenticatedThisTab && !hadStoredSessionAtBoot) return; // never was signed in — anonymous visitor
+
+    handleSessionExpired();
+  });
+}
+
 export function isSupabaseAvailable(): boolean {
   return authClient !== null;
 }
@@ -192,6 +316,9 @@ export async function getCurrentUser() {
   const { data: { user }, error } = await auth.auth.getUser();
   if (error) {
     console.error('[LIT Auth] Error getting current user:', error);
+    // A dead refresh token surfacing here means the session is unrecoverable —
+    // route through the expired-session flow instead of silently returning null.
+    if (isRefreshTokenError(error)) handleSessionExpired();
     return null;
   }
   return user;
@@ -203,6 +330,7 @@ export async function getCurrentSession() {
   const { data: { session }, error } = await auth.auth.getSession();
   if (error) {
     console.error('[LIT Auth] Error getting session:', error);
+    if (isRefreshTokenError(error)) handleSessionExpired();
     return null;
   }
   return session;
@@ -211,6 +339,10 @@ export async function getCurrentSession() {
 // Sign Out
 export async function logout() {
   if (!auth) return;
+  // Mark this SIGNED_OUT as user-initiated so the session-expiry watcher does
+  // not treat it as a failed refresh and inject a "session expired" redirect.
+  // Re-armed automatically on the next SIGNED_IN (see watcher above).
+  intentionalSignOut = true;
   const { error } = await auth.auth.signOut();
   if (error) {
     console.error('[LIT Auth] Error signing out:', error);

@@ -124,6 +124,9 @@ export default function ModernLoginPage() {
   const inviteToken = (searchParams.get("token") || "").trim();
   const inviteEmail = (searchParams.get("email") || "").trim().toLowerCase();
   const nextParam   = (searchParams.get("next")  || "").trim();
+  // Set by the session-expiry watcher in supabaseAuthClient.ts when a refresh
+  // token definitively dies mid-session (e.g. revoked while the site was down).
+  const sessionExpired = searchParams.get("reason") === "session_expired";
 
   const signupPath = inviteToken
     ? `/signup?token=${encodeURIComponent(inviteToken)}${
@@ -159,6 +162,11 @@ export default function ModernLoginPage() {
   }
 
   const isEmailNotConfirmed = err.toLowerCase().includes('email not confirmed');
+  // Supabase returns the same "Invalid login credentials" for a wrong password
+  // AND for an account that has NO password (OAuth-only signup — providers:
+  // [google]). The provider is not detectable client-side pre-login, so on
+  // this error we always surface the Google/set-a-password guidance.
+  const isInvalidCredentials = err.toLowerCase().includes('invalid login credentials');
 
   async function handleResend() {
     if (!email) { setErr('Enter your email address above, then click Resend.'); return; }
@@ -260,6 +268,12 @@ export default function ModernLoginPage() {
             </p>
           </div>
 
+          {sessionExpired && !err && (
+            <div className="mb-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+              Your session expired — please sign in again.
+            </div>
+          )}
+
           {resendSent && (
             <div className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
               Confirmation email sent — check your inbox and click the link, then sign in again.
@@ -277,6 +291,22 @@ export default function ModernLoginPage() {
                 >
                   Resend confirmation email →
                 </button>
+              )}
+              {isInvalidCredentials && (
+                <p className="mt-2 border-t border-red-200 pt-2 text-[13px] leading-relaxed text-red-700">
+                  If you originally signed up with Google, use the{" "}
+                  <span className="font-semibold">Google</span> button below instead —
+                  password login only works for accounts created with a password. You
+                  can also use{" "}
+                  <button
+                    type="button"
+                    onClick={() => nav("/reset-password")}
+                    className="font-semibold underline hover:no-underline"
+                  >
+                    Forgot password
+                  </button>{" "}
+                  to set a password for your account.
+                </p>
               )}
             </div>
           )}

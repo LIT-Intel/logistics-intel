@@ -4255,6 +4255,11 @@ export async function getSavedCompanies(signal?: AbortSignal) {
         domain: item.lit_companies?.domain,
         website: item.lit_companies?.website || null,
         address: item.lit_companies?.address_line1 || `${item.lit_companies?.city || ''}, ${item.lit_companies?.state || ''}`.trim(),
+        // Structured location fields — surfaced individually (beyond the
+        // composite `address` string) so the Command Center can offer
+        // city/state filters without parsing the address back apart.
+        city: item.lit_companies?.city ?? null,
+        state: item.lit_companies?.state ?? null,
         country_code: item.lit_companies?.country_code,
         kpis: {
           shipments_12m:    item.lit_companies?.shipments_12m    ?? 0,
