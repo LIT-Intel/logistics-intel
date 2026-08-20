@@ -18,6 +18,13 @@ const LOGO_DEV_BASE = (
 // when the operator chose a different convention. logo.dev publishable
 // keys are client-safe; marketing-side uses NEXT_PUBLIC_LOGO_DEV_KEY,
 // the Vite app traditionally used VITE_LOGO_DEV_TOKEN.
+// Publishable key fallback: this is the same client-safe key the marketing
+// site already exposes in every img URL on logisticintel.com. logo.dev locks
+// it to allowed origins (Referer-checked; app.logisticintel.com verified
+// 200 on 2026-08-20), so hardcoding leaks nothing an attacker couldn't
+// copy from the public homepage. Env vars still take precedence.
+const LOGO_DEV_PUBLISHABLE_FALLBACK = "pk_FTj3iPbUS3SgUfJ7X1FXPQ";
+
 const LOGO_DEV_TOKEN =
   readEnv("VITE_LOGO_DEV_TOKEN") ??
   readEnv("VITE_LOGO_DEV_KEY") ??
@@ -25,7 +32,7 @@ const LOGO_DEV_TOKEN =
   readEnv("NEXT_PUBLIC_LOGO_DEV_KEY") ??
   readEnv("LOGO_DEV_TOKEN") ??
   readEnv("LOGO_DEV_KEY") ??
-  "";
+  LOGO_DEV_PUBLISHABLE_FALLBACK;
 
 function cleanValue(value?: string | null): string {
   return String(value || "").trim();

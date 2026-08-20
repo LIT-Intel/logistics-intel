@@ -1105,7 +1105,7 @@ export default function SearchPage() {
           <div className="mx-auto max-w-7xl px-1">
             <div className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 shadow-sm">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-              <p className="font-body text-[12.5px] font-medium leading-snug text-amber-700">
+              <p className="font-body flex-1 text-[12.5px] font-medium leading-snug text-amber-700">
                 {degraded.reason === "daily_quota"
                   ? `Daily live-search limit reached${
                       degraded.quota
@@ -1116,6 +1116,15 @@ export default function SearchPage() {
                     ? "Live shipment data is temporarily disabled by an administrator — showing saved index only."
                     : "Live data provider unreachable — showing saved index only. Try again in a few minutes."}
               </p>
+              {degraded.reason === "daily_quota" && (
+                <button
+                  type="button"
+                  onClick={() => navigate("/app/billing")}
+                  className="shrink-0 rounded-lg bg-[#2563EB] px-3 py-1.5 text-[12px] font-semibold text-white shadow-sm transition hover:bg-blue-700"
+                >
+                  Upgrade for more searches
+                </button>
+              )}
             </div>
           </div>
         )}

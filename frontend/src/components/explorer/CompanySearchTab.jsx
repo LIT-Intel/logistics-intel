@@ -578,7 +578,16 @@ export default function CompanySearchTab() {
           <div className="border-t border-amber-200 bg-amber-50 px-4 py-3">
             <div className="font-body flex items-start gap-2 text-[12.5px] font-medium text-amber-700">
               <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-600" />
-              <span>{degradedBannerMessage(degraded)}</span>
+              <span className="flex-1">{degradedBannerMessage(degraded)}</span>
+              {degraded.reason === 'daily_quota' ? (
+                <button
+                  type="button"
+                  onClick={() => navigate('/app/billing')}
+                  className="shrink-0 rounded-lg bg-[#2563EB] px-3 py-1.5 text-[12px] font-semibold text-white shadow-sm transition hover:bg-blue-700"
+                >
+                  Upgrade for more searches
+                </button>
+              ) : null}
             </div>
           </div>
         ) : null}
