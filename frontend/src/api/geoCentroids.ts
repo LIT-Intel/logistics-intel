@@ -38,7 +38,12 @@
  * Lives under frontend/src/api/ per CLAUDE.md — new domain code must NOT
  * be added to frontend/src/lib/api.ts.
  */
-import { useQuery, type UseQueryResult } from "@tanstack/react-query";
+import { useEffect } from "react";
+import {
+  useQuery,
+  useQueryClient,
+  type UseQueryResult,
+} from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 
 /** Coordinates don't move — cache aggressively. */
@@ -267,4 +272,123 @@ export function usePlaceCentroids(
       return out;
     },
   });
+}
+
+/* ── On-demand geocode fallback (2026-08 self-healing seed) ─────────────
+ * The seed only covers ~1,588 places harvested from past data — cities
+ * outside it (e.g. "Winder, GA") can NEVER geocode client-side and their
+ * dots fall back to the country centroid. useEnsurePlaceCentroids closes
+ * the gap: callers hand it the endpoint descriptors that MISSED the
+ * centroid table; it fires ONE debounced, batched call to the
+ * `geocode-place` edge function (which looks the keys up server-side and
+ * geocodes true misses via Nominatim, upserting the result — including a
+ * negative-cache 'failed' row) and then invalidates the
+ * usePlaceCentroids queries so dots move to the precise location when
+ * results land.
+ */
+
+/** A place that missed the centroid table and should be geocoded once. */
+export type EnsurePlaceDescriptor = {
+  /** Canonical seed key this descriptor heals (used for session dedupe
+   *  AND rebuilt server-side from city/region/country — keep them in
+   *  sync via the same key rules). */
+  placeKey: string;
+  city: string;
+  /** 2-letter US state code when known (US destinations). */
+  region?: string | null;
+  /** Full country name or ISO2 code ('us' for stateless US cities). */
+  country?: string | null;
+};
+
+/** Max places per geocode-place invocation (mirrors the edge fn cap). */
+const ENSURE_BATCH_MAX = 10;
+/** Debounce so rapid descriptor churn (scope filters) fires one call. */
+const ENSURE_DEBOUNCE_MS = 1000;
+
+/** place_keys already attempted this session (success OR failure) — a key
+ *  is only ever sent once per page load; no retry loops. Module-level so
+ *  every consumer (hero + dialog) shares the same guard. */
+const attemptedPlaceKeys = new Set<string>();
+
+/**
+ * Fire-and-forget fallback geocoding for centroid-table misses.
+ *
+ * Pass the descriptors that had NO usable city/region row after
+ * usePlaceCentroids resolved (pass [] while loading — the hook is inert
+ * until `enabled` and the list is non-empty). Each place_key is attempted
+ * at most once per session; when the edge fn reports at least one usable
+ * hit the geo-place-centroids queries are invalidated so the map picks up
+ * the healed rows. Errors are swallowed (the country-centroid fallback
+ * stays on screen).
+ */
+export function useEnsurePlaceCentroids(
+  descriptors: EnsurePlaceDescriptor[],
+  enabled: boolean,
+): void {
+  const queryClient = useQueryClient();
+
+  // Stable signature so the effect only re-arms when the actual set of
+  // un-attempted keys changes (not on every parent render).
+  const pendingKey = (descriptors ?? [])
+    .map((d) => String(d?.placeKey ?? "").trim().toLowerCase())
+    .filter((k) => k && !attemptedPlaceKeys.has(k))
+    .sort()
+    .join(";");
+
+  useEffect(() => {
+    if (!enabled || !pendingKey) return;
+    const timer = window.setTimeout(() => {
+      // Re-filter at fire time (another consumer may have claimed keys
+      // during the debounce window), dedupe by key, cap at the fn limit.
+      const byKey = new Map<string, EnsurePlaceDescriptor>();
+      for (const d of descriptors ?? []) {
+        const k = String(d?.placeKey ?? "").trim().toLowerCase();
+        if (!k || attemptedPlaceKeys.has(k) || byKey.has(k)) continue;
+        if (!String(d?.city ?? "").trim()) continue;
+        byKey.set(k, d);
+        if (byKey.size >= ENSURE_BATCH_MAX) break;
+      }
+      if (byKey.size === 0) return;
+      for (const k of byKey.keys()) attemptedPlaceKeys.add(k);
+
+      const places = [...byKey.values()].map((d) => ({
+        city: String(d.city).trim(),
+        region: String(d.region ?? "").trim() || null,
+        country: String(d.country ?? "").trim() || null,
+      }));
+
+      void supabase.functions
+        .invoke("geocode-place", { body: { places } })
+        .then(({ data, error }) => {
+          if (error) {
+            console.warn("[geoCentroids] geocode-place failed:", error.message ?? error);
+            return;
+          }
+          const results = Array.isArray((data as any)?.results)
+            ? ((data as any).results as any[])
+            : [];
+          const healed = results.some(
+            (r) =>
+              (r?.precision === "city" || r?.precision === "region") &&
+              Number.isFinite(Number(r?.lat)) &&
+              Number.isFinite(Number(r?.lng)),
+          );
+          // Refetch every geo-place-centroids query so dots move to the
+          // precise location. Only worth it when something actually healed
+          // ('failed' rows behave exactly like the misses we already have).
+          if (healed) {
+            void queryClient.invalidateQueries({
+              queryKey: ["geo-place-centroids"],
+            });
+          }
+        })
+        .catch((err) => {
+          console.warn("[geoCentroids] geocode-place invoke error:", err);
+        });
+    }, ENSURE_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+    // descriptors identity churns per render; pendingKey captures the real
+    // dependency (the set of un-attempted keys).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, pendingKey, queryClient]);
 }

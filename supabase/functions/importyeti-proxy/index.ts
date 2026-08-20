@@ -6,6 +6,7 @@ import {
   type MeterCtx,
 } from "../_shared/importyeti_fetch.ts";
 import { rematerializeCompanyBols } from "../_shared/materialize_bols.ts";
+import { isUserAdmin } from "../_shared/auth.ts";
 import {
   isProviderEnabled,
   recordProviderUsage,
@@ -33,6 +34,8 @@ const SNAPSHOT_TTL_DAYS = 30;
 // ImportYeti" action. Distinct from the company_profile_view quota
 // (which gates the Command Center profile fetch). See plan §11
 // open item — values may be tuned post-rollout based on telemetry.
+// NOTE: cap values are tunable, but changing them is an owner PRICING
+// decision — do not adjust in code without explicit owner sign-off.
 const PULSE_REFRESH_DAILY_CAP: Record<string, number> = {
   free_trial: 5,
   starter: 25,
@@ -1259,27 +1262,46 @@ async function handleSearchAction(
     console.warn("Search cache read failed (continuing to upstream):", cacheErr?.message || cacheErr);
   }
 
+  // Tracks WHY the catch block below served the local-index fallback so the
+  // response can say so honestly (degraded/degraded_reason) instead of
+  // masquerading as a clean "0 results" — see the P0 where quota-exhausted
+  // searches for new companies returned "No companies found" for real ones.
+  let degradedReason: "daily_quota" | "provider_disabled" | "upstream_error" =
+    "upstream_error";
+  let degradedQuota: { cap: number; used: number } | null = null;
+
   try {
     // Kill-switch gate before any paid upstream search. Fail-open lives inside
     // isProviderEnabled. When disabled, degrade to the free local index below
     // (same path as a quota-exhausted search) rather than hard-failing.
     if (!(await isProviderEnabled(supabase, PROVIDER_FLAGS.IMPORTYETI_ENABLED))) {
       console.log("⛔ ImportYeti disabled by flag — serving local index:", { requestId });
+      degradedReason = "provider_disabled";
       throw new Error("importyeti_disabled_flag");
     }
     // Cost guard: an uncached search consumes the per-user daily ImportYeti
     // quota (same pool as Pulse refresh). When exhausted, fall through to
     // the free local-index search instead of hard-failing.
     if (userId) {
-      const planTier = await loadPlanTier(supabase, userId);
-      const quota = await checkAndIncrementPulseQuota(supabase, userId, planTier);
-      if (!quota.ok) {
-        console.log("⛔ Daily IY quota exhausted — serving local index:", {
-          requestId,
-          userId,
-          cap: quota.cap,
-        });
-        throw new Error("iy_daily_quota_exhausted");
+      // Server-side platform-admin bypass (CLAUDE.md rule #6): members of
+      // `platform_admins` skip the per-user daily quota entirely — no check,
+      // no increment. The kill-switch above still applies to admins.
+      const { isPlatformAdmin } = await isUserAdmin(supabase, userId);
+      if (isPlatformAdmin) {
+        console.log("🛡️ Platform admin — skipping daily IY quota:", { requestId, userId });
+      } else {
+        const planTier = await loadPlanTier(supabase, userId);
+        const quota = await checkAndIncrementPulseQuota(supabase, userId, planTier);
+        if (!quota.ok) {
+          console.log("⛔ Daily IY quota exhausted — serving local index:", {
+            requestId,
+            userId,
+            cap: quota.cap,
+          });
+          degradedReason = "daily_quota";
+          degradedQuota = { cap: quota.cap, used: quota.used };
+          throw new Error("iy_daily_quota_exhausted");
+        }
       }
     }
     const url = new URL(env.searchUrl);
@@ -1444,9 +1466,15 @@ async function handleSearchAction(
 
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
+    // Honest degradation: this is NOT live data — tell the caller so the UI
+    // can say "showing saved index only" instead of a false "no companies
+    // found". `quota` is only present when the reason is daily_quota.
     return jsonResponse({
       ok: true,
       source: "local_index",
+      degraded: true,
+      degraded_reason: degradedReason,
+      ...(degradedQuota ? { quota: degradedQuota } : {}),
       results: mappedResults,
       page: validatedPage,
       pageSize: validatedPageSize,

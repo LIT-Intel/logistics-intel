@@ -82,8 +82,8 @@ export const CompanyAvatar: React.FC<CompanyAvatarProps> = ({
         src={currentUrl}
         alt={`${name} logo`}
         className="h-full w-full object-contain p-1"
-        loading="eager"
-        decoding="sync"
+        loading="lazy"
+        decoding="async"
         onError={() => {
           // Phase B.11 — debug-only console hint when a candidate fails.
           // Browser <img> fires `onerror` for any non-2xx (including 401

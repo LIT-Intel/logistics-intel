@@ -23,6 +23,20 @@ export type GlobeLaneEndpointMeta = {
   countryCode: string;
   flag: string;
   coords: [number, number];
+  /**
+   * Resolved FINAL-DESTINATION city label for a US destination endpoint
+   * (e.g. "Winder, GA"). When present, endpoint popovers title the dot
+   * "<destFinalLabel> — final destination" instead of the raw label.
+   * Only ever set on `toMeta` by port-aware consumers (CDPSupplyChain).
+   */
+  destFinalLabel?: string;
+  /**
+   * Port-of-entry context line for a US destination endpoint, e.g.
+   * "via Port of Savannah, GA · inland leg est.". Derived from the
+   * company's dominant customs entry port — omitted when no port-lane
+   * data exists (never invented).
+   */
+  viaPortLine?: string;
 };
 
 export type GlobeLane = {

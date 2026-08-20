@@ -396,7 +396,14 @@ function useMediaQuery(query: string): boolean {
 function endpointMeta(
   lane: GlobeLane,
   side: LaneSide,
-): { label: string; countryCode: string; flag?: string; countryName?: string } {
+): {
+  label: string;
+  countryCode: string;
+  flag?: string;
+  countryName?: string;
+  destFinalLabel?: string;
+  viaPortLine?: string;
+} {
   const meta: GlobeLaneEndpointMeta | undefined =
     side === "from" ? lane.fromMeta : lane.toMeta;
   if (meta) {
@@ -405,6 +412,10 @@ function endpointMeta(
       countryCode: meta.countryCode || "",
       flag: meta.flag,
       countryName: meta.countryName,
+      // Port-aware destination context (only ever set on toMeta): the
+      // final-destination city title + "via <entry port>" line.
+      destFinalLabel: meta.destFinalLabel,
+      viaPortLine: meta.viaPortLine,
     };
   }
   return {
@@ -1256,11 +1267,22 @@ export default function LaneMap({
   );
 }
 
+type PopoverEndpointMeta = {
+  label: string;
+  countryCode: string;
+  flag?: string;
+  countryName?: string;
+  /** Final-destination city label ("Winder, GA") — see GlobeLaneEndpointMeta. */
+  destFinalLabel?: string;
+  /** "via Port of Savannah, GA · inland leg est." context line. */
+  viaPortLine?: string;
+};
+
 type PopoverNodeProps = {
   isMobile: boolean;
   screenX: number;
   screenY: number;
-  meta: { label: string; countryCode: string; flag?: string; countryName?: string };
+  meta: PopoverEndpointMeta;
   shipments?: number;
   destination: { label: string; countryCode: string } | null;
   onMouseEnter: () => void;
@@ -1321,18 +1343,27 @@ function PopoverBody({
   shipments,
   destination,
 }: {
-  meta: { label: string; countryCode: string; flag?: string };
+  meta: PopoverEndpointMeta;
   subLine: string;
   shipments?: number;
   destination: { label: string; countryCode: string } | null;
 }) {
+  // Port-aware US destination dot: title the FINAL destination city and
+  // show the dominant port of entry underneath ("via Port of Savannah, GA
+  // · inland leg est."). Ordinary endpoints render exactly as before.
+  const title = meta.destFinalLabel
+    ? `${meta.destFinalLabel} — final destination`
+    : meta.label;
   return (
     <>
       <div className="flex items-center gap-2">
         <LitFlag code={meta.countryCode} emoji={meta.flag} size={20} />
         <div className="flex flex-col">
-          <span className="lit-lane-popover__title">{meta.label}</span>
+          <span className="lit-lane-popover__title">{title}</span>
           {subLine && <span className="lit-lane-popover__sub">{subLine}</span>}
+          {meta.viaPortLine && (
+            <span className="lit-lane-popover__sub">{meta.viaPortLine}</span>
+          )}
         </div>
       </div>
       <hr className="lit-lane-popover__rule" />

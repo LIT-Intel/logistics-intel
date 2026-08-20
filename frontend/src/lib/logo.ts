@@ -86,7 +86,14 @@ export function getLogoCandidates(source?: string | null): string[] {
 
   const candidates: string[] = [];
   if (LOGO_DEV_TOKEN) candidates.push(buildLogoDevUrl(domain));
-  candidates.push(`https://logo.clearbit.com/${domain}`);
+  // Clearbit's free logo API was shut down (connections now fail outright,
+  // verified 2026-08-20) and img.logo.dev 401s without a token, so without
+  // VITE_LOGO_DEV_TOKEN the old cascade burned two dead candidates before
+  // reaching Unavatar — whose free tier rate-limits well below one Command
+  // Center page of rows, which is why most logos rendered as initials.
+  // Google's s2 favicon service is unmetered and colored, so it carries the
+  // bulk load; Unavatar stays last for domains Google has no icon for.
+  candidates.push(`https://www.google.com/s2/favicons?domain=${domain}&sz=128`);
   candidates.push(`https://unavatar.io/${domain}?fallback=false`);
   return candidates;
 }

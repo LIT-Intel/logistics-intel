@@ -306,11 +306,24 @@ export type IySearchMeta = {
   requestCost?: number;
 };
 
+// Why the edge fn served the local-index fallback instead of live data.
+export type IySearchDegradedReason =
+  | "daily_quota"
+  | "provider_disabled"
+  | "upstream_error";
+
 export interface IySearchResponse {
   ok: boolean;
   results: IyShipperHit[];
   total: number;
   meta?: IySearchMeta;
+  /** True when importyeti-proxy fell back to the saved local index (results
+   *  are NOT live). The UI must surface this instead of pretending "0 results
+   *  found" for companies we simply haven't indexed yet. */
+  degraded?: boolean;
+  degraded_reason?: IySearchDegradedReason;
+  /** Present when degraded_reason === "daily_quota". */
+  quota?: { cap: number; used: number };
 }
 
 export type IyRouteTopRoute = {
@@ -3234,6 +3247,23 @@ export async function searchShippers(
 
   const base = coerceIySearchResponse(data, { q, page, pageSize });
 
+  // Honest-degradation passthrough: coerceIySearchResponse strips fields it
+  // doesn't know about, so re-attach the edge fn's degraded metadata (local
+  // index fallback due to quota / kill-switch / upstream error) explicitly.
+  const degradedFields: Partial<IySearchResponse> =
+    data?.degraded === true
+      ? {
+          degraded: true,
+          degraded_reason: (data?.degraded_reason ??
+            "upstream_error") as IySearchDegradedReason,
+          ...(data?.quota &&
+          Number.isFinite(Number(data.quota.cap)) &&
+          Number.isFinite(Number(data.quota.used))
+            ? { quota: { cap: Number(data.quota.cap), used: Number(data.quota.used) } }
+            : {}),
+        }
+      : {};
+
   const companyIds = Array.from(
     new Set(
       base.results
@@ -3256,6 +3286,7 @@ export async function searchShippers(
       console.warn("KPI overlay failed:", kpiError);
       return {
         ...base,
+        ...degradedFields,
         results: base.results,
       };
     }
@@ -3337,16 +3368,18 @@ export async function searchShippers(
 
     return {
       ...base,
+      ...degradedFields,
       results: mergedResults,
     };
   }
 
   return {
     ...base,
+    ...degradedFields,
     results: base.results,
   };
 }
-  
+
 export const searchIyShippers = searchShippers;
 
 function mapIyRowsToShipments(rows: any[]): ShipmentLite[] {

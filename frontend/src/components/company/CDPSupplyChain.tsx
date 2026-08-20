@@ -55,13 +55,19 @@ import LaneMap, {
   type LaneMapLaneColor,
 } from "@/components/LaneMap";
 import { canonicalizeLanes, resolveEndpoint } from "@/lib/laneGlobe";
-import { lookupCentroid } from "@/lib/explorer/normalizeCompanySearch";
+import {
+  extractStateCode,
+  lookupCentroid,
+  uniqueStateForCity,
+} from "@/lib/explorer/normalizeCompanySearch";
 import { useInlandFreight } from "@/api/inlandFreight";
 import {
   useCompanyPortLanes,
   usePortCentroids,
   exitPortKey,
   entryPortKey,
+  dominantEntryPort,
+  formatEntryPortLabel,
 } from "@/api/portLanes";
 import InlandFreightCard from "@/components/company/InlandFreightCard";
 import RelationshipIntelCard from "@/components/company/RelationshipIntelCard";
@@ -76,6 +82,8 @@ import {
   makePlaceKey,
   normalizeSeedCountrySegment,
   usePlaceCentroids,
+  useEnsurePlaceCentroids,
+  type EnsurePlaceDescriptor,
   type PlaceCentroid,
 } from "@/api/geoCentroids";
 import { useLaneShipmentIntel } from "@/api/laneIntel";
@@ -193,6 +201,25 @@ function CDPSupplyChainBody({
     (profile?.name as string) ||
     (profile?.identity?.companyName as string) ||
     "";
+
+  // Company HQ city/state from the profile's address fields — used by the
+  // trade-lanes map to recover a missing US destination state when the
+  // dest city IS the HQ city (dest meta often lacks the state entirely).
+  const { hqCity, hqState } = useMemo(() => {
+    const city =
+      String(
+        profile?.city ??
+          profile?.hq_city ??
+          profile?.identity?.display?.address?.city ??
+          "",
+      ).trim() || null;
+    const state =
+      extractStateCode(profile?.state) ??
+      extractStateCode(profile?.identity?.display?.address?.state) ??
+      extractStateCode(profile?.address) ??
+      null;
+    return { hqCity: city, hqState: state ? state.toLowerCase() : null };
+  }, [profile]);
 
   // Per-mode shipment counts → drives chip enable/disable so users can't
   // click a mode the company has zero activity in (see feedback 2026-06-16).
@@ -418,6 +445,8 @@ function CDPSupplyChainBody({
           selectedYear={selectedYear}
           years={years}
           onSelectYear={onSelectYear}
+          hqCity={hqCity}
+          hqState={hqState}
         />
       )}
       {sub === "history" && (
@@ -477,6 +506,8 @@ function SummaryView({
   selectedYear,
   years,
   onSelectYear,
+  hqCity = null,
+  hqState = null,
 }: {
   profile: any;
   cadence: CadencePoint[];
@@ -497,6 +528,10 @@ function SummaryView({
   selectedYear?: number;
   years?: number[];
   onSelectYear?: (year: number) => void;
+  /** Company HQ city/state — threaded to the trade-lanes map's US-dest
+   *  state recovery (see TopLanesCard). */
+  hqCity?: string | null;
+  hqState?: string | null;
 }) {
   const reducedMotion = usePrefersReducedMotion();
 
@@ -568,6 +603,8 @@ function SummaryView({
         selectedYear={selectedYear}
         years={years}
         onSelectYear={onSelectYear}
+        hqCity={hqCity}
+        hqState={hqState}
       />
       <CadenceAndModalMix
         cadence={cadence}
@@ -2516,6 +2553,48 @@ function routeDestCityState(
   return { city, state };
 }
 
+/** Seed-form country segment for stateless US destination keys. */
+const US_SEED_COUNTRY = "united states of america";
+
+/**
+ * Resolve a US destination's city + state from the data already on hand.
+ * Resolution order (a wrong state is worse than none, so each step is
+ * conservative):
+ *   1. Any city route carrying an explicit "City, ST" state (rollup rows
+ *      append dest_state) — scans ALL routes, not just the top one.
+ *   2. Company HQ address: when the dest city IS the HQ city, use the HQ
+ *      state (the CDP page has the company address with state).
+ *   3. The static US-city geocoder dataset (cityStateCoordinates.json):
+ *      when exactly ONE `city:st` entry matches the city, that state is
+ *      unambiguous ("winder" → GA; "springfield" → null).
+ * Falls back to `{city, state: null}` when a city exists but no state can
+ * be recovered, and null when the routes have no usable US dest city.
+ */
+function resolveUsDestCityState(
+  routes: any[],
+  hqCity?: string | null,
+  hqState?: string | null,
+): { city: string; state: string | null } | null {
+  let cityOnly: string | null = null;
+  for (const r of routes || []) {
+    const d = routeDestCityState(r);
+    if (!d) continue;
+    if (d.state) return d; // (1) explicit state wins immediately
+    if (!cityOnly) cityOnly = d.city;
+  }
+  if (!cityOnly) return null;
+  // (2) HQ match — dest city equals the company's own city.
+  const hqc = String(hqCity ?? "").trim().toLowerCase();
+  const hqs = String(hqState ?? "").trim().toLowerCase();
+  if (hqc && /^[a-z]{2}$/.test(hqs) && hqc === cityOnly.trim().toLowerCase()) {
+    return { city: cityOnly, state: hqs };
+  }
+  // (3) unique static-dataset match.
+  const unique = uniqueStateForCity(cityOnly);
+  if (unique) return { city: cityOnly, state: unique.toLowerCase() };
+  return { city: cityOnly, state: null };
+}
+
 type PairEndpointKeys = {
   fromKeys: string[];
   toKeys: string[];
@@ -2526,21 +2605,33 @@ type PairEndpointKeys = {
   /** Same for the destination side. Always null for US destinations —
    *  their `city|state` keys can never legitimately hit a region row. */
   toRegionCountry: string | null;
+  /** Geocode-fallback descriptor for the origin side — sent to the
+   *  `geocode-place` edge fn when every fromKey misses the table. */
+  fromPlace: EnsurePlaceDescriptor | null;
+  /** Same for the destination side. */
+  toPlace: EnsurePlaceDescriptor | null;
+  /** Resolved US destination city/state (US-dest pairs only) — reused by
+   *  the dialog's port-aware tooltip ("Winder, GA — final destination"). */
+  usDest: { city: string; state: string | null } | null;
 };
 
 /**
  * For each country pair, the candidate place_keys of its TOP city route
  * (highest shipment count — cityRoutes arrive sorted desc). Each side
  * resolves independently: the origin uses the first route with a usable
- * origin city, the destination the first route with a usable dest city
- * (US dests additionally require a state code — a bare "Atlanta" could
- * be one of several states, and a wrong-city dot is worse than the
- * country-centroid fallback). Several country-name forms are emitted
+ * origin city, the destination the first route with a usable dest city.
+ * US destinations resolve their state via resolveUsDestCityState (route
+ * strings → HQ address → unique static-city match); when NO state can be
+ * recovered the key falls back to `city|united states of america` — a
+ * key only the on-demand geocoder ever writes (country-constrained
+ * Nominatim top hit), accepted because a top-hit city dot beats the
+ * mid-Kansas country centroid. Several country-name forms are emitted
  * per side; the first fetched hit wins.
  */
 function buildPairEndpointKeys(
   pairs: any[],
   cityRoutesByPair: Map<string, any[]>,
+  hq?: { city: string | null; state: string | null },
 ): Map<string, PairEndpointKeys> {
   const out = new Map<string, PairEndpointKeys>();
   for (const p of pairs || []) {
@@ -2548,6 +2639,9 @@ function buildPairEndpointKeys(
     if (routes.length === 0) continue;
     const fromKeys: string[] = [];
     const toKeys: string[] = [];
+    let fromPlace: EnsurePlaceDescriptor | null = null;
+    let toPlace: EnsurePlaceDescriptor | null = null;
+    let usDest: { city: string; state: string | null } | null = null;
     for (const r of routes) {
       const city = routeOriginCity(r);
       if (!city) continue;
@@ -2555,26 +2649,50 @@ function buildPairEndpointKeys(
         const k = makePlaceKey(city, c);
         if (k) fromKeys.push(k);
       }
+      // Fallback descriptor: the single seed-form country (the edge fn
+      // builds the same `city|country` key server-side).
+      const seedCountry = endpointSeedCountry(p.fromMeta);
+      const fk = makePlaceKey(city, seedCountry);
+      if (fk) fromPlace = { placeKey: fk, city, country: seedCountry };
       break;
     }
     const destIsUs =
       String(p?.toMeta?.countryCode || "").toUpperCase() === "US";
-    for (const r of routes) {
-      const d = routeDestCityState(r);
-      if (!d) continue;
-      if (destIsUs) {
-        // Keep scanning for a state-carrying route (snapshot labels have
-        // none; rollup routes always do when a real dest city exists).
-        if (!d.state) continue;
-        const k = makePlaceKey(d.city, d.state);
-        if (k) toKeys.push(k);
+    if (destIsUs) {
+      usDest = resolveUsDestCityState(routes, hq?.city, hq?.state);
+      if (usDest?.state) {
+        const k = makePlaceKey(usDest.city, usDest.state);
+        if (k) {
+          toKeys.push(k);
+          toPlace = {
+            placeKey: k,
+            city: usDest.city,
+            region: usDest.state,
+            country: "us",
+          };
+        }
+      } else if (usDest) {
+        // No recoverable state: country-constrained key. Only the
+        // on-demand geocoder writes this shape, so no junk-seed risk.
+        const k = makePlaceKey(usDest.city, US_SEED_COUNTRY);
+        if (k) {
+          toKeys.push(k);
+          toPlace = { placeKey: k, city: usDest.city, country: "us" };
+        }
+      }
+    } else {
+      for (const r of routes) {
+        const d = routeDestCityState(r);
+        if (!d) continue;
+        for (const c of endpointCountryForms(p.toMeta)) {
+          const k = makePlaceKey(d.city, c);
+          if (k) toKeys.push(k);
+        }
+        const seedCountry = endpointSeedCountry(p.toMeta);
+        const tk = makePlaceKey(d.city, seedCountry);
+        if (tk) toPlace = { placeKey: tk, city: d.city, country: seedCountry };
         break;
       }
-      for (const c of endpointCountryForms(p.toMeta)) {
-        const k = makePlaceKey(d.city, c);
-        if (k) toKeys.push(k);
-      }
-      break;
     }
     if (fromKeys.length || toKeys.length) {
       out.set(p.pairKey, {
@@ -2582,6 +2700,9 @@ function buildPairEndpointKeys(
         toKeys,
         fromRegionCountry: endpointSeedCountry(p.fromMeta),
         toRegionCountry: destIsUs ? null : endpointSeedCountry(p.toMeta),
+        fromPlace,
+        toPlace,
+        usDest,
       });
     }
   }
@@ -3264,6 +3385,8 @@ function TopLanesCard({
   selectedYear,
   years,
   onSelectYear,
+  hqCity = null,
+  hqState = null,
 }: {
   /** Granular per-route rows (city-level) from the snapshot. */
   canonicalLanes: any[];
@@ -3277,6 +3400,10 @@ function TopLanesCard({
   /** ImportYeti slug — resolves the lit_company_lane_months rollup that
    *  powers exact year/month filtering + per-lane month bars. */
   sourceCompanyKey?: string | null;
+  /** Company HQ city/state (from the profile address) — used to recover a
+   *  missing US destination state when the dest city IS the HQ city. */
+  hqCity?: string | null;
+  hqState?: string | null;
   /** Page-level Year selector state — wired into the in-map scope so the
    *  existing dropdown is no longer decorative for this card. */
   selectedYear?: number;
@@ -3583,9 +3710,14 @@ function TopLanesCard({
   // precision centroid exists, override that endpoint's coords. Missing
   // keys (table still seeding, unknown city, failed geocode) keep today's
   // country-centroid behavior; labels/tooltips are untouched.
+  // Stable HQ object so the key builder memo doesn't churn per render.
+  const hq = useMemo(
+    () => ({ city: hqCity ?? null, state: hqState ?? null }),
+    [hqCity, hqState],
+  );
   const pairEndpointKeys = useMemo(
-    () => buildPairEndpointKeys(reconciledPairs, cityRoutesEffective),
-    [reconciledPairs, cityRoutesEffective],
+    () => buildPairEndpointKeys(reconciledPairs, cityRoutesEffective, hq),
+    [reconciledPairs, cityRoutesEffective, hq],
   );
   const allPlaceKeys = useMemo(() => {
     const keys: string[] = [];
@@ -3595,6 +3727,34 @@ function TopLanesCard({
     return keys;
   }, [pairEndpointKeys]);
   const { data: placeCentroids } = usePlaceCentroids(allPlaceKeys);
+
+  // Self-healing geocode fallback (2026-08): endpoints whose candidate keys
+  // ALL missed the centroid table (city outside the ~1,588-place seed, e.g.
+  // "Winder, GA") are batched to the `geocode-place` edge fn ONCE per
+  // session. The fn geocodes true misses via Nominatim, upserts them into
+  // lit_geo_place_centroids (negative-caching failures), and the hook
+  // invalidates usePlaceCentroids so the dots move off the country centroid
+  // when the precise coords land. Inert until the centroid query resolves.
+  const missingPlaceDescriptors = useMemo<EnsurePlaceDescriptor[]>(() => {
+    if (!placeCentroids) return [];
+    const out: EnsurePlaceDescriptor[] = [];
+    for (const k of pairEndpointKeys.values()) {
+      if (
+        k.fromPlace &&
+        !firstCentroidHit(k.fromKeys, placeCentroids, k.fromRegionCountry)
+      ) {
+        out.push(k.fromPlace);
+      }
+      if (
+        k.toPlace &&
+        !firstCentroidHit(k.toKeys, placeCentroids, k.toRegionCountry)
+      ) {
+        out.push(k.toPlace);
+      }
+    }
+    return out;
+  }, [pairEndpointKeys, placeCentroids]);
+  useEnsurePlaceCentroids(missingPlaceDescriptors, placeCentroids != null);
   /** Pairs the hero + dialog actually render: reconciled to the real total,
    *  endpoint coords upgraded to the top city route's centroid when known. */
   const viewPairs = useMemo(() => {
@@ -4314,6 +4474,8 @@ function TopLanesCard({
         <TradeLanesMapDialog
           pairs={viewPairs}
           companyId={sourceCompanyKey ?? null}
+          hqCity={hqCity}
+          hqState={hqState}
           cityRoutesByPair={cityRoutesEffective}
           lastActivityByPair={lastActivityEffective}
           initialSelected={selectedPair}
@@ -4403,6 +4565,8 @@ function ScopedEmptyState({
 function TradeLanesMapDialog({
   pairs,
   companyId,
+  hqCity = null,
+  hqState = null,
   cityRoutesByPair,
   lastActivityByPair,
   initialSelected,
@@ -4425,6 +4589,10 @@ function TradeLanesMapDialog({
   pairs: any[];
   /** ImportYeti slug (source_company_key) — drives the lane intelligence RPC. */
   companyId?: string | null;
+  /** Company HQ city/state — recovers a missing US dest state for the
+   *  port-aware "final destination" tooltip (see resolveUsDestCityState). */
+  hqCity?: string | null;
+  hqState?: string | null;
   cityRoutesByPair: Map<string, any[]>;
   lastActivityByPair: Map<string, Date>;
   initialSelected: string | null;
@@ -4646,20 +4814,74 @@ function TradeLanesMapDialog({
     [filtered],
   );
 
+  // Port-lane data (hoisted above the lanes memo so the dest tooltips can
+  // reference the dominant entry port — the arcs/markers layer below reuses
+  // the same query result).
+  const { data: portLanes } = useCompanyPortLanes(companyId);
+  // Dominant US entry port — the customs entry_port carrying the most
+  // shipments across all port lanes. Null when there's no port data
+  // (the "via" line is then omitted — never invented).
+  const domEntryPort = useMemo(() => dominantEntryPort(portLanes), [portLanes]);
+  const domEntryPortLabel = domEntryPort
+    ? formatEntryPortLabel(domEntryPort)
+    : null;
+
+  /**
+   * Port-aware destination context for a US-dest pair (owner request
+   * 2026-08-20): the tooltip/popup titles the FINAL destination city
+   * ("Winder, GA — final destination") and adds the dominant port of
+   * entry ("via Port of Savannah, GA"), with an "· inland leg est."
+   * suffix when the dest city is not the port city itself. Returns null
+   * for non-US dests, when no port lanes exist, or when no dest city can
+   * be resolved from the routes.
+   */
+  const destPortContext = useCallback(
+    (pair: any): { destFinalLabel: string; viaPortLine: string } | null => {
+      if (!domEntryPort || !domEntryPortLabel) return null;
+      if (String(pair?.toMeta?.countryCode || "").toUpperCase() !== "US") {
+        return null;
+      }
+      const d = resolveUsDestCityState(
+        cityRoutesByPair.get(pair?.pairKey) || [],
+        hqCity,
+        hqState,
+      );
+      if (!d) return null;
+      const destFinalLabel = d.state
+        ? `${d.city}, ${d.state.toUpperCase()}`
+        : d.city;
+      const portCity = String(domEntryPort).split(",")[0].trim().toLowerCase();
+      const inland =
+        Boolean(portCity) && portCity !== d.city.trim().toLowerCase();
+      return {
+        destFinalLabel,
+        viaPortLine: `via Port of ${domEntryPortLabel}${
+          inland ? " · inland leg est." : ""
+        }`,
+      };
+    },
+    [domEntryPort, domEntryPortLabel, cityRoutesByPair, hqCity, hqState],
+  );
+
   // Map lanes — every filtered pair (capped at 30 for render sanity;
-  // the hero only shows 10, this is the "richer tools" view).
+  // the hero only shows 10, this is the "richer tools" view). US-dest
+  // endpoints carry the port-aware final-destination context on toMeta so
+  // the LaneMap endpoint popover can render it.
   const lanes: GlobeLane[] = useMemo(
     () =>
-      filtered.slice(0, 30).map((p: any) => ({
-        id: p.pairKey,
-        from: p.fromMeta.canonicalKey,
-        to: p.toMeta.canonicalKey,
-        coords: [p.fromMeta.coords, p.toMeta.coords],
-        fromMeta: p.fromMeta,
-        toMeta: p.toMeta,
-        shipments: Number(p.shipments) || 0,
-      })),
-    [filtered],
+      filtered.slice(0, 30).map((p: any) => {
+        const portCtx = destPortContext(p);
+        return {
+          id: p.pairKey,
+          from: p.fromMeta.canonicalKey,
+          to: p.toMeta.canonicalKey,
+          coords: [p.fromMeta.coords, p.toMeta.coords],
+          fromMeta: p.fromMeta,
+          toMeta: portCtx ? { ...p.toMeta, ...portCtx } : p.toMeta,
+          shipments: Number(p.shipments) || 0,
+        };
+      }),
+    [filtered, destPortContext],
   );
 
   // Drop the selection when a filter removes its lane.
@@ -4828,7 +5050,7 @@ function TradeLanesMapDialog({
   // extraArcs/extraMarkers contract.
   const PORT_LANE_TOP_N = 12;
   const [showPortLanes, setShowPortLanes] = useState(true);
-  const { data: portLanes } = useCompanyPortLanes(companyId);
+  // portLanes is fetched above (hoisted for the dest tooltips).
   const { data: portCentroids } = usePortCentroids(portLanes);
   const { portArcs, portMarkers } = useMemo<{
     portArcs: LaneMapExtraArc[];
@@ -4905,6 +5127,9 @@ function TradeLanesMapDialog({
     monthlyChartData.length > 0 &&
     monthlyChartData.some((d) => d.shipments > 0);
   const selMetric = selPair ? realMetricsByPair.get(selPair.pairKey) : null;
+  // Port-aware dest context for the selected lane's detail card (US dest +
+  // port lanes only — null otherwise, and the line is simply omitted).
+  const selPortCtx = selPair ? destPortContext(selPair) : null;
 
   const fitPadding = isMdUp
     ? { top: 24, right: 380, bottom: 96, left: 40 }
@@ -4970,6 +5195,15 @@ function TradeLanesMapDialog({
             </>
           )}
         </div>
+        {/* Port-aware US destination detail (owner 2026-08-20): final
+            destination city + dominant port of entry. Omitted whenever the
+            company has no port-lane data — never invented. */}
+        {selPortCtx && (
+          <div className="font-mono mt-0.5 text-[10.5px] text-slate-500">
+            {selPortCtx.destFinalLabel} — final destination ·{" "}
+            {selPortCtx.viaPortLine}
+          </div>
+        )}
         {selRoutes.length > 0 && (
           <div className="mt-1.5 space-y-0.5">
             {selRoutes.slice(0, 3).map((route: any, ri: number) => (

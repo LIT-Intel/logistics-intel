@@ -25,6 +25,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AlertTriangle,
   ArrowRight,
   Search as SearchIcon,
   MapPin,
@@ -77,6 +78,12 @@ export default function CompanySearchTab() {
   // True when the last result set was served from the free Supabase cache
   // (no live ImportYeti credit spent). Drives the "Refresh data" affordance.
   const [servedFromCache, setServedFromCache] = useState(false);
+  // Non-null when the edge fn degraded to the saved local index (daily quota
+  // exhausted / provider kill-switch / upstream error). Shape:
+  // { reason: 'daily_quota'|'provider_disabled'|'upstream_error', quota }.
+  // Drives the amber "showing saved index only" banner so a 0-row degraded
+  // response never reads as an honest "no companies found".
+  const [degraded, setDegraded] = useState(null);
   const inputRef = useRef(null);
 
   // Bottom panel — collapsible. Default OPEN on desktop, CLOSED on
@@ -190,6 +197,11 @@ export default function CompanySearchTab() {
     try {
       const resp = await searchShippers({ q, page: 1, pageSize: PAGE_SIZE, forceRefresh });
       setServedFromCache(resp?.meta?.cache === true);
+      setDegraded(
+        resp?.degraded === true
+          ? { reason: resp.degraded_reason || 'upstream_error', quota: resp.quota || null }
+          : null,
+      );
       if (!resp?.ok || !Array.isArray(resp.results)) {
         throw new Error(resp?.message || 'Company search failed.');
       }
@@ -228,6 +240,7 @@ export default function CompanySearchTab() {
       setUnmappedCount(0);
       setAnalytics(null);
       setServedFromCache(false);
+      setDegraded(null);
     } finally {
       setSearching(false);
     }
@@ -557,6 +570,19 @@ export default function CompanySearchTab() {
           </div>
         ) : null}
 
+        {/* Degraded-search banner — the edge fn fell back to the saved
+            local index (quota / kill-switch / upstream outage), so these
+            results are NOT live. Prominent amber so a 0-row degraded
+            response never masquerades as "no such company exists". */}
+        {degraded && !searching ? (
+          <div className="border-t border-amber-200 bg-amber-50 px-4 py-3">
+            <div className="font-body flex items-start gap-2 text-[12.5px] font-medium text-amber-700">
+              <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-600" />
+              <span>{degradedBannerMessage(degraded)}</span>
+            </div>
+          </div>
+        ) : null}
+
         {/* Error / empty-state banner — sits outside the panel, always
             visible above whatever's open. */}
         {error && !searching ? (
@@ -570,6 +596,23 @@ export default function CompanySearchTab() {
       </div>
     </div>
   );
+}
+
+// Copy for the amber degraded-search banner. NOTE: deliberately no vendor
+// names ("ImportYeti") — same product rule as the filter chips above.
+function degradedBannerMessage(degraded) {
+  if (!degraded) return '';
+  if (degraded.reason === 'daily_quota') {
+    const cap = Number(degraded.quota?.cap);
+    const used = Number(degraded.quota?.used);
+    const counts =
+      Number.isFinite(cap) && Number.isFinite(used) ? ` (${used}/${cap})` : '';
+    return `Daily live-search limit reached${counts} — showing your saved index only. Live results resume tomorrow.`;
+  }
+  if (degraded.reason === 'provider_disabled') {
+    return 'Live shipment data is temporarily disabled by an administrator — showing saved index only.';
+  }
+  return 'Live data provider unreachable — showing saved index only. Try again in a few minutes.';
 }
 
 // ─── Sub-components ───────────────────────────────────────────────

@@ -58,7 +58,7 @@ const VALID_STATE_CODES = new Set(Object.keys(COORDS.states));
  *   - "OR, USA" → "OR"
  * Returns null when nothing recognisable matches.
  */
-function extractStateCode(text: string | null | undefined): string | null {
+export function extractStateCode(text: string | null | undefined): string | null {
   if (!text) return null;
   const raw = String(text).trim();
   if (!raw) return null;
@@ -126,6 +126,27 @@ export function isUnitedStates(country: string | null | undefined): boolean {
   // Suffix from messy concatenations like "Or 97005, Us"
   if (/\b(us|usa)\b/.test(t)) return true;
   return false;
+}
+
+/**
+ * The 2-letter USPS state code for a US city IFF the city is unambiguous
+ * across the static centroid dataset (exactly one "city:st" key matches).
+ * Used by the trade-lanes map to recover a missing dest state — a wrong
+ * state is worse than none, so any ambiguity ("springfield") returns null.
+ */
+export function uniqueStateForCity(
+  city: string | null | undefined,
+): string | null {
+  const cityKey = extractCityName(city);
+  if (!cityKey) return null;
+  const prefix = `${cityKey}:`;
+  let found: string | null = null;
+  for (const k of Object.keys(COORDS.cities)) {
+    if (!k.startsWith(prefix)) continue;
+    if (found) return null; // second match — ambiguous
+    found = k.slice(prefix.length).toUpperCase();
+  }
+  return found && found.length === 2 ? found : null;
 }
 
 /**

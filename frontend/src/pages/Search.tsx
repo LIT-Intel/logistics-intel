@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
+  AlertTriangle,
   Search as SearchIcon,
   MapPin,
   X,
@@ -26,6 +27,7 @@ import {
   fetchSearchKpiOverlay,
   getIyCompanyProfile,
   type IyCompanyProfile,
+  type IySearchDegradedReason,
 } from "@/lib/api";
 import {
   parseImportYetiDate,
@@ -111,6 +113,14 @@ export default function SearchPage() {
   const [savedCompanyIds, setSavedCompanyIds] = useState<string[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
   const [inputFocused, setInputFocused] = useState(false);
+  // Non-null when the search edge fn degraded to the saved local index
+  // (daily quota exhausted / provider kill-switch / upstream outage).
+  // Drives the amber "showing saved index only" banner so a degraded
+  // 0-row response never reads as "no such company exists".
+  const [degraded, setDegraded] = useState<{
+    reason: IySearchDegradedReason;
+    quota: { cap: number; used: number } | null;
+  } | null>(null);
 
   // Phase D client-side filters. Every chip maps to a field that's already
   // populated on the mapped company rows — nothing fetched, nothing mocked.
@@ -273,6 +283,16 @@ export default function SearchPage() {
 
     try {
       const response = await searchShippers({ q: query, page: 1, pageSize: 25 });
+
+      const isDegraded = response?.degraded === true;
+      setDegraded(
+        isDegraded
+          ? {
+              reason: response.degraded_reason ?? "upstream_error",
+              quota: response.quota ?? null,
+            }
+          : null,
+      );
 
       if (response?.ok && Array.isArray(response?.results)) {
         const mappedResults: SearchCompany[] = response.results.map((result: any, idx: number) => {
@@ -454,7 +474,10 @@ export default function SearchPage() {
             .then(() => {});
         }
 
-        if (mappedResults.length === 0) {
+        // Degraded searches get the amber banner instead — a "no results"
+        // toast would falsely imply the company doesn't exist when we only
+        // searched the saved local index.
+        if (mappedResults.length === 0 && !isDegraded) {
           toast({
             title: "No results found",
             description: `No companies found matching "${query}"`,
@@ -468,6 +491,7 @@ export default function SearchPage() {
       // LIMIT_EXCEEDED: surface the upgrade modal instead of a "0 results"
       // toast. The error was tagged in api.ts:searchShippers when the
       // edge function returned 403 + LIMIT_EXCEEDED.
+      setDegraded(null);
       if (error?.code === "LIMIT_EXCEEDED" && error?.limitExceeded) {
         setUpgradeModal(error.limitExceeded as LimitExceeded);
         setResults([]);
@@ -1073,6 +1097,29 @@ export default function SearchPage() {
         {/* Compact results header — view-mode toggle + year picker + KPI
             chips. Only on results state. Replaces the old card-style
             "Discover Companies" hero block. */}
+        {/* Degraded-search banner — the results below came from the saved
+            local index, NOT live data (quota / kill-switch / upstream
+            outage). Rendered above the count/status row so "No companies
+            match" never reads as "this company doesn't exist". */}
+        {hasSearched && !searching && degraded && (
+          <div className="mx-auto max-w-7xl px-1">
+            <div className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 shadow-sm">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              <p className="font-body text-[12.5px] font-medium leading-snug text-amber-700">
+                {degraded.reason === "daily_quota"
+                  ? `Daily live-search limit reached${
+                      degraded.quota
+                        ? ` (${degraded.quota.used}/${degraded.quota.cap})`
+                        : ""
+                    } — showing your saved index only. Live results resume tomorrow.`
+                  : degraded.reason === "provider_disabled"
+                    ? "Live shipment data is temporarily disabled by an administrator — showing saved index only."
+                    : "Live data provider unreachable — showing saved index only. Try again in a few minutes."}
+              </p>
+            </div>
+          </div>
+        )}
+
         {hasSearched && (
           <div className="mx-auto flex max-w-7xl flex-col gap-3 px-1 md:flex-row md:items-center md:justify-between">
             <div className="font-body min-w-0 text-[13px] text-slate-600">
