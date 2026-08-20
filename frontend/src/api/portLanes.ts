@@ -73,6 +73,82 @@ export function entryPortKey(entryPort: string | null | undefined): string | nul
 }
 
 /**
+ * The DOMINANT US entry port for a company — the entry_port with the highest
+ * TOTAL shipments across all its lanes (a port can appear on many exit-port
+ * pairs). Returns the RAW entry_port string (feed it to entryPortKey /
+ * formatEntryPortLabel), or null when there are no lanes.
+ */
+export function dominantEntryPort(
+  lanes: CompanyPortLane[] | null | undefined,
+): string | null {
+  const totals = new Map<string, number>();
+  for (const lane of lanes ?? []) {
+    const port = String(lane.entry_port ?? "").trim();
+    if (!port) continue;
+    totals.set(port, (totals.get(port) ?? 0) + (Number(lane.shipments) || 0));
+  }
+  let best: string | null = null;
+  let bestN = -1;
+  for (const [port, n] of totals) {
+    if (n > bestN) {
+      best = port;
+      bestN = n;
+    }
+  }
+  return best;
+}
+
+/** AP-style / full-name state tokens (lowercased, periods stripped) → USPS
+ *  code. Customs entry_port strings use AP abbreviations and full names
+ *  ("Savannah, Ga.", "Houston, Texas", "Charleston, S.C.", "Boston, Mass."). */
+const ENTRY_PORT_STATE_CODES: Record<string, string> = {
+  ala: "AL", alabama: "AL", alaska: "AK", ariz: "AZ", arizona: "AZ",
+  ark: "AR", arkansas: "AR", calif: "CA", california: "CA",
+  colo: "CO", colorado: "CO", conn: "CT", connecticut: "CT",
+  del: "DE", delaware: "DE", fla: "FL", florida: "FL", georgia: "GA",
+  hawaii: "HI", idaho: "ID", ill: "IL", illinois: "IL",
+  ind: "IN", indiana: "IN", iowa: "IA", kan: "KS", kans: "KS", kansas: "KS",
+  kentucky: "KY", louisiana: "LA", maine: "ME", maryland: "MD",
+  mass: "MA", massachusetts: "MA", mich: "MI", michigan: "MI",
+  minn: "MN", minnesota: "MN", miss: "MS", mississippi: "MS",
+  missouri: "MO", mont: "MT", montana: "MT",
+  neb: "NE", nebr: "NE", nebraska: "NE", nev: "NV", nevada: "NV",
+  "new hampshire": "NH", "new jersey": "NJ",
+  "n mex": "NM", "new mexico": "NM", "new york": "NY",
+  "north carolina": "NC", "n dak": "ND", "north dakota": "ND",
+  ohio: "OH", okla: "OK", oklahoma: "OK", ore: "OR", oregon: "OR",
+  penn: "PA", pennsylvania: "PA", "rhode island": "RI",
+  "south carolina": "SC", "s dak": "SD", "south dakota": "SD",
+  tenn: "TN", tennessee: "TN", tex: "TX", texas: "TX", utah: "UT",
+  vermont: "VT", virginia: "VA", wash: "WA", washington: "WA",
+  "w va": "WV", "west virginia": "WV", wis: "WI", wisc: "WI", wisconsin: "WI",
+  wyo: "WY", wyoming: "WY", "puerto rico": "PR",
+};
+
+/**
+ * Human display label for a raw customs entry_port string:
+ *   "Savannah, Ga." → "Savannah, GA"; "Houston, Texas" → "Houston, TX";
+ *   "Charleston, S.C." → "Charleston, SC"; "Newark, Nj" → "Newark, NJ".
+ * Falls back to the raw string when the state token isn't recognized.
+ */
+export function formatEntryPortLabel(entryPort: string): string {
+  const raw = String(entryPort ?? "").trim();
+  const idx = raw.lastIndexOf(",");
+  if (idx < 0) return raw;
+  const city = raw.slice(0, idx).trim();
+  const token = raw
+    .slice(idx + 1)
+    .trim()
+    .toLowerCase()
+    .replace(/\./g, "")
+    .replace(/\s+/g, " ");
+  const code =
+    ENTRY_PORT_STATE_CODES[token] ??
+    (/^[a-z]{2}$/.test(token) ? token.toUpperCase() : null);
+  return city && code ? `${city}, ${code}` : raw;
+}
+
+/**
  * Top port-pair lanes for one company (by shipments desc, capped at 40).
  * Disabled (resolves `[]`) until a company key is present; errors degrade
  * to `[]` so the map layer hides silently.

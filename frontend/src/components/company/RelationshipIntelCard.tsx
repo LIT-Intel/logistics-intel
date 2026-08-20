@@ -16,6 +16,15 @@ import {
   type IntelFacility,
   type IntelRelationship,
 } from "@/api/relationshipIntel";
+import { haversineMiles } from "@/api/geoCentroids";
+import {
+  dominantEntryPort,
+  entryPortKey,
+  formatEntryPortLabel,
+  useCompanyPortLanes,
+  usePortCentroids,
+} from "@/api/portLanes";
+import { lookupCentroid } from "@/lib/explorer/normalizeCompanySearch";
 
 /**
  * "Network & Relationships" — company-profile card surfacing the AI-researched
@@ -80,6 +89,20 @@ function ftlTone(v: number): { bar: string; badge: string; label: string } {
   };
 }
 
+/**
+ * City-centroid point for an AI-found facility via the client-side US
+ * geocoder (static city/state centroid json). Returns null unless BOTH
+ * city and state are present AND the lookup lands at city precision
+ * (mapStatus 'mapped') — state/country approximations would produce
+ * garbage mileage, so they're skipped silently.
+ */
+function facilityPoint(f: IntelFacility): { lat: number; lng: number } | null {
+  if (!f.city || !f.state) return null;
+  const hit = lookupCentroid(f.city, f.state, "US");
+  if (!hit || hit.mapStatus !== "mapped") return null;
+  return { lat: hit.lat, lng: hit.lng };
+}
+
 function facilityIcon(kind: string) {
   if (kind === "store") return Store;
   if (kind === "hq") return Building2;
@@ -125,7 +148,14 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-function FacilityRow({ f }: { f: IntelFacility }) {
+function FacilityRow({
+  f,
+  milesFromHq,
+}: {
+  f: IntelFacility;
+  /** Straight-line miles from the HQ facility; null = don't show. */
+  milesFromHq: number | null;
+}) {
   const Icon = facilityIcon(f.kind);
   return (
     <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-2">
@@ -133,6 +163,14 @@ function FacilityRow({ f }: { f: IntelFacility }) {
       <span className="font-display min-w-0 flex-1 truncate text-[11.5px] font-semibold text-slate-900">
         {[f.city, f.state].filter(Boolean).join(", ")}
       </span>
+      {milesFromHq != null && (
+        <span
+          title="Straight-line distance from HQ"
+          className="font-mono shrink-0 text-[9.5px] text-slate-400"
+        >
+          · {milesFromHq.toLocaleString()} mi from HQ
+        </span>
+      )}
       <span className="font-display shrink-0 rounded-full border border-slate-200 bg-slate-50 px-1.5 py-[1px] text-[9px] font-bold text-slate-600">
         {FACILITY_KIND_LABELS[f.kind] ?? f.kind}
       </span>
@@ -167,8 +205,37 @@ export default function RelationshipIntelCard({
 }) {
   const { data: intel, isLoading } = useRelationshipIntel(companyId);
   const research = useResearchRelationshipIntel(companyId);
+  // Customs port lanes + port centroids — powers the "Primary port of entry"
+  // mileage line. Both degrade to empty (line hides) on any failure.
+  const { data: portLanes } = useCompanyPortLanes(companyId);
+  const { data: portCentroids } = usePortCentroids(portLanes);
 
   const refreshed = useMemo(() => formatDate(intel?.refreshed_at ?? null), [intel?.refreshed_at]);
+
+  // ── Mileage from HQ (straight-line, city-centroid geocoder) ────────────
+  // HQ anchor = the kind='hq' facility, else the first facility. Distances
+  // are skipped silently whenever either end doesn't geocode at city
+  // precision. Also resolves the TOP customs entry port (highest total
+  // shipments) and its distance to the HQ.
+  const geo = useMemo(() => {
+    const facilities = intel?.facilities ?? [];
+    const hqIdx = (() => {
+      const i = facilities.findIndex((f) => f.kind === "hq");
+      return i >= 0 ? i : facilities.length > 0 ? 0 : -1;
+    })();
+    const hqPoint = hqIdx >= 0 ? facilityPoint(facilities[hqIdx]) : null;
+    const milesFromHq: (number | null)[] = facilities.map((f, i) => {
+      if (!hqPoint || i === hqIdx) return null;
+      const p = facilityPoint(f);
+      return p ? Math.round(haversineMiles(hqPoint, p)) : null;
+    });
+    const topEntryPort = dominantEntryPort(portLanes);
+    const portKey = topEntryPort ? entryPortKey(topEntryPort) : null;
+    const portPoint = (portKey && portCentroids?.get(portKey)) || null;
+    const portMiles =
+      hqPoint && portPoint ? Math.round(haversineMiles(portPoint, hqPoint)) : null;
+    return { milesFromHq, topEntryPort, portMiles };
+  }, [intel?.facilities, portLanes, portCentroids]);
 
   // No key yet, or the read query is still in flight → render nothing (same
   // graceful-hide idiom as InlandFreightCard while data settles).
@@ -335,9 +402,26 @@ export default function RelationshipIntelCard({
           <SectionLabel>Facilities found</SectionLabel>
           <div className="flex flex-col gap-1.5">
             {intel.facilities.map((f, i) => (
-              <FacilityRow key={`${f.city}-${f.state}-${f.kind}-${i}`} f={f} />
+              <FacilityRow
+                key={`${f.city}-${f.state}-${f.kind}-${i}`}
+                f={f}
+                milesFromHq={geo.milesFromHq[i] ?? null}
+              />
             ))}
           </div>
+          {/* Top customs entry port + straight-line distance to HQ. Hidden
+              when the company has no port lanes; the mileage suffix hides
+              when either end doesn't geocode. */}
+          {geo.topEntryPort && (
+            <p className="font-body mt-1.5 text-[10.5px] leading-snug text-slate-500">
+              Primary port of entry: {formatEntryPortLabel(geo.topEntryPort)}
+              {geo.portMiles != null && (
+                <span className="font-mono text-slate-400">
+                  {" "}· {geo.portMiles.toLocaleString()} mi from HQ
+                </span>
+              )}
+            </p>
+          )}
         </div>
       )}
 

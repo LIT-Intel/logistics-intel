@@ -8,6 +8,27 @@ import {
   type InlandFlow,
   type IyFacility,
 } from "@/api/inlandFreight";
+import {
+  dominantEntryPort,
+  formatEntryPortLabel,
+  useCompanyPortLanes,
+} from "@/api/portLanes";
+
+/** Inland CBP ports of entry — containers clear customs here AFTER railing
+ *  from a seaport, so 'port of entry' must not read as an ocean port. Matched
+ *  on the city token of the customs entry_port string. */
+const INLAND_CBP_CITIES = new Set([
+  "atlanta", "chicago", "dallas", "dallas/ft worth", "dallas-fort worth",
+  "memphis", "st louis", "st. louis", "cleveland", "detroit", "cincinnati",
+  "kansas city", "minneapolis-st. paul", "salt lake city", "charlotte",
+  "nashville", "columbus", "louisville", "denver", "el paso", "laredo",
+]);
+
+/** True when the customs entry port is an inland rail-ramp CBP location. */
+function isInlandCbpPort(entryPort: string): boolean {
+  const city = entryPort.split(",")[0]?.trim().toLowerCase() ?? "";
+  return INLAND_CBP_CITIES.has(city);
+}
 
 /**
  * "Domestic Freight (estimated)" — company-profile card surfacing the
@@ -182,18 +203,35 @@ function FacilityRow({ f }: { f: FacilityView }) {
   );
 }
 
-function FlowRow({ flow }: { flow: InlandFlow }) {
+function FlowRow({
+  flow,
+  entryPortLabel,
+  viaRail,
+}: {
+  flow: InlandFlow;
+  /** Real dominant customs entry port ("Savannah, GA") — null falls back to
+   *  the generic label. The flow's own origin_port is polluted upstream and
+   *  is never displayed. */
+  entryPortLabel: string | null;
+  viaRail: boolean;
+}) {
   return (
     <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-2">
       <Anchor className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
       <div className="font-display flex min-w-0 flex-1 items-center gap-1.5 text-[11.5px] font-semibold text-slate-900">
-        {/* origin_port is polluted upstream — never display the raw string. */}
-        <span className="shrink-0 text-slate-500">Port of entry</span>
+        <span className="shrink-0 text-slate-500">
+          {entryPortLabel ? `${entryPortLabel} (port)` : "Port of entry"}
+        </span>
         <ArrowRight className="h-3 w-3 shrink-0 text-blue-500" aria-hidden />
         <span className="truncate">
           {flow.dest_city}
           {flow.dest_state ? `, ${flow.dest_state}` : ""}
         </span>
+        {viaRail && (
+          <span className="font-body shrink-0 text-[9.5px] font-medium text-slate-400">
+            · via rail ramp
+          </span>
+        )}
       </div>
       {flow.est_tl_month > 0 && (
         <span className="font-mono shrink-0 text-[10.5px] font-semibold text-slate-700">
@@ -213,8 +251,18 @@ export default function InlandFreightCard({
 }) {
   const { data } = useInlandFreight(companyId);
   const { data: iyFacilities } = useCompanyIyFacilities(companyId);
+  const { data: portLanes } = useCompanyPortLanes(companyId);
   const [showLow, setShowLow] = useState(false);
   const [showModeled, setShowModeled] = useState(false);
+
+  // Real dominant customs entry port for the flow labels — 'Savannah, GA
+  // (port) → Atlanta, GA', with a 'via rail ramp' note when the entry port is
+  // an inland CBP location (containers cleared after railing from a seaport).
+  const entryPort = useMemo(() => {
+    const raw = dominantEntryPort(portLanes);
+    if (!raw) return { label: null as string | null, viaRail: false };
+    return { label: formatEntryPortLabel(raw), viaRail: isInlandCbpPort(raw) };
+  }, [portLanes]);
 
   const facilities = data?.facilities ?? [];
   const flows = data?.flows ?? [];
@@ -327,7 +375,12 @@ export default function InlandFreightCard({
           <SectionLabel>Inland flows</SectionLabel>
           <div className="flex flex-col gap-1.5">
             {flowGate.visible.map((fl, i) => (
-              <FlowRow key={`${fl.dest_city}-${fl.dest_state}-${i}`} flow={fl} />
+              <FlowRow
+                key={`${fl.dest_city}-${fl.dest_state}-${i}`}
+                flow={fl}
+                entryPortLabel={entryPort.label}
+                viaRail={entryPort.viaRail}
+              />
             ))}
           </div>
         </div>

@@ -15,9 +15,12 @@
  *
  * RLS: authenticated SELECT — safe to query directly from the frontend.
  *
- * Only rows with non-null coords and precision in ('city','region') are
- * returned; 'failed' rows are treated exactly like missing keys so a
- * failed geocode can never move a dot to a wrong place.
+ * Only rows with non-null coords and precision='city' are returned.
+ * 'failed' rows are treated exactly like missing keys, and 'region' rows
+ * are ALSO dropped (2026-08 tightening): the seed contains junk
+ * city|country pairs (e.g. "beijing|united states" region-geocoded to
+ * NYC) that must never place a dot. Port keys are unaffected — they only
+ * ever carry precision 'city' or 'failed'.
  *
  * Lives under frontend/src/api/ per CLAUDE.md — new domain code must NOT
  * be added to frontend/src/lib/api.ts.
@@ -34,8 +37,28 @@ const IN_CHUNK = 200;
 export type PlaceCentroid = {
   lat: number;
   lng: number;
-  precision: "city" | "region";
+  /** Only 'city'-precision rows are ever returned (see module docs). */
+  precision: "city";
 };
+
+/**
+ * Great-circle (haversine) distance in statute MILES between two points.
+ * Straight-line, not road miles — callers should label it accordingly
+ * (e.g. "142 mi from HQ", "~248 mi drayage/rail").
+ */
+export function haversineMiles(
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number },
+): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const R = 3958.8; // Earth mean radius, statute miles
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const s =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
+}
 
 /**
  * Build a `lower(a)|lower(b)` place key. Returns null when either part is
@@ -52,11 +75,11 @@ export function makePlaceKey(
 }
 
 /**
- * Resolve a set of place_keys to city/region-precision centroids.
+ * Resolve a set of place_keys to city-precision centroids.
  *
  * Returns a Map<place_key, PlaceCentroid> containing ONLY the keys that
- * exist with usable coordinates — missing keys and precision='failed'
- * rows are simply absent, so callers fall back to their current
+ * exist with usable coordinates — missing keys and precision 'failed' /
+ * 'region' rows are simply absent, so callers fall back to their current
  * (country-centroid) behavior. Disabled (resolves an empty Map) when the
  * key list is empty; errors degrade to whatever was already fetched.
  */
@@ -91,8 +114,10 @@ export function usePlaceCentroids(
           continue;
         }
         for (const r of (data ?? []) as any[]) {
+          // CITY precision only — 'region' rows are junk-prone (e.g.
+          // "beijing|united states" → NYC) and must never place a dot.
           const precision = String(r?.precision ?? "");
-          if (precision !== "city" && precision !== "region") continue;
+          if (precision !== "city") continue;
           const lat = Number(r?.lat);
           const lng = Number(r?.lng);
           if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
