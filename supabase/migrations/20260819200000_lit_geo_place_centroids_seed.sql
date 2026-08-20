@@ -1,6 +1,8 @@
 -- Seed for public.lit_geo_place_centroids
 -- Generated 2026-08-20T00:05:05.380Z by one-time Nominatim (OpenStreetMap) geocoding batch.
 -- precision='failed' rows are kept intentionally (lat/lng null) so they are not re-geocoded.
+-- APPLIED TO PROD 2026-08-19 via MCP execute_sql in chunks (all 1,588 keys verified: 1,262 city / 154 region / 172 failed).
+-- Version '20260819200000' recorded in supabase_migrations.schema_migrations — CI db push will skip this file.
 
 insert into public.lit_geo_place_centroids (place_key, city, region, country, lat, lng, precision, source) values
 ('abbeville|sc', 'abbeville', 'sc', 'united states of america', 34.1779, -82.3792, 'city', 'nominatim-structured'),
