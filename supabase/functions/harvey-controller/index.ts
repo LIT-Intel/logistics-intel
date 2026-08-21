@@ -406,6 +406,7 @@ async function invokeWorker(
 ): Promise<{ ok: boolean; status?: number; data?: Record<string, unknown>; error?: string }> {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const cronSecret = Deno.env.get("LIT_CRON_SECRET");
+  const gatewayKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
   if (!supabaseUrl) return { ok: false, error: "SUPABASE_URL not configured" };
   if (!cronSecret) return { ok: false, error: "LIT_CRON_SECRET not configured" };
 
@@ -416,6 +417,10 @@ async function invokeWorker(
       headers: {
         "Content-Type": "application/json",
         "X-Internal-Cron": cronSecret,
+        // Gateway needs a valid apikey/JWT to route the internal call before the
+        // target fn's X-Internal-Cron check runs; the target checks cron first.
+        "Authorization": `Bearer ${gatewayKey}`,
+        "apikey": gatewayKey,
       },
       body: JSON.stringify(bodyObj),
     });

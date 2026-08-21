@@ -399,6 +399,7 @@ async function actionUpdateTask(admin: SupabaseClient, taskId: string, status: s
 async function actionRunNow(agentName: string) {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const cronSecret = Deno.env.get("LIT_CRON_SECRET");
+  const gatewayKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
   if (!supabaseUrl) throw new Error("SUPABASE_URL not configured");
   if (!cronSecret) return { ok: false, error: "LIT_CRON_SECRET not configured" };
 
@@ -411,6 +412,11 @@ async function actionRunNow(agentName: string) {
       headers: {
         "Content-Type": "application/json",
         "X-Internal-Cron": cronSecret,
+        // The Supabase functions gateway requires a valid apikey/JWT to route the
+        // request BEFORE the target fn's own X-Internal-Cron check runs. Without
+        // this the gateway 401s the internal call. The target checks cron first.
+        "Authorization": `Bearer ${gatewayKey}`,
+        "apikey": gatewayKey,
       },
       body: JSON.stringify({ trigger_type: "manual" }),
     });
@@ -452,6 +458,7 @@ async function actionGenerateDraft(
 ) {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const cronSecret = Deno.env.get("LIT_CRON_SECRET");
+  const gatewayKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
   if (!supabaseUrl) throw new Error("SUPABASE_URL not configured");
   if (!cronSecret) return { ok: false, error: "LIT_CRON_SECRET not configured" };
 
@@ -463,6 +470,11 @@ async function actionGenerateDraft(
       headers: {
         "Content-Type": "application/json",
         "X-Internal-Cron": cronSecret,
+        // The Supabase functions gateway requires a valid apikey/JWT to route the
+        // request BEFORE the target fn's own X-Internal-Cron check runs. Without
+        // this the gateway 401s the internal call. The target checks cron first.
+        "Authorization": `Bearer ${gatewayKey}`,
+        "apikey": gatewayKey,
       },
       body: JSON.stringify({
         agent_name: agentName || "harvey",
@@ -578,8 +590,11 @@ async function actionRunProspect(
   else {
     // No forwardable JWT — fall back to the internal cron path (no Apollo).
     const cronSecret = Deno.env.get("LIT_CRON_SECRET");
+  const gatewayKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
     if (!cronSecret) return { ok: false, error: "LIT_CRON_SECRET not configured" };
     headers["X-Internal-Cron"] = cronSecret;
+    // Gateway also needs a valid apikey/JWT to route the internal call.
+    if (gatewayKey) { headers["Authorization"] = `Bearer ${gatewayKey}`; headers["apikey"] = gatewayKey; }
   }
 
   let res: Response;
@@ -618,6 +633,7 @@ async function actionRunProspect(
 async function actionRunResearch(agentName: string, leadId: string, adminUserId: string) {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const cronSecret = Deno.env.get("LIT_CRON_SECRET");
+  const gatewayKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
   if (!supabaseUrl) throw new Error("SUPABASE_URL not configured");
   if (!cronSecret) return { ok: false, error: "LIT_CRON_SECRET not configured" };
 
@@ -629,6 +645,11 @@ async function actionRunResearch(agentName: string, leadId: string, adminUserId:
       headers: {
         "Content-Type": "application/json",
         "X-Internal-Cron": cronSecret,
+        // The Supabase functions gateway requires a valid apikey/JWT to route the
+        // request BEFORE the target fn's own X-Internal-Cron check runs. Without
+        // this the gateway 401s the internal call. The target checks cron first.
+        "Authorization": `Bearer ${gatewayKey}`,
+        "apikey": gatewayKey,
       },
       body: JSON.stringify({
         agent_name: agentName || "harvey",
