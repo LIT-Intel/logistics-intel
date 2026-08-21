@@ -583,6 +583,8 @@ Deno.serve(async (req: Request) => {
               source: "system",
             });
           }
+          // Campaign funnel visibility (sequence drafts only).
+          await logCampaignOutreach(admin, draft, { eventType: "sent", providerEventId, providerChatId: replyChatId });
 
           sent += 1;
           messagesSent += 1;
@@ -803,6 +805,12 @@ Deno.serve(async (req: Request) => {
           // Move a New-stage lead to Contacted on first touch.
           await moveNewToContacted(admin, draft.lead_id);
         }
+        // Campaign funnel visibility (sequence drafts only).
+        await logCampaignOutreach(admin, draft, {
+          eventType: actionType === "invite" ? "invitation_sent" : "sent",
+          providerEventId,
+          providerChatId,
+        });
 
         sent += 1;
         if (actionType === "invite") {
@@ -890,6 +898,41 @@ Deno.serve(async (req: Request) => {
     return json({ ok: false, error: "internal_error", run_id: runId, request_id: rid }, 500);
   }
 });
+
+// ─── campaign funnel logging (best-effort) ───────────────────────────────────
+
+/**
+ * Append a lit_outreach_history event so a LinkedIn send made for a Harvey
+ * SEQUENCE draft shows up in the Campaign page funnel (which reads
+ * lit_outreach_history, NOT lit_agent_send_log). No-op for non-campaign drafts.
+ * Never throws — a funnel-log failure must not undo a recorded send.
+ */
+async function logCampaignOutreach(
+  admin: SupabaseClient,
+  draft: { id: string; lead_id: string | null; contact_json: Record<string, unknown> | null; metadata_json: Record<string, unknown> | null },
+  opts: { eventType: string; providerEventId: string | null; providerChatId: string | null },
+): Promise<void> {
+  try {
+    const dm = (draft.metadata_json ?? {}) as Record<string, unknown>;
+    const campaignId = typeof dm.campaign_id === "string" ? dm.campaign_id : null;
+    if (!campaignId) return; // only sequence/campaign sends belong in the funnel
+    const stepId = typeof dm.step_id === "string" ? dm.step_id : null;
+    const recipientEmail = ((draft.contact_json ?? {}) as Record<string, unknown>).email ?? null;
+    await admin.from("lit_outreach_history").insert({
+      user_id: "00000000-0000-4000-8000-000000000001", // Harvey (user_id is NOT NULL)
+      campaign_id: campaignId,
+      campaign_step_id: stepId,
+      channel: "linkedin",
+      event_type: opts.eventType, // 'invitation_sent' | 'sent'
+      status: "sent",
+      provider: "unipile",
+      provider_event_id: opts.providerEventId,
+      provider_thread_id: opts.providerChatId,
+      occurred_at: new Date().toISOString(),
+      metadata: { agent: CONFIG_KEY, draft_id: draft.id, lead_id: draft.lead_id, recipient_email: recipientEmail },
+    });
+  } catch (_e) { /* best-effort */ }
+}
 
 // ─── idempotent send-log writer (UNIQUE(draft_id)) ────────────────────────────
 

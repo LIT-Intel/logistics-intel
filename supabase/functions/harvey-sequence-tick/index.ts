@@ -299,6 +299,19 @@ Deno.serve(async (req: Request) => {
         enrolledLeadIds.add(lead.id);
         enrolled += 1;
         enrolledByIcp[icp] = (enrolledByIcp[icp] ?? 0) + 1;
+
+        // Reflect the enrollment in the campaign funnel. The Campaign page reads
+        // lit_outreach_history (via lit_campaign_funnel_v), NOT
+        // lit_campaign_contacts — so without this event the campaign shows 0
+        // enrolled even though the contact exists. Best-effort; never blocks.
+        await admin.from("lit_outreach_history").insert({
+          campaign_id: campaignId,
+          user_id: HARVEY_UID,
+          channel: "email",
+          event_type: "enrolled",
+          status: "enrolled",
+          metadata: { recipient_email: lead.email, source: AGENT_NAME, icp, lead_id: lead.id },
+        });
       }
     }
 

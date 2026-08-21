@@ -963,8 +963,18 @@ async function finalizeDraftSent(
   //    so reply-receiver can correlate inbound replies (dry-run has no id, so
   //    it's null-safe against the unique (provider, provider_event_id) index).
   if (info.senderUserId) {
+    // Campaign attribution: sequence drafts carry campaign_id/step_id in
+    // metadata_json, and the campaign funnel view counts distinct
+    // metadata.recipient_email per campaign — so include both, else Harvey's
+    // campaign shows 0 sent.
+    const dm = (draft.metadata_json ?? {}) as Record<string, unknown>;
+    const campaignId = typeof dm.campaign_id === "string" ? dm.campaign_id : null;
+    const stepId = typeof dm.step_id === "string" ? dm.step_id : null;
+    const recipientEmail = ((draft.contact_json ?? {}) as Record<string, unknown>).email ?? null;
     await admin.from("lit_outreach_history").insert({
       user_id: info.senderUserId,
+      campaign_id: campaignId,
+      campaign_step_id: stepId,
       channel: "email",
       event_type: "sent",
       status: "sent",
@@ -973,7 +983,7 @@ async function finalizeDraftSent(
       message_id: info.messageId,
       provider_event_id: info.messageId,
       occurred_at: nowIso,
-      metadata: { agent: LOG_AGENT, draft_id: draft.id, lead_id: draft.lead_id, dry_run: info.dryRun },
+      metadata: { agent: LOG_AGENT, draft_id: draft.id, lead_id: draft.lead_id, recipient_email: recipientEmail, dry_run: info.dryRun },
     });
   }
 
