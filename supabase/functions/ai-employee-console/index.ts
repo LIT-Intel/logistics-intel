@@ -39,14 +39,82 @@ const ANTHROPIC_MODEL = "claude-sonnet-4-6";
 const OPENAI_MODEL = "gpt-4o";
 const MAX_TOKENS = 1024;
 
-// Base persona shared by all agents; the config.profile layers on top.
-const HARVEY_BASE_PERSONA =
-  "You are Harvey, an internal AI Sales Development Rep employed by Logistics Intel (LIT), " +
-  "a freight-intelligence + CRM SaaS. You are talking to a LIT platform admin inside an " +
-  "internal admin console — this is not customer-facing. Be concise, direct, and practical. " +
-  "Speak as Harvey / Logistics Intel. NEVER fabricate freight data, shipment volumes, product " +
-  "features, or capabilities that were not given to you — if you don't know, say so. When asked " +
-  "to do outreach work, follow the anti-AI-tell copy rules and compliance rules in your knowledge.";
+// ─── Harvey persona (single source of truth) ─────────────────────────────────
+// Exported so future Writer / Conversation agents (Batch 4/8) import the SAME
+// persona rather than re-inventing one. Keep this tight and instructive — the
+// approved lit_agent_knowledge rows + lit_agent_outreach_templates carry the
+// detailed copy/examples; this string encodes WHO Harvey is and the guardrails.
+export const HARVEY_SYSTEM_PROMPT = [
+  "You are Harvey, a freight salesperson at Logistics Intel (LIT). You have 15+ years selling",
+  "in freight forwarding and logistics. You talk like an experienced freight rep talking to a",
+  "peer — not like an AI, not like a generic SaaS SDR trying to book a meeting.",
+  "",
+  "WHAT YOU SELL & WHO YOU SELL TO:",
+  "You sell LIT's SOFTWARE — a freight-sales intelligence, prospecting, contact-enrichment, and",
+  "CRM platform — to other freight-sales professionals: freight brokers, freight forwarders,",
+  "NVOCCs, 3PL sales teams, customs brokers, drayage providers, domestic transportation sales,",
+  "and logistics business-development people. HARD GUARDRAIL: you are NOT selling freight",
+  "services and you are NOT trying to move anyone's freight. The person you're talking to is a",
+  "SALES PEER, never a shipper. Language like 'who is shipping / what are they moving / who to",
+  "call' describes what LIT helps the CUSTOMER do — it is never an offer to haul freight.",
+  "",
+  "POSITIONING: Find the freight -> Find the company -> Find the person -> Work the opportunity.",
+  "LIT is a freight-sales workflow, not just a lead database, BOL database, or CRM. It brings",
+  "together workflows reps otherwise split across shipment data, ZoomInfo, Panjiva, ImportGenius,",
+  "Revenue Vessel, LinkedIn, Apollo, spreadsheets, and a CRM.",
+  "",
+  "THE 7 RULES:",
+  "1. Sound human. Talk like a freight salesperson, not a brochure.",
+  "2. Don't dump features. Cold outreach creates curiosity — never explain the whole platform up front.",
+  "3. Never attack competitors. Respect ZoomInfo, Panjiva, ImportGenius, Revenue Vessel, Apollo,",
+  "   LinkedIn Sales Nav, etc. — validate them, then explain how LIT's workflow differs.",
+  "4. Listen. Not every reply is an objection. 'How much?' is a question — answer it. 'Not",
+  "   interested' is a boundary — respect it. Don't force every thread toward a demo.",
+  "5. Never invent capabilities. If you don't know whether LIT supports a feature, data source,",
+  "   integration, country, mode, API, or CRM behavior, say 'Great question. Let me confirm that",
+  "   before I give you the wrong answer.' and flag it for a human. Do not guess.",
+  "6. Never invent pricing. Use only approved current pricing. If you don't have it, say 'Happy",
+  "   to send pricing over — let me confirm the current plans so I don't give you outdated info.'",
+  "7. Freight relevance first. Lead with active shippers, trade lanes, volume, ports, FTL/drayage",
+  "   opportunities, import/export activity, decision-makers, and real reasons to call now.",
+  "",
+  "HARD GUARDRAILS:",
+  "- NEVER invent product features, data sources, integrations, pricing, coverage, or metrics.",
+  "- On a HARD rejection ('not interested', 'stop', 'remove me', 'do not contact'): stop",
+  "  immediately, do NOT rebut, do NOT pitch again, and note that the prospect should be suppressed.",
+  "- On a soft rejection ('we're good', 'happy with what we have', 'maybe next year'): acknowledge,",
+  "  stay on radar, reduce cadence — do not keep pitching.",
+  "- On unknown product questions: 'Great question. Let me confirm that before I give you the",
+  "  wrong answer.' and flag for a human. Never hallucinate an answer.",
+  "- Competitors are always respected: validate them, explain the workflow difference, never insult.",
+  "- NEVER claim a prospect viewed, clicked, searched, or downloaded anything unless tracking",
+  "  confirms it. Never invent case studies, customer names, ROI stats, or performance metrics.",
+  "",
+  "VOICE: Prefer human phrasing like 'Curious what you're using today.', 'That's actually what",
+  "frustrated me when I was selling freight.', 'If what you're using works, I wouldn't change it",
+  "either.', 'Bring one lane you're trying to grow.' BANNED SaaS clichés: revolutionary,",
+  "game-changing, cutting-edge, best-in-class, transform your business, unlock your potential,",
+  "synergies, AI-powered ecosystem, seamless omnichannel, 'just circling back', 'I know you're busy'.",
+  "",
+  "GOAL: Optimize for conversation QUALITY, not demos booked. A good outcome can simply be earning",
+  "permission to reconnect later. Behave like an experienced freight salesperson who happens to",
+  "have LIT available — listen first, understand the freight problem, then show where LIT fits.",
+].join("\n");
+
+/** Build the full system persona, layering the config.profile display identity on top. */
+export function buildHarveySystemPrompt(profile: Record<string, unknown> | null): string {
+  const displayName = profile && typeof profile.displayName === "string" ? profile.displayName : "Harvey";
+  const role = profile && typeof profile.role === "string" ? profile.role : "freight salesperson";
+  const tagline = profile && typeof profile.tagline === "string" ? profile.tagline : "";
+  return (
+    `${HARVEY_SYSTEM_PROMPT}\n\n` +
+    "CONTEXT: You are talking to a LIT platform admin inside an internal admin console — this is " +
+    "not customer-facing. When the admin asks you to draft or critique outreach, apply everything " +
+    "above; when they ask operational questions, be concise, direct, and practical.\n" +
+    `Your display identity: ${displayName} — ${role}.` +
+    (tagline ? ` ${tagline}` : "")
+  );
+}
 
 // ─── flag mapping (multi-agent) ──────────────────────────────────────────────
 function flagKeyFor(agentName: string, profile: Record<string, unknown> | null): string {
@@ -225,22 +293,98 @@ async function actionDetail(admin: SupabaseClient, agentName: string) {
   };
 }
 
-/** Assemble the LLM prompt: persona + approved knowledge + run summary + history. */
+// ─── outreach-template grounding ─────────────────────────────────────────────
+type OutreachTemplate = {
+  template_key: string;
+  channel: string | null;
+  stage: string | null;
+  intent: string | null;
+  subject: string | null;
+  body: string | null;
+};
+
+// Cap on how many full template bodies we inject so the prompt stays reasonable.
+const MAX_TEMPLATE_BODIES = 6;
+
+/**
+ * Score a template against the admin's message using plain string matching (no LLM).
+ * Higher score = more relevant. Channel/stage/intent/key mentions all contribute.
+ */
+function scoreTemplate(tpl: OutreachTemplate, msgLower: string): number {
+  let score = 0;
+
+  // Channel intent in the message.
+  if (tpl.channel) {
+    const ch = tpl.channel.toLowerCase();
+    if (ch === "linkedin" && (msgLower.includes("linkedin") || msgLower.includes("connection request") || msgLower.includes("dm"))) score += 4;
+    if (ch === "email" && (msgLower.includes("email") || msgLower.includes("subject") || msgLower.includes("inbox"))) score += 4;
+  }
+
+  // Direct token matches on stage / intent / key (split on non-word chars).
+  const tokens = new Set(
+    `${tpl.stage ?? ""} ${tpl.intent ?? ""} ${tpl.template_key ?? ""}`
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((t) => t.length >= 3),
+  );
+  for (const tok of tokens) {
+    if (msgLower.includes(tok)) score += 2;
+  }
+
+  // Freight / lifecycle keyword hints → stage/intent buckets.
+  const KEYWORD_STAGE: Array<[string[], string[]]> = [
+    [["broker", "brokerage"], ["freight_hook", "cold_outreach"]],
+    [["forwarder", "forwarding", "nvocc"], ["cold_outreach", "freight_hook"]],
+    [["drayage", "port", "cartage"], ["freight_hook"]],
+    [["ftl", "ltl", "domestic", "truckload"], ["freight_hook"]],
+    [["trial"], ["trial"]],
+    [["pric", "cost", "how much", "expensive", "budget"], ["pricing"]],
+    [["demo"], ["demo", "post_demo"]],
+    [["objection", "not interested", "happy with", "we use"], ["objection", "competitor"]],
+    [["zoominfo", "panjiva", "importgenius", "revenue vessel", "apollo", "competitor"], ["competitor"]],
+    [["reject", "no thanks", "stop", "remove me"], ["rejection", "breakup"]],
+    [["re-engage", "reengage", "reconnect", "old lead", "follow up", "follow-up", "no response"], ["re_engagement", "no_response"]],
+    [["referral", "wrong person"], ["referral"]],
+    [["expansion", "seats", "upsell"], ["expansion"]],
+    [["partner", "influencer", "consultant"], ["partner"]],
+    [["website", "visitor", "pricing page", "intent"], ["website_intent"]],
+    [["curious", "curiosity", "interesting"], ["curiosity"]],
+    [["connect", "connected", "accepted"], ["connected"]],
+  ];
+  const stageLower = (tpl.stage ?? "").toLowerCase();
+  const intentLower = (tpl.intent ?? "").toLowerCase();
+  for (const [keywords, stages] of KEYWORD_STAGE) {
+    if (keywords.some((k) => msgLower.includes(k))) {
+      if (stages.some((s) => stageLower.includes(s) || intentLower.includes(s))) score += 3;
+    }
+  }
+
+  return score;
+}
+
+/** Assemble the LLM prompt: persona + knowledge + template catalog + relevant
+ *  template bodies + recent runs + chat history. `message` is the current admin
+ *  turn, used only for plain-string relevance selection of template bodies. */
 async function buildChatContext(
   admin: SupabaseClient,
   agentName: string,
   config: Cfg,
+  message: string,
 ): Promise<{ system: string; userBlock: string }> {
   const profile = (config.profile ?? {}) as Record<string, unknown>;
-  const displayName = typeof profile.displayName === "string" ? profile.displayName : agentName;
-  const role = typeof profile.role === "string" ? profile.role : "internal AI agent";
-  const tagline = typeof profile.tagline === "string" ? profile.tagline : "";
 
-  const [knowledgeRes, runsRes, historyRes] = await Promise.all([
+  // Service-role `admin` client is used throughout — RLS blocks anon from the
+  // knowledge/templates tables, so this must never be the user-scoped client.
+  const [knowledgeRes, templatesRes, runsRes, historyRes] = await Promise.all([
     admin.from("lit_agent_knowledge")
       .select("category, title, content")
       .eq("approved", true)
       .order("category", { ascending: true }),
+    admin.from("lit_agent_outreach_templates")
+      .select("template_key, channel, stage, intent, subject, body")
+      .eq("agent_name", agentName)
+      .eq("approved", true)
+      .order("stage", { ascending: true }),
     admin.from("lit_agent_runs")
       .select("created_at, decision, decision_reason, status, output_json")
       .eq("agent_name", agentName)
@@ -251,13 +395,45 @@ async function buildChatContext(
       .order("created_at", { ascending: false }).limit(10),
   ]);
 
-  const personaLine = `${HARVEY_BASE_PERSONA}\n\nYour display identity: ${displayName} — ${role}.` +
-    (tagline ? ` ${tagline}` : "");
+  const personaLine = buildHarveySystemPrompt(profile);
 
   const knowledge = (knowledgeRes.data ?? []) as Array<{ category: string; title: string; content: string }>;
   const knowledgeBlock = knowledge.length
     ? knowledge.map((k) => `- [${k.category}] ${k.title}: ${k.content}`).join("\n")
     : "(no approved knowledge on file)";
+
+  // ── outreach templates: compact catalog (all) + full bodies (most relevant) ──
+  const templates = (templatesRes.data ?? []) as OutreachTemplate[];
+  let templateCatalogBlock = "(no approved outreach templates on file)";
+  let templateBodiesBlock = "";
+  if (templates.length) {
+    // Compact one-line-per-template catalog so Harvey knows what exists (no bodies).
+    templateCatalogBlock = templates
+      .map((t) => {
+        const meta = [t.channel, t.stage, t.intent].filter(Boolean).join("/");
+        const subj = t.subject ? ` — ${t.subject}` : "";
+        return `- [${t.template_key}] ${meta}${subj}`;
+      })
+      .join("\n");
+
+    // Pick up to MAX_TEMPLATE_BODIES most relevant to the current admin message.
+    const msgLower = (message || "").toLowerCase();
+    const ranked = templates
+      .map((t, i) => ({ t, i, score: scoreTemplate(t, msgLower) }))
+      .sort((a, b) => (b.score - a.score) || (a.i - b.i)) // stable: preserve order on ties
+      .slice(0, MAX_TEMPLATE_BODIES)
+      .filter((r) => r.score > 0);
+
+    if (ranked.length) {
+      templateBodiesBlock = ranked
+        .map(({ t }) => {
+          const meta = [t.channel, t.stage, t.intent].filter(Boolean).join("/");
+          const subj = t.subject ? `\nSubject: ${t.subject}` : "";
+          return `### [${t.template_key}] ${meta}${subj}\n${t.body ?? ""}`.trim();
+        })
+        .join("\n\n");
+    }
+  }
 
   const runs = (runsRes.data ?? []) as Array<{
     created_at: string; decision: string | null; decision_reason: string | null;
@@ -279,10 +455,24 @@ async function buildChatContext(
     ? history.map((m) => `${m.role.toUpperCase()}: ${m.content}`).join("\n")
     : "(no prior messages)";
 
-  const userBlock =
-    `APPROVED KNOWLEDGE:\n${knowledgeBlock}\n\n` +
-    `RECENT AGENT RUNS (most recent first — your own decision log):\n${runsBlock}\n\n` +
-    `RECENT CONVERSATION (chronological):\n${historyBlock}`;
+  // Order: knowledge -> template catalog -> relevant template bodies -> runs -> history.
+  const parts: string[] = [
+    `APPROVED KNOWLEDGE:\n${knowledgeBlock}`,
+    `APPROVED OUTREACH TEMPLATE CATALOG ([key] channel/stage/intent — subject; bodies omitted):\n${templateCatalogBlock}`,
+  ];
+  if (templateBodiesBlock) {
+    parts.push(
+      "RELEVANT APPROVED OUTREACH EXAMPLES (full body):\n" +
+        "These are approved example messages that define Harvey's voice. Adapt them to the " +
+        "specific prospect and their exact message; never paste them verbatim or reuse the same " +
+        "phrasing repeatedly.\n\n" +
+        templateBodiesBlock,
+    );
+  }
+  parts.push(`RECENT AGENT RUNS (most recent first — your own decision log):\n${runsBlock}`);
+  parts.push(`RECENT CONVERSATION (chronological):\n${historyBlock}`);
+
+  const userBlock = parts.join("\n\n");
 
   return { system: personaLine, userBlock };
 }
@@ -306,7 +496,7 @@ async function actionChat(
   if (userErr) throw new Error(`chat user insert failed: ${userErr.message}`);
 
   // 2. Build context + call the LLM.
-  const { system, userBlock } = await buildChatContext(admin, agentName, config as Cfg);
+  const { system, userBlock } = await buildChatContext(admin, agentName, config as Cfg, message);
   const composed = `${userBlock}\n\n─────\nADMIN MESSAGE:\n${message}`;
   const llm = await callLlm(system, composed);
 
