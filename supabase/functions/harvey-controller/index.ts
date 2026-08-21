@@ -26,8 +26,13 @@
 //
 // Decision priority (highest first — from HARVEY_REFERENCE_REVIEW.md:
 // "replies always outrank new outreach"):
-//   1 compliance_escalation      (stub — Batch 4 reply classifier)
-//   2 handle_urgent_replies      (real — unread inbound on Harvey's mailbox)
+//   1 handle_urgent_replies      (real — Batch 8 — UNPROCESSED inbound replies on
+//                                 Harvey's mailbox → harvey-reply. Outranks
+//                                 EVERYTHING: a prospect who replied must never
+//                                 get a canned follow-up. harvey-reply hard-guards
+//                                 + classifies + drafts for approval; never sends.)
+//   2 compliance_escalation      (stub — no separate store; harvey-reply hard-guards
+//                                 opt-out/legal inline)
 //   3 handle_meeting_requests    (stub — Batch 4 intent classification)
 //   4 awaiting_human_approval    (real — Harvey-marked pending LinkedIn actions)
 //   5 nurture_trials             (real — not-upgraded trial users needing a
@@ -50,6 +55,9 @@
 // respecting mode/testMode/quiet-hours). It invokes the sibling worker fns
 // server-to-server (X-Internal-Cron: LIT_CRON_SECRET) exactly like ai-employee-
 // console's run_now proxies the controller:
+//   - handle_urgent_replies → harvey-reply (read inbound replies, hard-guard
+//                       opt-out/legal/OOO, classify intent, advance the lead,
+//                       draft a reply for approval; NEVER sends — Batch 8)
 //   - nurture_trials  → harvey-nurture (draft trial-lifecycle nurtures for
 //                       not-upgraded users; drafts only, never sends)
 //   - prospect        → harvey-prospect (source up to the shortfall)
@@ -123,7 +131,19 @@ function probeComplianceEscalations(): number {
   return 0;
 }
 
-/** Probe 2: unread inbound messages on Harvey's connected mailbox. REAL. */
+/**
+ * Probe 2 (Batch 8): UNPROCESSED inbound replies on Harvey's mailbox. REAL.
+ *
+ * "Handling replies outranks everything" — a prospect who replied must never get
+ * a canned follow-up. This counts inbound messages on Harvey's connected mailbox
+ * that harvey-reply has NOT yet ledgered (lit_agent_inbound, channel='email').
+ * It is a BOUNDED scan (we only need "is there work"): fetch a capped window of
+ * inbound message row-ids, subtract the ones already in the inbound ledger.
+ *
+ * The exact reply-vs-noise correlation (which of these are actually replies to
+ * Harvey's outreach) is done authoritatively inside harvey-reply; the controller
+ * only needs a cheap "is there unprocessed inbound" signal to route to it.
+ */
 async function probeUrgentReplies(admin: SupabaseClient, config: AgentConfig): Promise<number> {
   const senderEmail = config.sender?.emailAccount ?? null;
   if (!senderEmail) return 0;
@@ -136,15 +156,33 @@ async function probeUrgentReplies(admin: SupabaseClient, config: AgentConfig): P
   if (error) throw new Error(`probe urgent_replies (accounts) failed: ${error.message}`);
   const ids = (accounts ?? []).map((a: { id: string }) => a.id);
   if (ids.length === 0) return 0; // sender not connected yet — legitimately 0
-  return await countRows(
-    admin
-      .from("lit_email_messages")
-      .select("id", { count: "exact", head: true })
-      .in("email_account_id", ids)
-      .eq("direction", "inbound")
-      .eq("is_unread", true),
-    "urgent_replies",
+
+  // Bounded window of the most-recent inbound message row ids.
+  const SCAN = 200;
+  const { data: inbound, error: inErr } = await admin
+    .from("lit_email_messages")
+    .select("id")
+    .in("email_account_id", ids)
+    .eq("direction", "inbound")
+    .order("message_date", { ascending: false })
+    .limit(SCAN);
+  if (inErr) throw new Error(`probe urgent_replies (inbound) failed: ${inErr.message}`);
+  const rowIds = (inbound ?? []).map((r: { id: string }) => r.id as string);
+  if (rowIds.length === 0) return 0;
+
+  // Subtract inbound already ledgered by harvey-reply (processed once).
+  const { data: ledgered, error: ledErr } = await admin
+    .from("lit_agent_inbound")
+    .select("source_row_id")
+    .eq("channel", "email")
+    .in("source_row_id", rowIds);
+  if (ledErr) throw new Error(`probe urgent_replies (ledger) failed: ${ledErr.message}`);
+  const handled = new Set(
+    (ledgered ?? [])
+      .map((r: { source_row_id: string | null }) => r.source_row_id)
+      .filter((id): id is string => typeof id === "string"),
   );
+  return rowIds.filter((id) => !handled.has(id)).length;
 }
 
 /** Probe 3: inbound replies asking for a meeting. */
@@ -518,18 +556,21 @@ async function invokeWorker(
 // ─── deterministic decision (NO LLM) ─────────────────────────────────────────
 
 function decide(counts: ProbeCounts): { priority: number; decision: string; reason: string } {
-  if (counts.compliance_escalations > 0) {
-    return {
-      priority: 1,
-      decision: "compliance_escalation",
-      reason: `${counts.compliance_escalations} compliance escalation(s) require immediate handling`,
-    };
-  }
+  // Batch 8: handling REPLIES outranks EVERYTHING. A prospect who replied must
+  // never get a canned follow-up — route to harvey-reply before any compliance
+  // stub, outreach, nurture, or prospecting decision.
   if (counts.urgent_replies > 0) {
     return {
-      priority: 2,
+      priority: 1,
       decision: "handle_urgent_replies",
-      reason: `${counts.urgent_replies} unread inbound message(s) on Harvey's mailbox`,
+      reason: `${counts.urgent_replies} unprocessed inbound repl(y/ies) on Harvey's mailbox`,
+    };
+  }
+  if (counts.compliance_escalations > 0) {
+    return {
+      priority: 2,
+      decision: "compliance_escalation",
+      reason: `${counts.compliance_escalations} compliance escalation(s) require immediate handling`,
     };
   }
   if (counts.meeting_requests > 0) {
@@ -803,7 +844,36 @@ Deno.serve(async (req: Request) => {
     let executed = false;
     const execution: Record<string, unknown> = {};
 
-    if (decision === "nurture_trials") {
+    if (decision === "handle_urgent_replies") {
+      // Batch 8: unprocessed inbound replies exist → invoke harvey-reply. That
+      // worker re-checks the SAME fail-closed gates (flag, enabled, quiet-hours)
+      // itself, applies deterministic hard-guards FIRST, classifies intent,
+      // advances the lead, and DRAFTS a suggested reply for human approval. It
+      // NEVER sends: with config.replies.autoReply=false every draft is
+      // pending_approval, and even an approved reply draft is only ever SENT by
+      // the dispatchers (which respect live/dry-run). invokeWorker never throws;
+      // a failure is recorded and the heartbeat still completes 'ok'.
+      const res = await invokeWorker("harvey-reply", {
+        agent_name: CONFIG_KEY,
+        trigger_type: triggerType,
+        created_by: actorUserId,
+      });
+      if (res.ok) {
+        const data = res.data ?? {};
+        execution.handle_urgent_replies = {
+          scanned: typeof data.scanned === "number" ? data.scanned : 0,
+          drafted: typeof data.drafted === "number" ? data.drafted : 0,
+          escalated: typeof data.escalated === "number" ? data.escalated : 0,
+          suppressed: typeof data.suppressed === "number" ? data.suppressed : 0,
+          auto_replied: typeof data.auto_replied === "number" ? data.auto_replied : 0,
+          ignored: typeof data.ignored === "number" ? data.ignored : 0,
+          run_id: data.run_id ?? null,
+        };
+        executed = true;
+      } else {
+        execution.handle_urgent_replies = { error: res.error ?? "harvey-reply failed" };
+      }
+    } else if (decision === "nurture_trials") {
       // Not-upgraded trial users need lifecycle nurture drafts → invoke
       // harvey-nurture. That worker DRAFTS ONLY (never sends): it selects
       // candidates, invokes harvey-writer, and stamps metadata_json.lifecycle so

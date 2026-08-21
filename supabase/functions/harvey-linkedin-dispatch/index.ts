@@ -81,6 +81,7 @@ interface DraftRow {
   channel: string;
   status: string;
   body: string;
+  metadata_json: Record<string, unknown> | null;
   created_at: string;
 }
 
@@ -418,7 +419,7 @@ Deno.serve(async (req: Request) => {
     // ── select candidate drafts: approved linkedin drafts not yet in the log ──
     const { data: draftsRaw, error: draftsErr } = await admin
       .from("lit_agent_drafts")
-      .select("id, lead_id, contact_json, channel, status, body, created_at")
+      .select("id, lead_id, contact_json, channel, status, body, metadata_json, created_at")
       .eq("agent_name", CONFIG_KEY)
       .eq("channel", "linkedin")
       .eq("status", "approved")
@@ -449,6 +450,164 @@ Deno.serve(async (req: Request) => {
     const perDraft: Array<Record<string, unknown>> = [];
 
     for (const draft of unsent) {
+      // ── REPLY DRAFT branch (from harvey-reply) ─────────────────────────────
+      // metadata_json.reply.is_reply === true with a provider_chat_id means this
+      // is a threaded reply into an EXISTING Unipile chat, not a fresh invite/msg.
+      // Replies: always send an in-thread MESSAGE to provider_chat_id, bypass the
+      // invite-vs-message decision and the already-connected check (if they
+      // replied, we're connected). Caps still apply (counts as a message);
+      // idempotency + dry-run + gate chain are unchanged. stop-on-reply is N/A for
+      // the reply itself, so draftBlocked's reply gate is intentionally skipped.
+      const replyMeta = (draft.metadata_json as any)?.reply;
+      const isReplyDraft = replyMeta?.is_reply === true;
+      const replyChatId =
+        typeof replyMeta?.provider_chat_id === "string" && replyMeta.provider_chat_id.trim()
+          ? replyMeta.provider_chat_id.trim()
+          : null;
+      if (isReplyDraft) {
+        if (!replyChatId) {
+          await logSend(admin, {
+            draftId: draft.id,
+            leadId: draft.lead_id,
+            actionType: "message",
+            unipileAccountId: senderAccount.unipile_account_id,
+            status: "skipped",
+            reason: "reply_no_chat_id",
+          });
+          skipped += 1;
+          perDraft.push({ draft_id: draft.id, status: "skipped", reason: "reply_no_chat_id" });
+          continue;
+        }
+
+        // Message cap still applies to replies (they count as a message).
+        if (sentMessagesToday >= messageCap) {
+          await logSend(admin, {
+            draftId: draft.id,
+            leadId: draft.lead_id,
+            actionType: "message",
+            unipileAccountId: senderAccount.unipile_account_id,
+            status: "skipped",
+            reason: "message_cap_reached",
+          });
+          skipped += 1;
+          perDraft.push({ draft_id: draft.id, status: "skipped", reason: "message_cap_reached" });
+          continue;
+        }
+
+        const replyText = String(draft.body ?? "").trim();
+
+        // DRY RUN: never call Unipile; record 'dry_run' and move on.
+        if (dryRun) {
+          const inserted = await logSend(admin, {
+            draftId: draft.id,
+            leadId: draft.lead_id,
+            actionType: "message",
+            unipileAccountId: senderAccount.unipile_account_id,
+            status: "dry_run",
+            reason: "dry_run",
+            providerChatId: replyChatId,
+          });
+          if (inserted === "duplicate") {
+            skipped += 1;
+            perDraft.push({ draft_id: draft.id, status: "skipped", reason: "already_logged" });
+            continue;
+          }
+          dryRunCount += 1;
+          perDraft.push({ draft_id: draft.id, status: "dry_run", action_type: "message", reply: true });
+          continue;
+        }
+
+        // ── REAL in-thread reply send ────────────────────────────────────────
+        // UNVERIFIED: POST /chats/{chatId}/messages { text } is the standard
+        // Unipile route for posting into an existing chat, but it is NOT exercised
+        // anywhere else in this repo (all other calls create NEW chats via
+        // POST /chats). It must be confirmed against Unipile's live API. Implement
+        // defensively: on any non-2xx / unknown-shape response, log a clear error,
+        // mark the send 'failed' with reason 'linkedin_reply_endpoint', and
+        // continue — never crash the loop.
+        try {
+          const form = new FormData();
+          form.set("account_id", senderAccount.unipile_account_id);
+          form.set("text", replyText);
+          const response = await unipileRequest<Record<string, unknown>>(
+            `/chats/${encodeURIComponent(replyChatId)}/messages`,
+            { method: "POST", body: form },
+          );
+
+          const providerEventId =
+            String((response as any)?.message_id || (response as any)?.id || "") || null;
+          if (!providerEventId) {
+            // Unknown response shape → treat as a failure (defensive).
+            await logSend(admin, {
+              draftId: draft.id,
+              leadId: draft.lead_id,
+              actionType: "message",
+              unipileAccountId: senderAccount.unipile_account_id,
+              status: "failed",
+              reason: "linkedin_reply_endpoint",
+              providerChatId: replyChatId,
+            });
+            failed += 1;
+            perDraft.push({ draft_id: draft.id, status: "failed", action_type: "message", reply: true, error: "linkedin_reply_endpoint" });
+            log.warn("reply_send_unknown_shape", { run_id: runId, draft_id: draft.id, chat_id: replyChatId });
+            continue;
+          }
+
+          const inserted = await logSend(admin, {
+            draftId: draft.id,
+            leadId: draft.lead_id,
+            actionType: "message",
+            unipileAccountId: senderAccount.unipile_account_id,
+            status: "sent",
+            providerEventId,
+            providerChatId: replyChatId,
+            sentAt: new Date().toISOString(),
+          });
+          if (inserted === "duplicate") {
+            skipped += 1;
+            perDraft.push({ draft_id: draft.id, status: "skipped", reason: "already_logged_race" });
+            continue;
+          }
+
+          // Advance the draft + activity feed (best-effort).
+          await admin
+            .from("lit_agent_drafts")
+            .update({ status: "sent", sent_at: new Date().toISOString() })
+            .eq("id", draft.id);
+          if (draft.lead_id) {
+            await admin.from("lit_lead_activity").insert({
+              lead_id: draft.lead_id,
+              kind: "linkedin_message",
+              body: { draft_id: draft.id, provider_event_id: providerEventId, reply: true, message: replyText.slice(0, 400) },
+              actor_user_id: null,
+              source: "system",
+            });
+          }
+
+          sent += 1;
+          messagesSent += 1;
+          sentMessagesToday += 1;
+          perDraft.push({ draft_id: draft.id, status: "sent", action_type: "message", reply: true, provider_event_id: providerEventId });
+        } catch (replyErr) {
+          // Non-2xx (unipileRequest throws) or any other error → log 'failed'
+          // with reason 'linkedin_reply_endpoint' and continue (defensive).
+          const message = String((replyErr as Error)?.message ?? replyErr);
+          await logSend(admin, {
+            draftId: draft.id,
+            leadId: draft.lead_id,
+            actionType: "message",
+            unipileAccountId: senderAccount.unipile_account_id,
+            status: "failed",
+            reason: `linkedin_reply_endpoint:${message}`.slice(0, 500),
+            providerChatId: replyChatId,
+          });
+          failed += 1;
+          perDraft.push({ draft_id: draft.id, status: "failed", action_type: "message", reply: true, error: "linkedin_reply_endpoint" });
+          log.warn("reply_send_failed", { run_id: runId, draft_id: draft.id, chat_id: replyChatId, err: message });
+        }
+        continue;
+      }
+
       // Resolve the lead's stored linkedin_url (fallback recipient source).
       let leadUrl: string | null = null;
       if (draft.lead_id) {

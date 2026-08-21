@@ -184,15 +184,21 @@ async function getGmailAccessToken(
   return { ok: true, accessToken: newAccessToken };
 }
 
-/** Send one email via Gmail messages.send. Mirrors send-campaign-email's Gmail branch. */
+/** Send one email via Gmail messages.send. Mirrors send-campaign-email's Gmail branch.
+ *  When threading args are present (a REPLY draft), the RFC822 gains In-Reply-To /
+ *  References headers and the send body carries Gmail's threadId so the reply lands
+ *  in the same conversation. Non-reply sends pass none of these and behave unchanged. */
 async function sendGmail(args: {
   accessToken: string;
   from: HarveyAccount;
   to: string;
   subject: string;
   body: string;
+  inReplyTo?: string;
+  references?: string;
+  threadId?: string;
 }): Promise<{ ok: true; messageId: string } | { ok: false; error: string }> {
-  const { accessToken, from, to, subject, body } = args;
+  const { accessToken, from, to, subject, body, inReplyTo, references, threadId } = args;
   // From display name: RFC 2047-encode if non-ASCII (encoded-words are NOT quoted);
   // a plain ASCII name keeps the usual quoted-phrase form.
   const fromLine = from.display_name
@@ -201,12 +207,22 @@ async function sendGmail(args: {
         : `${encodeHeaderWord(from.display_name)} <${from.email}>`)
     : from.email;
   const isHtml = /^<[a-z!]/i.test(body.trim()) || /<table|<div|<p[\s>]/i.test(body);
+  // Keep Harvey's own injected Message-ID even on replies so downstream
+  // reply-correlation (reply-receiver) can still match on it.
   const messageId = `<harvey-${crypto.randomUUID()}@logisticintel.com>`;
-  const raw = [
+  const headerLines = [
     `From: ${fromLine}`,
     `To: ${to}`,
     `Subject: ${encodeHeaderWord(subject)}`,
     `Message-ID: ${messageId}`,
+  ];
+  // REPLY THREADING: add In-Reply-To / References right after Message-ID so the
+  // recipient's client threads this into the inbound conversation. Only present
+  // for reply drafts; a fresh send omits them entirely.
+  if (inReplyTo) headerLines.push(`In-Reply-To: ${inReplyTo}`);
+  if (references) headerLines.push(`References: ${references}`);
+  const raw = [
+    ...headerLines,
     `MIME-Version: 1.0`,
     `Content-Type: ${isHtml ? "text/html" : "text/plain"}; charset=UTF-8`,
     `Content-Transfer-Encoding: base64`,
@@ -214,12 +230,16 @@ async function sendGmail(args: {
     encodeBodyMimeBase64(body),
   ].join("\r\n");
   try {
+    // Gmail messages.send accepts an optional threadId to keep the reply in the
+    // same conversation — include it only when threading (omit otherwise).
+    const sendBody: Record<string, unknown> = { raw: toBase64Url(raw) };
+    if (threadId) sendBody.threadId = threadId;
     const resp = await fetch(
       "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
       {
         method: "POST",
         headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ raw: toBase64Url(raw) }),
+        body: JSON.stringify(sendBody),
       },
     );
     const respJson = await resp.json().catch(() => ({}));
@@ -637,9 +657,20 @@ Deno.serve(async (req: Request) => {
         const isTestDraft = Boolean(
           (draft.metadata_json as Record<string, unknown> | null)?.test_send,
         );
+        // REPLY draft (from harvey-reply): metadata_json.reply.is_reply === true.
+        // Carries the inbound Message-ID, References chain, and Gmail threadId so
+        // the send threads into the existing conversation rather than opening a new one.
+        const reply = (draft.metadata_json as any)?.reply;
+        const isReplyDraft = reply?.is_reply === true;
         if (!isTestDraft) {
           // Gate: suppression list.
-          const suppressed = await isSuppressed(admin, email, lifecycleOf(draft) !== null);
+          // For the `converted` reason ONLY, replies are allowed through (same as
+          // lifecycle) — the recipient is already conversing with Harvey. We do NOT
+          // fully bypass suppression: unsubscribe / bounce / complaint still stop a
+          // reply (harvey-reply already suppresses opt-outs, and isSuppressed
+          // returning those reasons SHOULD still block).
+          const allowConverted = isTestDraft || isReplyDraft || lifecycleOf(draft) !== null;
+          const suppressed = await isSuppressed(admin, email, allowConverted);
           if (suppressed) {
             await logSkip(admin, draft, `suppressed:${suppressed}`);
             summary.skipped += 1; bumpReason(`suppressed_${suppressed}`); continue;
@@ -738,12 +769,21 @@ Deno.serve(async (req: Request) => {
         }
 
         // ── THE REAL GMAIL SEND CALL ─────────────────────────────────────────
+        // For a reply draft, pass the inbound Message-ID / References chain /
+        // Gmail threadId so sendGmail threads it into the existing conversation.
         const sendRes = await sendGmail({
           accessToken: tokenRes.accessToken,
           from: sender,
           to: email,
           subject,
           body: messageBody,
+          ...(isReplyDraft
+            ? {
+                inReplyTo: typeof reply?.in_reply_to === "string" ? reply.in_reply_to : undefined,
+                references: typeof reply?.references === "string" ? reply.references : undefined,
+                threadId: typeof reply?.gmail_thread_id === "string" ? reply.gmail_thread_id : undefined,
+              }
+            : {}),
         });
 
         if (!sendRes.ok) {

@@ -57,6 +57,8 @@ import {
   Rocket,
   Zap,
   TrendingUp,
+  Inbox,
+  Reply,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
@@ -160,7 +162,64 @@ type RunControllerResult = {
   error?: string;
 };
 
-type TabKey = "overview" | "chat" | "prospects" | "nurture" | "drafts" | "tasks" | "activity" | "knowledge";
+type TabKey = "overview" | "chat" | "conversations" | "prospects" | "nurture" | "drafts" | "tasks" | "activity" | "knowledge";
+
+/* Conversations / Inbox (backend contract — list_conversations / run_replies) */
+
+type ConversationReplyDraft = {
+  id: string;
+  channel: string;
+  subject: string | null;
+  body: string;
+  status: DraftStatus;
+  requires_approval: boolean;
+  edited_subject: string | null;
+  edited_body: string | null;
+};
+
+type Conversation = {
+  id: string;
+  channel: string;
+  from_email: string | null;
+  from_name: string;
+  company_name: string | null;
+  lead_id: string | null;
+  intent: string | null;
+  action: string | null;
+  sentiment: string | null;
+  confidence: number | null;
+  urgency: string | null;
+  created_at: string | null;
+  draft: ConversationReplyDraft | null;
+};
+
+type ConversationCounts = {
+  total: number;
+  escalated: number;
+  drafted: number;
+  suppressed: number;
+  auto_replied: number;
+  needs_review: number;
+};
+
+type ConversationsResult = {
+  ok: boolean;
+  conversations: Conversation[];
+  counts: ConversationCounts;
+  error?: string;
+};
+
+type RepliesRunResult = {
+  ok: boolean;
+  run_id?: string | null;
+  scanned?: number;
+  drafted?: number;
+  escalated?: number;
+  suppressed?: number;
+  auto_replied?: number;
+  ignored?: number;
+  error?: string;
+};
 
 /* Trial Nurture (backend contract — list_trials / run_nurture) */
 
@@ -403,6 +462,44 @@ const DRAFT_STAGES: Array<{ value: string; label: string }> = [
   { value: "trial", label: "Trial" },
   { value: "re_engagement", label: "Re-engagement" },
 ];
+
+/* Conversations — intent chip tones (color per classified intent). */
+type ChipTone = { bg: string; text: string; ring: string };
+const NEUTRAL_CHIP: ChipTone = { bg: "bg-slate-50", text: "text-slate-600", ring: "ring-slate-200" };
+const INTENT_TONE: Record<string, ChipTone> = {
+  interested: { bg: "bg-emerald-50", text: "text-emerald-700", ring: "ring-emerald-200" },
+  demo_request: { bg: "bg-emerald-50", text: "text-emerald-700", ring: "ring-emerald-200" },
+  referral: { bg: "bg-emerald-50", text: "text-emerald-700", ring: "ring-emerald-200" },
+  question: { bg: "bg-blue-50", text: "text-blue-700", ring: "ring-blue-200" },
+  not_now: { bg: "bg-blue-50", text: "text-blue-700", ring: "ring-blue-200" },
+  objection: { bg: "bg-amber-50", text: "text-amber-700", ring: "ring-amber-200" },
+  pricing: { bg: "bg-amber-50", text: "text-amber-700", ring: "ring-amber-200" },
+  not_interested: { bg: "bg-slate-100", text: "text-slate-500", ring: "ring-slate-200" },
+  wrong_person: { bg: "bg-slate-100", text: "text-slate-500", ring: "ring-slate-200" },
+  legal_escalation: { bg: "bg-rose-50", text: "text-rose-700", ring: "ring-rose-200" },
+  complaint: { bg: "bg-rose-50", text: "text-rose-700", ring: "ring-rose-200" },
+  out_of_office: NEUTRAL_CHIP,
+  unknown: NEUTRAL_CHIP,
+};
+
+function intentTone(intent: string | null): ChipTone {
+  if (!intent) return NEUTRAL_CHIP;
+  return INTENT_TONE[intent] ?? NEUTRAL_CHIP;
+}
+
+function humanizeToken(v: string | null): string {
+  if (!v) return "—";
+  return v.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/* Conversations — action badge tones. */
+const CONVO_ACTION_TONE: Record<string, { label: string; bg: string; text: string; ring: string }> = {
+  suppressed: { label: "Suppressed", bg: "bg-slate-100", text: "text-slate-600", ring: "ring-slate-200" },
+  escalated: { label: "Escalated", bg: "bg-rose-50", text: "text-rose-700", ring: "ring-rose-200" },
+  drafted: { label: "Drafted", bg: "bg-blue-50", text: "text-blue-700", ring: "ring-blue-200" },
+  auto_replied: { label: "Auto-replied", bg: "bg-emerald-50", text: "text-emerald-700", ring: "ring-emerald-200" },
+  ignored: { label: "Ignored", bg: "bg-slate-50", text: "text-slate-500", ring: "ring-slate-200" },
+};
 
 /* ─────────────────────────── Page ─────────────────────────────────────── */
 
@@ -747,6 +844,7 @@ function AgentDetailPane({
   const TABS: Array<{ key: TabKey; label: string; icon: any }> = [
     { key: "overview", label: "Overview", icon: LayoutDashboard },
     { key: "chat", label: "Chat", icon: MessageSquare },
+    { key: "conversations", label: "Conversations", icon: Inbox },
     { key: "prospects", label: "Prospects", icon: Users },
     { key: "nurture", label: "Trial Nurture", icon: Rocket },
     { key: "drafts", label: "Drafts", icon: PenLine },
@@ -843,6 +941,8 @@ function AgentDetailPane({
           <OverviewTab metrics={detail?.metrics ?? null} config={config} rosterItem={rosterItem} />
         ) : tab === "chat" ? (
           <ChatTab agentName={agentName} displayName={displayName} accent={accent} avatarUrl={avatarUrl} />
+        ) : tab === "conversations" ? (
+          <ConversationsTab agentName={agentName} displayName={displayName} config={config} />
         ) : tab === "prospects" ? (
           <ProspectsTab
             agentName={agentName}
@@ -3029,6 +3129,481 @@ function TrialNurtureTab({
 }
 
 /* ─────────────────────────── Drafts tab ──────────────────────────────── */
+
+/* ─────────────────────────── Conversations (Inbox) tab ────────────────── */
+
+function ConversationsTab({
+  agentName,
+  displayName,
+  config,
+}: {
+  agentName: string;
+  displayName: string;
+  config: AgentConfig;
+}) {
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [counts, setCounts] = useState<ConversationCounts>({
+    total: 0,
+    escalated: 0,
+    drafted: 0,
+    suppressed: 0,
+    auto_replied: 0,
+    needs_review: 0,
+  });
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [checking, setChecking] = useState(false);
+  const [runResult, setRunResult] = useState<RepliesRunResult | null>(null);
+  const [busyDraft, setBusyDraft] = useState<string | null>(null);
+
+  // Live-sending awareness (mirrors ControlBar / Nurture): a reply actually goes
+  // out only when enabled AND not dry-run AND not paused.
+  const dryRun = config.sending?.dryRun ?? false;
+  const paused = config.sending?.paused ?? false;
+  const enabled = config.enabled ?? false;
+  const live = enabled && !dryRun && !paused;
+
+  // list_conversations: {action:"list_conversations", agent_name, limit?}
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setErr(null);
+    (async () => {
+      try {
+        const res = await callConsole<ConversationsResult>({
+          action: "list_conversations",
+          agent_name: agentName,
+        });
+        if (cancelled) return;
+        if (!res?.ok) throw new Error(res?.error || "Failed to load conversations");
+        setConversations(res.conversations ?? []);
+        if (res.counts) setCounts(res.counts);
+      } catch (e: any) {
+        if (cancelled) return;
+        setErr(e?.message || "Failed to load conversations");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [agentName, refreshKey]);
+
+  const reload = useCallback(async () => {
+    try {
+      const res = await callConsole<ConversationsResult>({
+        action: "list_conversations",
+        agent_name: agentName,
+      });
+      if (res?.ok) {
+        setConversations(res.conversations ?? []);
+        if (res.counts) setCounts(res.counts);
+      }
+    } catch (e: any) {
+      setErr(e?.message || "Failed to reload conversations");
+    }
+  }, [agentName]);
+
+  // run_replies: {action:"run_replies", agent_name, limit?}
+  const checkReplies = useCallback(async () => {
+    if (checking) return;
+    setChecking(true);
+    setErr(null);
+    setRunResult(null);
+    try {
+      const res = await callConsole<RepliesRunResult>({ action: "run_replies", agent_name: agentName });
+      if (!res?.ok) throw new Error(res?.error || "Reply check failed");
+      setRunResult(res);
+      setRefreshKey((k) => k + 1); // refresh the list + counts after scanning
+    } catch (e: any) {
+      setErr(e?.message || "Reply check failed");
+    } finally {
+      setChecking(false);
+    }
+  }, [checking, agentName]);
+
+  // update_draft: reuse the same action as the Drafts tab to approve/reject/edit
+  // Harvey's drafted reply. {action:"update_draft", draft_id, status, subject?, body?}
+  const updateReplyDraft = useCallback(
+    async (
+      draftId: string,
+      status: "approved" | "rejected" | "edited",
+      edited?: { subject?: string; body?: string },
+    ) => {
+      setBusyDraft(draftId);
+      setErr(null);
+      try {
+        await callConsole({
+          action: "update_draft",
+          draft_id: draftId,
+          status,
+          ...(edited?.subject !== undefined ? { subject: edited.subject } : {}),
+          ...(edited?.body !== undefined ? { body: edited.body } : {}),
+        });
+        await reload();
+      } catch (e: any) {
+        setErr(e?.message || "Failed to update reply");
+      } finally {
+        setBusyDraft(null);
+      }
+    },
+    [reload],
+  );
+
+  const runSummary = useMemo(() => {
+    if (!runResult) return null;
+    const scanned = runResult.scanned ?? 0;
+    if (scanned === 0) {
+      return { zero: true as const, text: "No new replies. Harvey reads replies from his synced inbox." };
+    }
+    return {
+      zero: false as const,
+      text: `${scanned} scanned · ${runResult.drafted ?? 0} drafts · ${runResult.escalated ?? 0} escalated · ${runResult.suppressed ?? 0} opted-out`,
+    };
+  }, [runResult]);
+
+  const chips: Array<{ key: keyof ConversationCounts; label: string; tone: ChipTone }> = [
+    { key: "needs_review", label: "Needs review", tone: { bg: "bg-amber-50", text: "text-amber-700", ring: "ring-amber-200" } },
+    { key: "escalated", label: "Escalated", tone: { bg: "bg-rose-50", text: "text-rose-700", ring: "ring-rose-200" } },
+    { key: "drafted", label: "Drafted", tone: { bg: "bg-blue-50", text: "text-blue-700", ring: "ring-blue-200" } },
+    { key: "suppressed", label: "Opted-out", tone: { bg: "bg-slate-100", text: "text-slate-600", ring: "ring-slate-200" } },
+    { key: "auto_replied", label: "Auto-replied", tone: { bg: "bg-emerald-50", text: "text-emerald-700", ring: "ring-emerald-200" } },
+  ];
+
+  return (
+    <div className="space-y-5">
+      {/* Header: explainer + check-replies button + count chips */}
+      <div className="rounded-xl border border-slate-200 bg-slate-50/40 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">
+            <Inbox className="h-3.5 w-3.5 text-blue-600" aria-hidden />
+            Conversations — inbound replies
+          </div>
+          <button
+            type="button"
+            onClick={checkReplies}
+            disabled={checking || loading}
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 text-[13px] font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
+          >
+            {checking ? (
+              <>
+                <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                Checking…
+              </>
+            ) : (
+              <>
+                <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+                Check replies now
+              </>
+            )}
+          </button>
+        </div>
+
+        <p className="mt-3 text-[12.5px] leading-relaxed text-slate-500">
+          {displayName} reads every reply, stops any sequence to that person, and:
+          suppresses opt-outs, escalates legal/sensitive, and drafts the rest.
+          Auto-send of low-risk replies is OFF until you enable it.
+        </p>
+
+        {/* Count chips */}
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {loading ? (
+            <div className="h-6 w-72 animate-pulse rounded-full bg-slate-100" />
+          ) : (
+            chips.map((c) => (
+              <span
+                key={c.key}
+                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11.5px] font-semibold ring-1 ${c.tone.bg} ${c.tone.text} ${c.tone.ring}`}
+              >
+                {c.label}
+                <b className="font-mono">{counts[c.key] ?? 0}</b>
+              </span>
+            ))
+          )}
+        </div>
+
+        {/* Run result strip */}
+        {runSummary && (
+          <div
+            className={`mt-3 flex items-start gap-2 rounded-md border px-3 py-2 text-[12.5px] ${
+              runSummary.zero
+                ? "border-slate-200 bg-white text-slate-600"
+                : "border-emerald-200 bg-emerald-50 text-emerald-800"
+            }`}
+          >
+            {runSummary.zero ? (
+              <Inbox className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
+            ) : (
+              <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" aria-hidden />
+            )}
+            <span>{runSummary.text}</span>
+          </div>
+        )}
+      </div>
+
+      {err && (
+        <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[12.5px] text-amber-800">
+          <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+          <span>{err}</span>
+        </div>
+      )}
+
+      {/* Conversations list */}
+      {loading ? (
+        <div className="py-10 text-center">
+          <div className="mx-auto h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600" />
+        </div>
+      ) : conversations.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-200 px-6 py-10 text-center text-[13px] leading-relaxed text-slate-500">
+          No replies yet. When your prospects and trial users reply, {displayName}
+          {" "}classifies each one here — opt-outs auto-suppressed, legal
+          auto-escalated, the rest drafted for your review.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {conversations.map((c) => (
+            <ConversationCard
+              key={c.id}
+              convo={c}
+              live={live}
+              busy={busyDraft === (c.draft?.id ?? "")}
+              onApprove={() => c.draft && updateReplyDraft(c.draft.id, "approved")}
+              onReject={() => c.draft && updateReplyDraft(c.draft.id, "rejected")}
+              onSaveEdit={(subject, body) => c.draft && updateReplyDraft(c.draft.id, "edited", { subject, body })}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ConversationCard({
+  convo,
+  live,
+  busy,
+  onApprove,
+  onReject,
+  onSaveEdit,
+}: {
+  convo: Conversation;
+  live: boolean;
+  busy: boolean;
+  onApprove: () => void;
+  onReject: () => void;
+  onSaveEdit: (subject: string, body: string) => void;
+}) {
+  const isEmail = convo.channel !== "linkedin";
+  const ChannelIcon = isEmail ? Mail : Linkedin;
+  const iTone = intentTone(convo.intent);
+  const aTone = convo.action ? CONVO_ACTION_TONE[convo.action] ?? null : null;
+
+  const draft = convo.draft;
+  const draftIsEmail = draft ? draft.channel !== "linkedin" : true;
+
+  // Prefer edited content when present.
+  const displaySubject = draft ? (draft.edited_subject ?? draft.subject ?? "") : "";
+  const displayBody = draft ? (draft.edited_body ?? draft.body ?? "") : "";
+
+  const [editing, setEditing] = useState(false);
+  const [editSubject, setEditSubject] = useState(displaySubject);
+  const [editBody, setEditBody] = useState(displayBody);
+
+  const startEdit = () => {
+    setEditSubject(displaySubject);
+    setEditBody(displayBody);
+    setEditing(true);
+  };
+
+  const canReviewDraft =
+    !!draft && (draft.status === "pending_approval" || draft.status === "edited");
+
+  const confidencePct =
+    typeof convo.confidence === "number"
+      ? Math.round(convo.confidence <= 1 ? convo.confidence * 100 : convo.confidence)
+      : null;
+
+  const who = convo.from_name || convo.from_email || "Unknown";
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4">
+      {/* Header row: channel + who + intent + action + time */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-600">
+          <ChannelIcon className="h-3 w-3" aria-hidden />
+          {isEmail ? "Email" : "LinkedIn"}
+        </span>
+        <span className="text-[13px] font-semibold text-slate-900">{who}</span>
+        {convo.company_name && (
+          <span className="inline-flex items-center gap-1 text-[12px] text-slate-500">
+            <Building2 className="h-3 w-3 text-slate-400" aria-hidden />
+            {convo.company_name}
+          </span>
+        )}
+        <span className="ml-auto text-[11px] text-slate-400" title={fmtAbsolute(convo.created_at)}>
+          {fmtRelative(convo.created_at)}
+        </span>
+      </div>
+
+      {/* Classification row: intent + sentiment/confidence + action badge */}
+      <div className="mt-2.5 flex flex-wrap items-center gap-2">
+        {convo.intent && (
+          <span
+            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11.5px] font-semibold ring-1 ${iTone.bg} ${iTone.text} ${iTone.ring}`}
+          >
+            {humanizeToken(convo.intent)}
+          </span>
+        )}
+        {(convo.sentiment || confidencePct !== null) && (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-2.5 py-0.5 text-[11.5px] font-medium text-slate-600 ring-1 ring-slate-200">
+            {convo.sentiment ? humanizeToken(convo.sentiment) : "—"}
+            {confidencePct !== null && <span className="text-slate-400">· {confidencePct}%</span>}
+          </span>
+        )}
+        {convo.urgency && convo.urgency !== "low" && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-[11.5px] font-medium text-amber-700 ring-1 ring-amber-200">
+            <Clock className="h-3 w-3" aria-hidden />
+            {humanizeToken(convo.urgency)}
+          </span>
+        )}
+        {aTone && (
+          <span
+            className={`ml-auto inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] ring-1 ${aTone.bg} ${aTone.text} ${aTone.ring}`}
+          >
+            {aTone.label}
+          </span>
+        )}
+      </div>
+
+      {/* Action-specific note / drafted reply */}
+      {convo.action === "escalated" && (
+        <div className="mt-3 flex items-start gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">
+          <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+          <span>Needs a human — {"this reply was escalated for review before any response."}</span>
+        </div>
+      )}
+      {convo.action === "suppressed" && (
+        <div className="mt-3 flex items-start gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] text-slate-600">
+          <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
+          <span>Opted out — added to suppression, no further contact.</span>
+        </div>
+      )}
+
+      {draft && (
+        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/50 p-3">
+          <div className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.1em] text-slate-500">
+            <Reply className="h-3 w-3 text-blue-600" aria-hidden />
+            {convo.action === "auto_replied" ? "Auto-reply sent" : "Drafted reply"}
+          </div>
+
+          {editing ? (
+            <div className="space-y-2.5">
+              {draftIsEmail && (
+                <input
+                  value={editSubject}
+                  onChange={(e) => setEditSubject(e.target.value)}
+                  placeholder="Subject"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] font-semibold text-slate-800 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                />
+              )}
+              <textarea
+                value={editBody}
+                onChange={(e) => setEditBody(e.target.value)}
+                rows={6}
+                placeholder="Reply body"
+                className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] leading-relaxed text-slate-800 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200"
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    onSaveEdit(editSubject, editBody);
+                    setEditing(false);
+                  }}
+                  className="inline-flex h-8 items-center gap-1 rounded-md bg-blue-600 px-2.5 text-[12px] font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
+                >
+                  <Save className="h-3.5 w-3.5" aria-hidden />
+                  Save
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setEditing(false)}
+                  className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 text-[12px] font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              {draftIsEmail && displaySubject && (
+                <div className="text-[13.5px] font-bold text-slate-900">{displaySubject}</div>
+              )}
+              <div className="mt-1.5 whitespace-pre-wrap text-[13px] leading-relaxed text-slate-700">
+                {displayBody}
+              </div>
+
+              {canReviewDraft && (
+                <div className="mt-3 border-t border-slate-100 pt-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={onApprove}
+                      className="inline-flex h-8 items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 text-[12px] font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-50"
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
+                      Approve
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={onReject}
+                      className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 text-[12px] font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      <XCircle className="h-3.5 w-3.5" aria-hidden />
+                      Reject
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={startEdit}
+                      className="inline-flex h-8 items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2.5 text-[12px] font-semibold text-blue-700 transition hover:bg-blue-100 disabled:opacity-50"
+                    >
+                      <Pencil className="h-3.5 w-3.5" aria-hidden />
+                      Edit
+                    </button>
+                  </div>
+                  <div className="mt-2 flex items-start gap-1.5 text-[11.5px] text-amber-700">
+                    <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
+                    <span>
+                      {live
+                        ? "Approved — will send on the next dispatch when Live sending is on."
+                        : "Approved — will send on the next dispatch when Live sending is on (sending is currently OFF)."}
+                    </span>
+                  </div>
+                </div>
+              )}
+              {draft.status === "approved" && (
+                <div className="mt-2.5 flex items-start gap-1.5 text-[11.5px] text-emerald-700">
+                  <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
+                  <span>Approved — will send on the next dispatch when Live sending is on.</span>
+                </div>
+              )}
+              {draft.status === "rejected" && (
+                <div className="mt-2.5 text-[11.5px] text-slate-400">Rejected — this reply will not be sent.</div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function DraftsTab({
   agentName,

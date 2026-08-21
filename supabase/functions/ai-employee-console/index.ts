@@ -1154,6 +1154,187 @@ async function actionRunNurture(agentName: string, limit: number | undefined, ad
   };
 }
 
+// ─── Conversations / Inbox actions (Project Harvey Batch 8) ──────────────────
+// list_conversations -> service-role read of lit_agent_inbound (Harvey's reply
+//                       audit ledger), newest first, decorated with who replied
+//                       (from lit_admin_leads by lead_id) and, when the row
+//                       drafted a reply, the reply draft from lit_agent_drafts.
+// run_replies        -> server-to-server invoke of harvey-reply so Harvey scans
+//                       his synced inbox, classifies replies, and drafts/escalates/
+//                       suppresses. Same internal-cron header pattern as run_now.
+
+type InboundRow = {
+  id: string;
+  channel: string | null;
+  from_email: string | null;
+  lead_id: string | null;
+  intent: string | null;
+  action: string | null;
+  classification_json: Record<string, unknown> | null;
+  draft_id: string | null;
+  created_at: string | null;
+};
+
+type ReplyDraftRow = {
+  id: string;
+  channel: string | null;
+  subject: string | null;
+  body: string | null;
+  status: string | null;
+  requires_approval: boolean | null;
+  edited_subject: string | null;
+  edited_body: string | null;
+};
+
+/** list_conversations — Harvey's inbound reply ledger, newest first (cap 100),
+ *  enriched with the lead who replied and the reply draft (when one exists). */
+async function actionListConversations(admin: SupabaseClient, agentName: string, limit: number) {
+  const agent = agentName || "harvey";
+  const capped = Math.min(Math.max(1, limit || 50), 100);
+
+  const { data, error } = await admin
+    .from("lit_agent_inbound")
+    .select(
+      "id, channel, from_email, lead_id, intent, action, classification_json, draft_id, created_at",
+    )
+    .eq("agent_name", agent)
+    .order("created_at", { ascending: false })
+    .limit(capped);
+  if (error) throw new Error(`list_conversations read failed: ${error.message}`);
+  const rows = (data ?? []) as InboundRow[];
+
+  // Enrich: who replied (lit_admin_leads by lead_id) + the reply draft (by draft_id).
+  const leadIds = [...new Set(rows.map((r) => r.lead_id).filter((v): v is string => !!v))];
+  const draftIds = [...new Set(rows.map((r) => r.draft_id).filter((v): v is string => !!v))];
+
+  const leadById = new Map<string, { full_name: string | null; company_name: string | null; email: string | null }>();
+  const draftById = new Map<string, ReplyDraftRow>();
+
+  const [leadsRes, draftsRes] = await Promise.all([
+    leadIds.length
+      ? admin.from("lit_admin_leads").select("id, full_name, company_name, email").in("id", leadIds)
+      : Promise.resolve({ data: [], error: null } as { data: unknown[]; error: null }),
+    draftIds.length
+      ? admin
+          .from("lit_agent_drafts")
+          .select("id, channel, subject, body, status, requires_approval, edited_subject, edited_body")
+          .in("id", draftIds)
+      : Promise.resolve({ data: [], error: null } as { data: unknown[]; error: null }),
+  ]);
+  if ((leadsRes as { error: { message: string } | null }).error) {
+    throw new Error(`list_conversations leads read failed: ${(leadsRes as { error: { message: string } }).error.message}`);
+  }
+  if ((draftsRes as { error: { message: string } | null }).error) {
+    throw new Error(`list_conversations drafts read failed: ${(draftsRes as { error: { message: string } }).error.message}`);
+  }
+  for (const l of (leadsRes.data ?? []) as Array<{ id: string; full_name: string | null; company_name: string | null; email: string | null }>) {
+    if (l.id) leadById.set(l.id, { full_name: l.full_name ?? null, company_name: l.company_name ?? null, email: l.email ?? null });
+  }
+  for (const d of (draftsRes.data ?? []) as ReplyDraftRow[]) {
+    if (d.id) draftById.set(d.id, d);
+  }
+
+  const counts = {
+    total: rows.length,
+    escalated: 0,
+    drafted: 0,
+    suppressed: 0,
+    auto_replied: 0,
+    needs_review: 0,
+  };
+
+  const conversations = rows.map((r) => {
+    const cls = (r.classification_json ?? {}) as Record<string, unknown>;
+    const lead = r.lead_id ? leadById.get(r.lead_id) ?? null : null;
+    const draftRow = r.draft_id ? draftById.get(r.draft_id) ?? null : null;
+
+    if (r.action === "escalated") counts.escalated += 1;
+    else if (r.action === "drafted") counts.drafted += 1;
+    else if (r.action === "suppressed") counts.suppressed += 1;
+    else if (r.action === "auto_replied") counts.auto_replied += 1;
+    if (draftRow && draftRow.status === "pending_approval") counts.needs_review += 1;
+
+    return {
+      id: r.id,
+      channel: r.channel ?? "email",
+      from_email: r.from_email ?? null,
+      from_name: (lead?.full_name && lead.full_name.trim()) ? lead.full_name : (r.from_email ?? "Unknown"),
+      company_name: lead?.company_name ?? null,
+      lead_id: r.lead_id ?? null,
+      intent: r.intent ?? (typeof cls.intent === "string" ? cls.intent : null),
+      action: r.action ?? null,
+      sentiment: typeof cls.sentiment === "string" ? cls.sentiment : null,
+      confidence: typeof cls.confidence === "number" ? cls.confidence : null,
+      urgency: typeof cls.urgency === "string" ? cls.urgency : null,
+      created_at: r.created_at ?? null,
+      draft: draftRow
+        ? {
+            id: draftRow.id,
+            channel: draftRow.channel ?? "email",
+            subject: draftRow.subject ?? null,
+            body: draftRow.body ?? "",
+            status: draftRow.status ?? "pending_approval",
+            requires_approval: draftRow.requires_approval ?? true,
+            edited_subject: draftRow.edited_subject ?? null,
+            edited_body: draftRow.edited_body ?? null,
+          }
+        : null,
+    };
+  });
+
+  return { ok: true, conversations, counts };
+}
+
+/** run_replies — server-to-server invoke of harvey-reply so it scans the synced
+ *  inbox and classifies/drafts/escalates/suppresses. Same internal-cron header
+ *  pattern as run_now / run_nurture. */
+async function actionRunReplies(agentName: string, limit: number | undefined, adminUserId: string) {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const cronSecret = Deno.env.get("LIT_CRON_SECRET");
+  const gatewayKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  if (!supabaseUrl) throw new Error("SUPABASE_URL not configured");
+  if (!cronSecret) return { ok: false, error: "LIT_CRON_SECRET not configured" };
+
+  const url = `${supabaseUrl}/functions/v1/harvey-reply`;
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Internal-Cron": cronSecret,
+        // Gateway needs a valid apikey/JWT to route BEFORE the target's cron check.
+        "Authorization": `Bearer ${gatewayKey}`,
+        "apikey": gatewayKey,
+      },
+      body: JSON.stringify({
+        agent_name: agentName || "harvey",
+        trigger_type: "manual",
+        ...(Number.isFinite(limit) && (limit as number) > 0 ? { limit } : {}),
+        created_by: adminUserId,
+      }),
+    });
+  } catch (err) {
+    return { ok: false, error: `reply engine unreachable: ${String((err as Error)?.message ?? err)}` };
+  }
+  if (res.status === 404) return { ok: false, error: "no reply engine" };
+  const r = await res.json().catch(() => ({ raw: "non-JSON reply response" }));
+  if (!res.ok || (r && r.ok === false)) {
+    const errMsg = (r && typeof r.error === "string") ? r.error : `reply HTTP ${res.status}`;
+    return { ok: false, error: errMsg };
+  }
+  return {
+    ok: true,
+    run_id: r.run_id ?? null,
+    scanned: r.scanned ?? 0,
+    drafted: r.drafted ?? 0,
+    escalated: r.escalated ?? 0,
+    suppressed: r.suppressed ?? 0,
+    auto_replied: r.auto_replied ?? 0,
+    ignored: r.ignored ?? 0,
+  };
+}
+
 // ─── handler ─────────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
@@ -1362,6 +1543,16 @@ Deno.serve(async (req: Request) => {
         const limit = typeof body.limit === "number" ? body.limit : undefined;
         log.info("action", { action, agent_name: agentName || "harvey", user_id: user.id });
         return json(await actionRunNurture(agentName || "harvey", limit, user.id));
+      }
+      case "list_conversations": {
+        const limit = typeof body.limit === "number" ? body.limit : 50;
+        log.info("action", { action, agent_name: agentName || "harvey", user_id: user.id });
+        return json(await actionListConversations(admin, agentName || "harvey", limit));
+      }
+      case "run_replies": {
+        const limit = typeof body.limit === "number" ? body.limit : undefined;
+        log.info("action", { action, agent_name: agentName || "harvey", user_id: user.id });
+        return json(await actionRunReplies(agentName || "harvey", limit, user.id));
       }
       default:
         return json({ ok: false, error: `unknown action: ${action || "(none)"}` }, 400);
