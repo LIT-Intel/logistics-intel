@@ -152,13 +152,18 @@ async function isSuppressed(admin: SupabaseClient, email: string | null): Promis
   const addr = email.trim().toLowerCase();
 
   // 1. Primary: SECURITY DEFINER RPC (converted/bounced/complained/unsubscribed).
+  //    IMPORTANT: `converted` here means "the email has a LIT profile" — which
+  //    EVERY trial user does, so it must NOT suppress a nurture (that would skip
+  //    all of them, which is exactly what nurture exists to do). The lifecycle
+  //    view already excludes PAID-converted users. We only honor real opt-outs:
+  //    unsubscribed / bounced / complained.
   try {
     const { data, error } = await admin.rpc("lit_email_suppression_status", { p_email: addr });
     if (error) return true; // fail safe
     const row = (Array.isArray(data) ? data[0] : data) as
       | { converted?: boolean; bounced?: boolean; complained?: boolean; unsubscribed?: boolean }
       | null;
-    if (row && (row.converted || row.bounced || row.complained || row.unsubscribed)) return true;
+    if (row && (row.bounced || row.complained || row.unsubscribed)) return true;
   } catch (_err) {
     return true; // fail safe
   }
