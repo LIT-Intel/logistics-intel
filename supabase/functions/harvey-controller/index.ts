@@ -472,7 +472,7 @@ async function harveyResearchedLeadsNeedingDraft(
 
   const { data: research, error: rErr } = await admin
     .from("lit_agent_lead_research")
-    .select("lead_id, brief")
+    .select("lead_id, brief_json")
     .in("lead_id", Array.from(harveyLeadIds))
     .order("created_at", { ascending: true });
   if (rErr) throw new Error(`harveyResearchedLeadsNeedingDraft (research) failed: ${rErr.message}`);
@@ -492,9 +492,9 @@ async function harveyResearchedLeadsNeedingDraft(
 
   const out: LeadBrief[] = [];
   for (const r of research ?? []) {
-    const row = r as { lead_id: string; brief: Record<string, unknown> | null };
+    const row = r as { lead_id: string; brief_json: Record<string, unknown> | null };
     if (drafted.has(row.lead_id)) continue;
-    out.push({ lead_id: row.lead_id, brief: row.brief ?? null });
+    out.push({ lead_id: row.lead_id, brief: row.brief_json ?? null });
     if (out.length >= cap) break;
   }
   return out;
