@@ -31,6 +31,9 @@
 //   3 handle_meeting_requests    (stub — Batch 4 intent classification)
 //   4 awaiting_human_approval    (real — Harvey-marked pending LinkedIn actions)
 //   5 send_due_outreach          (real — due recipients on Harvey campaigns)
+//   5 dispatch_email             (real — approved, unsent Harvey email drafts →
+//                                 harvey-email-dispatch. Batch 6. Same fail-closed
+//                                 gates; sends nothing while enabled=false/dryRun=true)
 //   6 research_leads             (real — New-stage leads without company recognition)
 //   7 message_qualified_leads    (real — New-stage leads at/above minimumScore)
 //   8 draft_outreach            (real — researched leads with a brief but no draft
@@ -46,6 +49,8 @@
 //   - prospect        → harvey-prospect (source up to the shortfall)
 //   - research_leads  → harvey-research per lead (small batch)
 //   - draft_outreach  → harvey-writer per researched lead (autonomous only)
+//   - dispatch_email  → harvey-email-dispatch (send approved, unsent email drafts;
+//                       Batch 6 — the worker re-checks every gate + dryRun itself)
 // A failing sub-call is caught, recorded in output_json, and the controller run
 // still completes 'ok' — one bad worker call must not crash the heartbeat.
 //
@@ -82,6 +87,7 @@ interface ProbeCounts {
   meeting_requests: number;
   awaiting_approval: number;
   due_outreach: number;
+  approved_email_drafts: number;
   leads_needing_research: number;
   qualified_leads_needing_messaging: number;
   leads_researched_needing_draft: number;
@@ -180,6 +186,38 @@ async function probeDueOutreach(admin: SupabaseClient, campaignIds: string[]): P
       .lte("next_send_at", new Date().toISOString()),
     "due_outreach",
   );
+}
+
+/**
+ * Probe 5b: APPROVED, unsent Harvey email drafts awaiting dispatch. REAL.
+ * These are lit_agent_drafts (channel='email', status='approved') that have NOT
+ * yet been recorded in lit_agent_send_log — i.e. the harvey-email-dispatch
+ * worker has real work to do. 0 until Harvey has approved email drafts.
+ */
+async function probeApprovedEmailDrafts(admin: SupabaseClient): Promise<number> {
+  const { data: drafts, error } = await admin
+    .from("lit_agent_drafts")
+    .select("id")
+    .eq("agent_name", CONFIG_KEY)
+    .eq("channel", "email")
+    .eq("status", "approved")
+    .limit(500);
+  if (error) throw new Error(`probe approved_email_drafts (drafts) failed: ${error.message}`);
+  const draftIds = (drafts ?? []).map((d: { id: string }) => d.id as string);
+  if (draftIds.length === 0) return 0;
+
+  // Exclude drafts already dispatched (present in the send log).
+  const { data: logged, error: logErr } = await admin
+    .from("lit_agent_send_log")
+    .select("draft_id")
+    .in("draft_id", draftIds);
+  if (logErr) throw new Error(`probe approved_email_drafts (send_log) failed: ${logErr.message}`);
+  const handled = new Set(
+    (logged ?? [])
+      .map((r: { draft_id: string | null }) => r.draft_id)
+      .filter((id): id is string => typeof id === "string"),
+  );
+  return draftIds.filter((id) => !handled.has(id)).length;
 }
 
 /** Fetch the pipeline stage name→id map (6 global stages). */
@@ -433,6 +471,13 @@ function decide(counts: ProbeCounts): { priority: number; decision: string; reas
       reason: `${counts.due_outreach} due recipient(s) on Harvey campaigns`,
     };
   }
+  if (counts.approved_email_drafts > 0) {
+    return {
+      priority: 5,
+      decision: "dispatch_email",
+      reason: `${counts.approved_email_drafts} approved, unsent Harvey email draft(s) ready to dispatch`,
+    };
+  }
   if (counts.leads_needing_research > 0) {
     return {
       priority: 6,
@@ -611,6 +656,7 @@ Deno.serve(async (req: Request) => {
       urgentReplies,
       awaitingApproval,
       dueOutreach,
+      approvedEmailDrafts,
       leadsNeedingResearch,
       qualifiedLeads,
       researchedNeedingDraft,
@@ -620,6 +666,7 @@ Deno.serve(async (req: Request) => {
       probeUrgentReplies(admin, config),
       probeAwaitingApproval(admin),
       probeDueOutreach(admin, campaignIds),
+      probeApprovedEmailDrafts(admin),
       probeLeadsNeedingResearch(admin, newStageId),
       probeQualifiedLeads(admin, newStageId, minimumScore),
       probeLeadsResearchedNeedingDraft(admin),
@@ -633,6 +680,7 @@ Deno.serve(async (req: Request) => {
       meeting_requests: probeMeetingRequests(),
       awaiting_approval: awaitingApproval,
       due_outreach: dueOutreach,
+      approved_email_drafts: approvedEmailDrafts,
       leads_needing_research: leadsNeedingResearch,
       qualified_leads_needing_messaging: qualifiedLeads,
       leads_researched_needing_draft: researchedNeedingDraft,
@@ -647,8 +695,11 @@ Deno.serve(async (req: Request) => {
     // ── execute the chosen action (behind the gates already passed above) ────
     // The feature-flag, enabled, and quiet-hours gates all cleared before we got
     // here (non-manual/test runs are skipped inside quiet hours), so any run that
-    // reaches this point is CLEARED to act. Only prospect / research_leads /
-    // draft_outreach dispatch today; other decisions still record-only. Every
+    // reaches this point is CLEARED to act. dispatch_email / prospect /
+    // research_leads / draft_outreach dispatch today; other decisions still
+    // record-only. dispatch_email routes to harvey-email-dispatch, which
+    // re-checks the full send gate chain itself (nothing sends while Harvey is
+    // enabled=false / dryRun=true). Every
     // sub-call is wrapped so one failure can't crash the heartbeat — the error is
     // recorded and the controller run still completes 'ok'.
     const mode = typeof config.mode === "string" ? config.mode : "assisted";
@@ -657,7 +708,33 @@ Deno.serve(async (req: Request) => {
     let executed = false;
     const execution: Record<string, unknown> = {};
 
-    if (decision === "prospect") {
+    if (decision === "dispatch_email") {
+      // Approved, unsent Harvey email drafts exist → invoke harvey-email-dispatch.
+      // That worker enforces its OWN full fail-closed gate chain (flag, enabled,
+      // paused, quiet-hours, dryRun/testMode, suppression, stop-on-reply, daily
+      // cap, idempotency) — the controller only routes to it. With Harvey's
+      // current config (enabled=false / dryRun=true) the worker sends nothing.
+      // invokeWorker never throws; a failure is recorded and the heartbeat
+      // still completes 'ok'.
+      const res = await invokeWorker("harvey-email-dispatch", {
+        agent_name: CONFIG_KEY,
+        trigger_type: triggerType,
+        created_by: actorUserId,
+      });
+      if (res.ok) {
+        const data = res.data ?? {};
+        execution.dispatch_email = {
+          sent: typeof data.sent === "number" ? data.sent : 0,
+          skipped: typeof data.skipped === "number" ? data.skipped : 0,
+          dry_run: typeof data.dry_run === "number" ? data.dry_run : 0,
+          cap: typeof data.cap === "number" ? data.cap : null,
+          run_id: data.run_id ?? null,
+        };
+        executed = true;
+      } else {
+        execution.dispatch_email = { error: res.error ?? "harvey-email-dispatch failed" };
+      }
+    } else if (decision === "prospect") {
       const shortfall = Math.max(0, counts.prospect_inventory_target - counts.harvey_prospect_inventory);
       // harvey-prospect itself avoids paid spend in testMode, so we still call it.
       const res = await invokeWorker("harvey-prospect", {

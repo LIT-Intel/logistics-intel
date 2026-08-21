@@ -57,6 +57,12 @@ import {
 } from "../_shared/agent.ts";
 import { recordProviderUsage } from "../_shared/provider_ledger.ts";
 import { PROVIDERS, PROVIDER_OPERATIONS, TRIGGER_TYPES } from "../_shared/provider_operations.ts";
+import {
+  apolloConfigured,
+  apolloEnrichPerson,
+  apolloSearchPeople,
+  type ApolloPerson,
+} from "../_shared/apollo.ts";
 
 const AGENT_NAME = "harvey-prospect";
 const FLAG_KEY = "harvey_internal_agent";
@@ -139,6 +145,14 @@ type Candidate = {
   shipments_12m: number | null; // freight-relevance signal for scoring (never inserted)
   contact_quality: number; // 0..1 (verified email > name-only)
   source: "internal" | "apollo";
+  // Direct-Apollo enrich handles (only set on the direct path). Used to reveal
+  // the email via people/match in STEP 3 AFTER dedup+suppression+score pass, so
+  // a credit is only ever spent on a survivor.
+  first_name?: string | null;
+  last_name?: string | null;
+  linkedin_url?: string | null;
+  apollo_person_id?: string | null;
+  needs_enrich?: boolean; // true when email is still locked/missing on direct path
 };
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -596,14 +610,35 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // ── STEP 2: Apollo (paid) — only when allowed AND a member JWT exists ────
+    // ── STEP 2: Apollo (paid) ────────────────────────────────────────────────
+    // Path selection:
+    //   - wrapper : a forwardable member JWT is present (admin/manual trigger).
+    //     Reuses the member-gated lead-crm-*/apollo-* fns (qualification etc.).
+    //   - direct  : NO member JWT (cron/autonomous) but APOLLO_API_KEY is set.
+    //     Sources people per internal-directory company via the DIRECT Apollo
+    //     helpers (service-role context, no human) and reveals emails inline.
+    //   - none    : testMode, apollo disabled, or no key + no JWT.
+    // testMode ALWAYS blocks every paid Apollo call regardless of path.
+    const apolloKeyPresent = apolloConfigured();
     const apolloEligible = !testMode && !apolloDisabled && Boolean(memberJwt);
-    if (!testMode && !apolloDisabled && !memberJwt) {
-      log.info("apollo_skipped_no_member_jwt", { run_id: runId });
+    const directApolloEligible =
+      !testMode && !apolloDisabled && !memberJwt && apolloKeyPresent;
+    // Hard per-run cap on paid Apollo enrich (people/match) calls so an
+    // autonomous run can NEVER burn unlimited credits. Logged in output_json.
+    const enrichCap = Math.min(targetCount, 25);
+    const apolloPath: "wrapper" | "direct" | "none" =
+      apolloEligible ? "wrapper" : directApolloEligible ? "direct" : "none";
+    let enrichedCount = 0; // paid people/match reveals that returned an email
+    let enrichCallsUsed = 0; // paid people/match calls made (capped by enrichCap)
+
+    if (!testMode && !apolloDisabled && !memberJwt && !apolloKeyPresent) {
+      log.info("apollo_skipped_no_jwt_no_key", { run_id: runId });
     }
     if (testMode) {
       log.info("apollo_skipped_test_mode", { run_id: runId });
     }
+
+    // ── STEP 2 (wrapper path) — member JWT forwards to member-gated fns ──────
     if (apolloEligible && candidates.length < targetCount) {
       const jwt = memberJwt as string;
       // 2a. Find freight companies via Apollo.
@@ -690,6 +725,86 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // ── STEP 2 (direct path) — DIRECT Apollo, no member JWT (autonomous cron) ─
+    // Grounded + cheap: reuse the internal-directory companies we already
+    // sourced in STEP 1 and run an Apollo people-search per company using the
+    // APOLLO_API_KEY + service-role context. People-search is metered but does
+    // NOT reveal locked emails; the paid people/match reveal is DEFERRED to
+    // STEP 3 so a credit is only spent on a candidate that survives
+    // score+suppression+dedup (and only up to enrichCap per run).
+    if (directApolloEligible && candidates.length < targetCount) {
+      // The company-first internal candidates seeded in STEP 1. We enrich each
+      // with a real freight-sales person via Apollo; person-candidates are
+      // appended, and the bare company-first candidate is dropped once a person
+      // is found for it (a company with no email is not an actionable lead).
+      const companyCandidates = candidates.filter((c) => c.source === "internal");
+      const withPeople = new Set<Candidate>();
+      // Cap how many companies we search so a huge internal list can't fan out
+      // into an unbounded number of (metered) search calls in one run.
+      const maxCompanySearches = Math.min(companyCandidates.length, Math.max(enrichCap * 2, 25));
+
+      for (const co of companyCandidates.slice(0, maxCompanySearches)) {
+        if (candidates.length >= targetCount * 2) break; // plenty to survive filtering
+        // Need a scope Apollo can resolve people against.
+        if (!co.company_domain && !co.apollo_organization_id) continue;
+
+        const people: ApolloPerson[] = await apolloSearchPeople({
+          domain: co.company_domain,
+          organizationId: co.apollo_organization_id,
+          companyName: co.company_name,
+          titles: APOLLO_TITLES,
+          seniorities: APOLLO_SENIORITIES,
+          perPage: 3,
+        });
+        await recordProviderUsage(admin, {
+          provider: PROVIDERS.APOLLO,
+          operation: PROVIDER_OPERATIONS.PROSPECT,
+          status: people.length > 0 ? "success" : "not_found",
+          trigger_type: TRIGGER_TYPES.SYSTEM,
+          source: "harvey",
+          request_id: rid,
+          metadata: { run_id: runId, stage: "direct_people_search", company_name: co.company_name },
+        });
+        if (people.length === 0) continue;
+
+        // Take the top person (already targeted by title/seniority).
+        const p = people[0];
+        withPeople.add(co);
+        candidates.push({
+          full_name: p.name,
+          title: p.title,
+          email: p.email, // null when locked — revealed in STEP 3 via people/match
+          company_name: co.company_name,
+          company_id: co.company_id,
+          source_company_key: co.source_company_key,
+          company_domain: co.company_domain ?? p.organization_domain,
+          company_city: co.company_city,
+          company_state: co.company_state,
+          company_country: co.company_country,
+          apollo_organization_id: p.organization_id ?? co.apollo_organization_id,
+          industry: co.industry,
+          employee_count: co.employee_count,
+          shipments_12m: co.shipments_12m,
+          contact_quality: p.email ? 1 : 0.5,
+          source: "apollo",
+          first_name: p.first_name,
+          last_name: p.last_name,
+          linkedin_url: p.linkedin_url,
+          apollo_person_id: p.apollo_person_id,
+          needs_enrich: !p.email, // reveal later only if survives filters
+        });
+      }
+
+      // Drop the bare company-first candidates we DID attach a person to — the
+      // person candidate supersedes them. Company-first rows with no person
+      // remain (they insert as company-only leads, email null, same as before).
+      if (withPeople.size > 0) {
+        for (let i = candidates.length - 1; i >= 0; i--) {
+          if (withPeople.has(candidates[i])) candidates.splice(i, 1);
+        }
+      }
+    }
+
     // ── STEP 3: dedup + suppression + create ─────────────────────────────────
     const sourced = candidates.length;
     let created = 0;
@@ -724,6 +839,56 @@ Deno.serve(async (req: Request) => {
       if (await isDuplicate(admin, c)) {
         skippedDupes += 1;
         continue;
+      }
+
+      // ── DIRECT-APOLLO deferred email reveal (paid, 1 credit) ───────────────
+      // Only on the direct path, only for survivors that still lack a verified
+      // email, and only up to the hard per-run enrich cap. Every people/match
+      // call is metered. This runs AFTER score+suppression+dedup so a credit is
+      // never spent on a candidate we would have discarded anyway.
+      if (
+        directApolloEligible &&
+        c.source === "apollo" &&
+        c.needs_enrich === true &&
+        !c.email &&
+        enrichCallsUsed < enrichCap
+      ) {
+        enrichCallsUsed += 1;
+        const enriched = await apolloEnrichPerson({
+          first_name: c.first_name,
+          last_name: c.last_name,
+          domain: c.company_domain,
+          organization_name: c.company_name,
+          linkedin_url: c.linkedin_url,
+          apollo_person_id: c.apollo_person_id,
+        });
+        await recordProviderUsage(admin, {
+          provider: PROVIDERS.APOLLO,
+          operation: PROVIDER_OPERATIONS.PROSPECT,
+          status: enriched?.email ? "success" : "not_found",
+          credits_consumed: 1, // people/match = 1 credit (email reveal)
+          trigger_type: TRIGGER_TYPES.SYSTEM,
+          source: "harvey",
+          request_id: rid,
+          metadata: { run_id: runId, stage: "direct_email_reveal", company_name: c.company_name },
+        });
+        if (enriched?.email) {
+          c.email = enriched.email;
+          c.contact_quality = 1;
+          enrichedCount += 1;
+          // A newly-revealed email must re-pass suppression + email dedup — it
+          // was null when we checked above.
+          if (await isSuppressed(admin, c.email)) {
+            skippedSuppressed += 1;
+            continue;
+          }
+          if (await isDuplicate(admin, c)) {
+            skippedDupes += 1;
+            continue;
+          }
+        }
+        // If no email came back the candidate still inserts as a company-first
+        // lead (email null) — same as the internal-only path.
       }
 
       // Service-role INSERT into lit_admin_leads. The insert trigger auto-logs a
@@ -802,7 +967,11 @@ Deno.serve(async (req: Request) => {
         skipped_suppressed: skippedSuppressed,
         skipped_low_score: skippedLowScore,
         test_mode: testMode,
-        apollo_used: !testMode && !apolloDisabled && Boolean(memberJwt),
+        apollo_used: !testMode && !apolloDisabled && (Boolean(memberJwt) || apolloPath === "direct"),
+        apollo_path: apolloPath, // 'wrapper' | 'direct' | 'none'
+        enriched_count: enrichedCount, // paid email reveals that returned an email
+        enrich_calls_used: enrichCallsUsed, // paid people/match calls made this run
+        enrich_cap: enrichCap, // hard per-run cap on paid reveals
         apollo_would_have_qualified: testMode ? apolloWouldHave : undefined,
         lead_ids: createdLeadIds,
       },
