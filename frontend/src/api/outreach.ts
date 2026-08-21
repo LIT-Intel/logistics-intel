@@ -167,6 +167,19 @@ export async function startUnipileLinkedIn(params: {
   });
 }
 
+/**
+ * Disconnect a connected LinkedIn sender. Best-effort deletes the remote
+ * Unipile account, then removes the local row (or soft-marks it DELETED if
+ * outreach history still references it). Approved drafts using this sender
+ * won't send until a LinkedIn account is reconnected.
+ */
+export async function disconnectLinkedInAccount(accountId: string): Promise<void> {
+  await invokeEdge("unipile-account", {
+    action: "disconnect",
+    account_id: accountId,
+  });
+}
+
 export async function refreshUnipileAccount(accountId: string): Promise<UnipileAccount> {
   const result = await invokeEdge<{ account: UnipileAccount }>("unipile-account", {
     action: "refresh",

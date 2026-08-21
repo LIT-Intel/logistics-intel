@@ -32,7 +32,7 @@ import {
 } from "lucide-react";
 import { PLAN_LIMITS, normalizePlan as normalizePlanCode } from "@/lib/planLimits";
 import { listEmailAccounts, startGmailOAuth, startOutlookOAuth, sendTestEmail, disconnectEmailAccount } from "@/lib/api";
-import { listUnipileAccounts, refreshUnipileAccount, startUnipileLinkedIn, updateUnipileAccount, type UnipileAccount } from "@/api/outreach";
+import { listUnipileAccounts, refreshUnipileAccount, startUnipileLinkedIn, updateUnipileAccount, disconnectLinkedInAccount, type UnipileAccount } from "@/api/outreach";
 import { resetOnboarding } from "@/lib/onboardingState";
 import { useInboxStatus } from "@/features/outbound/hooks/useInboxStatus";
 import type { LitEmailAccountRow } from "@/types/lit-outbound";
@@ -2186,6 +2186,124 @@ export function EmailAccountsSection({
   );
 }
 
+// Caps are per-account and clamped server-side (invites 1–40, messages 1–80)
+// — mirror those bounds so Save can't submit a value the edge fn would reject.
+const UNIPILE_INVITE_MIN = 1, UNIPILE_INVITE_MAX = 40, UNIPILE_MSG_MIN = 1, UNIPILE_MSG_MAX = 80;
+
+/**
+ * Renders one connected LinkedIn sender with its own assignment toggles,
+ * sending caps, and Refresh / Reconnect / Disconnect controls. A user can
+ * connect multiple accounts (e.g. a dedicated sender for an AI agent) and each
+ * is managed independently here.
+ */
+function LinkedInAccountRow({ account, busy, onRefresh, onReconnect, onDisconnect, onUpdateUsage, onSaveCaps }: {
+  account: UnipileAccount;
+  busy: boolean;
+  onRefresh: (id: string) => void;
+  onReconnect: (id: string) => void;
+  onDisconnect: (account: UnipileAccount) => void;
+  onUpdateUsage: (account: UnipileAccount, patch: Partial<Pick<UnipileAccount, "use_for_campaigns" | "use_for_lead_crm">>) => void;
+  onSaveCaps: (account: UnipileAccount, invite: number, message: number) => Promise<void>;
+}) {
+  const [caps, setCaps] = useState<{ invite: number; message: number } | null>(null);
+  const [savingCaps, setSavingCaps] = useState(false);
+  const isOk = account.status === "OK";
+  const statusTone: "green" | "amber" | "red" | "slate" =
+    account.status === "OK" ? "green" : account.status === "CONNECTING" ? "amber" : account.status === "DELETED" ? "slate" : "red";
+  const statusLabel = account.status === "OK" ? "Connected" : account.status === "CONNECTING" ? "Connecting…" : account.status === "DELETED" ? "Disconnected" : "Action needed";
+
+  const inviteVal = caps ? caps.invite : account.daily_invite_cap;
+  const messageVal = caps ? caps.message : account.daily_message_cap;
+  const dirty = caps !== null && (Math.round(caps.invite) !== account.daily_invite_cap || Math.round(caps.message) !== account.daily_message_cap);
+  const setCap = (key: "invite" | "message", v: number) => setCaps((prev) => ({
+    invite: account.daily_invite_cap,
+    message: account.daily_message_cap,
+    ...(prev || {}),
+    [key]: v,
+  }));
+
+  const stepperLabel = { fontFamily: "Space Grotesk,sans-serif", fontSize: 12.5, fontWeight: 700, color: "#0F172A" } as const;
+  const stepperHint = { fontFamily: "DM Sans,sans-serif", fontSize: 11, color: "#94A3B8", marginTop: 2 } as const;
+  const numInput: React.CSSProperties = { width: 64, padding: "6px 8px", border: "1px solid #E2E8F0", borderRadius: 8, fontFamily: "DM Sans,sans-serif", fontSize: 13, color: "#0F172A", textAlign: "center", background: "#fff" };
+  const disconnectBtn: React.CSSProperties = { ...sBtnGhost, color: "#DC2626", borderColor: "#FCA5A5" };
+
+  async function save() {
+    const invite = Math.max(UNIPILE_INVITE_MIN, Math.min(UNIPILE_INVITE_MAX, Math.round(inviteVal)));
+    const message = Math.max(UNIPILE_MSG_MIN, Math.min(UNIPILE_MSG_MAX, Math.round(messageVal)));
+    setSavingCaps(true);
+    try { await onSaveCaps(account, invite, message); setCaps(null); }
+    finally { setSavingCaps(false); }
+  }
+
+  return (
+    <div style={{ border: "1px solid #E2E8F0", borderRadius: 12, padding: 14, background: "#fff", marginBottom: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ width: 40, height: 40, borderRadius: 10, background: "#EFF6FF", border: "1px solid #BFDBFE", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <Linkedin size={19} color="#0A66C2" />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontFamily: "Space Grotesk,sans-serif", fontWeight: 700, fontSize: 13.5, color: "#0F172A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {account.display_name || account.email || "LinkedIn account"}
+            </span>
+            <SBadge tone={statusTone} dot>{statusLabel}</SBadge>
+          </div>
+          {account.email && account.display_name ? (
+            <div style={{ fontFamily: "DM Sans,sans-serif", fontSize: 11.5, color: "#94A3B8", marginTop: 2 }}>{account.email}</div>
+          ) : null}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+          <button style={sBtnGhost} disabled={busy} onClick={() => onRefresh(account.id)}><RefreshCw size={12} /> Refresh</button>
+          <button style={sBtnGhost} disabled={busy} onClick={() => onReconnect(account.id)}>Reconnect</button>
+          <button style={disconnectBtn} disabled={busy} onClick={() => onDisconnect(account)} title="Disconnect this LinkedIn account"><Trash2 size={12} /> Disconnect</button>
+        </div>
+      </div>
+
+      {isOk ? (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(210px,1fr))", gap: 10, margin: "12px 0 4px" }}>
+            {[
+              { key: "campaigns", label: "Customer Campaigns", copy: "Use this sender for approved campaign invitations and messages.", checked: account.use_for_campaigns },
+              { key: "lead_crm", label: "Internal Lead CRM", copy: "Use this sender for LIT prospecting and one-to-one communication.", checked: account.use_for_lead_crm },
+            ].map((item) => (
+              <label key={item.key} style={{ display: "flex", gap: 10, padding: 12, border: `1px solid ${item.checked ? "#BFDBFE" : "#E2E8F0"}`, background: item.checked ? "#EFF6FF" : "#F8FAFC", borderRadius: 10, cursor: busy ? "wait" : "pointer" }}>
+                <input type="checkbox" checked={item.checked} disabled={busy} onChange={(e) => onUpdateUsage(account, item.key === "campaigns" ? { use_for_campaigns: e.target.checked } : { use_for_lead_crm: e.target.checked })} style={{ accentColor: "#2563EB", marginTop: 2 }} />
+                <span><span style={{ display: "block", fontFamily: "Space Grotesk,sans-serif", fontSize: 12.5, fontWeight: 700, color: "#0F172A" }}>{item.label}</span><span style={{ display: "block", fontFamily: "DM Sans,sans-serif", fontSize: 11.5, lineHeight: 1.4, color: "#64748B", marginTop: 2 }}>{item.copy}</span></span>
+              </label>
+            ))}
+          </div>
+          <div style={{ margin: "4px 0 0", padding: 12, border: "1px solid #E2E8F0", background: "#F8FAFC", borderRadius: 10 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 18, alignItems: "flex-end" }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <span style={stepperLabel}>Daily connection requests</span>
+                <input type="number" min={UNIPILE_INVITE_MIN} max={UNIPILE_INVITE_MAX} step={1} value={inviteVal} disabled={busy || savingCaps} style={numInput} onChange={(e) => setCap("invite", Number(e.target.value))} />
+                <span style={stepperHint}>{UNIPILE_INVITE_MIN}–{UNIPILE_INVITE_MAX} invitations/day</span>
+              </label>
+              <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <span style={stepperLabel}>Daily messages</span>
+                <input type="number" min={UNIPILE_MSG_MIN} max={UNIPILE_MSG_MAX} step={1} value={messageVal} disabled={busy || savingCaps} style={numInput} onChange={(e) => setCap("message", Number(e.target.value))} />
+                <span style={stepperHint}>{UNIPILE_MSG_MIN}–{UNIPILE_MSG_MAX} messages/day</span>
+              </label>
+              <button style={{ ...sBtnPrimary, opacity: dirty && !savingCaps ? 1 : 0.5, cursor: dirty && !savingCaps ? "pointer" : "not-allowed" }} disabled={!dirty || savingCaps || busy} onClick={() => void save()}>
+                {savingCaps ? "Saving…" : "Save limits"}
+              </button>
+            </div>
+            <div style={{ fontFamily: "DM Sans,sans-serif", fontSize: 11, color: "#94A3B8", marginTop: 8 }}>
+              These limits are private to your account. Provider errors stop delivery instead of retrying aggressively.
+            </div>
+          </div>
+        </>
+      ) : (
+        <div style={{ fontFamily: "DM Sans,sans-serif", fontSize: 11.5, color: "#94A3B8", marginTop: 10 }}>
+          {account.status === "DELETED"
+            ? "This sender is disconnected. Reconnect to resume sending, or leave it — its outreach history is preserved."
+            : "This sender needs attention. Use Reconnect to re-authenticate the same LinkedIn login."}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function LinkedInUnipileSection() {
   const { orgId } = useAuth();
   const [accounts, setAccounts] = useState<UnipileAccount[]>([]);
@@ -2221,6 +2339,10 @@ function LinkedInUnipileSection() {
     return () => { cancelled = true; if (timer) clearTimeout(timer); };
   }, [orgId]);
 
+  // accountId present → RECONNECT the same LinkedIn (type "reconnect").
+  // accountId absent → CREATE: a fresh hosted-auth link where the user can log
+  // into ANY LinkedIn, which the callback inserts as a NEW account row. This
+  // is how "Connect another account" adds a different / dedicated sender.
   async function connect(accountId?: string) {
     setBusy(true); setError(null);
     try {
@@ -2244,6 +2366,15 @@ function LinkedInUnipileSection() {
     finally { setBusy(false); }
   }
 
+  async function disconnect(account: UnipileAccount) {
+    const label = account.display_name || account.email || "this LinkedIn account";
+    if (!window.confirm(`Disconnect ${label}? Approved drafts using it won't send until a LinkedIn account is reconnected.`)) return;
+    setBusy(true); setError(null);
+    try { await disconnectLinkedInAccount(account.id); await load(); }
+    catch (e: any) { setError(e?.message || "Could not disconnect LinkedIn account"); }
+    finally { setBusy(false); }
+  }
+
   async function updateUsage(account: UnipileAccount, patch: Partial<Pick<UnipileAccount, "use_for_campaigns" | "use_for_lead_crm">>) {
     setBusy(true); setError(null);
     try {
@@ -2259,19 +2390,8 @@ function LinkedInUnipileSection() {
     finally { setBusy(false); }
   }
 
-  // Sending-limit editor state. The caps are per-user (the LinkedIn login is
-  // private to the current user) and clamped server-side (invites 1–40,
-  // messages 1–80) — we mirror those bounds here so the Save can't submit a
-  // value the edge fn would silently reject.
-  const INVITE_MIN = 1, INVITE_MAX = 40, MSG_MIN = 1, MSG_MAX = 80;
-  const [caps, setCaps] = useState<{ invite: number; message: number } | null>(null);
-  const [savingCaps, setSavingCaps] = useState(false);
-
-  async function saveCaps(account: UnipileAccount) {
-    if (!caps) return;
-    const invite = Math.max(INVITE_MIN, Math.min(INVITE_MAX, Math.round(caps.invite)));
-    const message = Math.max(MSG_MIN, Math.min(MSG_MAX, Math.round(caps.message)));
-    setSavingCaps(true); setError(null);
+  async function saveCaps(account: UnipileAccount, invite: number, message: number) {
+    setBusy(true); setError(null);
     try {
       await updateUnipileAccount({
         accountId: account.id,
@@ -2281,107 +2401,62 @@ function LinkedInUnipileSection() {
         dailyMessageCap: message,
       });
       await load(true);
-      setCaps(null);
-    } catch (e: any) { setError(e?.message || "Could not update sending limits"); }
-    finally { setSavingCaps(false); }
+    } catch (e: any) { setError(e?.message || "Could not update sending limits"); throw e; }
+    finally { setBusy(false); }
   }
 
-  const connected = accounts.find((a) => a.status === "OK" && a.use_for_campaigns);
-  const reconnect = accounts.find((a) => a.status !== "OK");
+  const hasConnected = accounts.some((a) => a.status === "OK");
+  const hasAny = accounts.length > 0;
   return (
     <SCard
       title="LinkedIn"
       subtitle="Connect your own LinkedIn account. It is private to you — teammates connect their own and never send from yours. Requests and messages are delivered through Unipile after human approval."
-      right={<SBadge tone={connected ? "green" : "slate"} dot>{loading ? "Checking…" : connected ? "Connected" : "Not connected"}</SBadge>}
+      right={<SBadge tone={hasConnected ? "green" : "slate"} dot>{loading ? "Checking…" : hasConnected ? "Connected" : "Not connected"}</SBadge>}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "2px 0 10px" }}>
-        <div style={{ width: 40, height: 40, borderRadius: 10, background: "#EFF6FF", border: "1px solid #BFDBFE", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <Linkedin size={19} color="#0A66C2" />
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontFamily: "Space Grotesk,sans-serif", fontWeight: 700, fontSize: 13.5, color: "#0F172A" }}>
-            {connected?.display_name || connected?.email || "Connect your LinkedIn account"}
-          </div>
-          <div style={{ fontFamily: "DM Sans,sans-serif", fontSize: 12, color: "#64748B", marginTop: 2 }}>
-            Agent drafts never send automatically. Review and approve every invitation or message first.
-          </div>
-        </div>
-        {connected ? (
-          <>
-            <button style={sBtnGhost} disabled={busy} onClick={() => refresh(connected.id)}><RefreshCw size={12} /> Refresh</button>
-            <button style={sBtnGhost} disabled={busy} onClick={() => connect(connected.id)}>Reconnect</button>
-          </>
-        ) : (
-          <button style={sBtnPrimary} disabled={busy || loading} onClick={() => connect(reconnect?.id)}>
-            <Linkedin size={13} /> {busy ? "Opening…" : reconnect ? "Reconnect LinkedIn" : "Connect LinkedIn"}
-          </button>
-        )}
-      </div>
       {error ? <StatusMsg error={error} /> : null}
-      {connected ? (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(210px,1fr))", gap: 10, margin: "4px 0 12px" }}>
-          {[
-            { key: "campaigns", label: "Customer Campaigns", copy: "Use this sender for approved campaign invitations and messages.", checked: connected.use_for_campaigns },
-            { key: "lead_crm", label: "Internal Lead CRM", copy: "Use this sender for LIT prospecting and one-to-one communication.", checked: connected.use_for_lead_crm },
-          ].map((item) => (
-            <label key={item.key} style={{ display: "flex", gap: 10, padding: 12, border: `1px solid ${item.checked ? "#BFDBFE" : "#E2E8F0"}`, background: item.checked ? "#EFF6FF" : "#F8FAFC", borderRadius: 10, cursor: busy ? "wait" : "pointer" }}>
-              <input type="checkbox" checked={item.checked} disabled={busy} onChange={(e) => void updateUsage(connected, item.key === "campaigns" ? { use_for_campaigns: e.target.checked } : { use_for_lead_crm: e.target.checked })} style={{ accentColor: "#2563EB", marginTop: 2 }} />
-              <span><span style={{ display: "block", fontFamily: "Space Grotesk,sans-serif", fontSize: 12.5, fontWeight: 700, color: "#0F172A" }}>{item.label}</span><span style={{ display: "block", fontFamily: "DM Sans,sans-serif", fontSize: 11.5, lineHeight: 1.4, color: "#64748B", marginTop: 2 }}>{item.copy}</span></span>
-            </label>
+
+      {hasAny ? (
+        <div style={{ margin: "2px 0 4px" }}>
+          {accounts.map((account) => (
+            <LinkedInAccountRow
+              key={account.id}
+              account={account}
+              busy={busy}
+              onRefresh={refresh}
+              onReconnect={connect}
+              onDisconnect={disconnect}
+              onUpdateUsage={updateUsage}
+              onSaveCaps={saveCaps}
+            />
           ))}
         </div>
-      ) : null}
-      {connected ? (() => {
-        const inviteVal = caps ? caps.invite : connected.daily_invite_cap;
-        const messageVal = caps ? caps.message : connected.daily_message_cap;
-        const dirty = caps !== null && (Math.round(caps.invite) !== connected.daily_invite_cap || Math.round(caps.message) !== connected.daily_message_cap);
-        const setCap = (key: "invite" | "message", v: number) => setCaps((prev) => ({
-          invite: connected.daily_invite_cap,
-          message: connected.daily_message_cap,
-          ...(prev || {}),
-          [key]: v,
-        }));
-        const stepperLabel = { fontFamily: "Space Grotesk,sans-serif", fontSize: 12.5, fontWeight: 700, color: "#0F172A" } as const;
-        const stepperHint = { fontFamily: "DM Sans,sans-serif", fontSize: 11, color: "#94A3B8", marginTop: 2 } as const;
-        const numInput: React.CSSProperties = { width: 64, padding: "6px 8px", border: "1px solid #E2E8F0", borderRadius: 8, fontFamily: "DM Sans,sans-serif", fontSize: 13, color: "#0F172A", textAlign: "center", background: "#fff" };
-        return (
-          <div style={{ margin: "4px 0 12px", padding: 12, border: "1px solid #E2E8F0", background: "#F8FAFC", borderRadius: 10 }}>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 18, alignItems: "flex-end" }}>
-              <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <span style={stepperLabel}>Daily connection requests</span>
-                <input
-                  type="number" min={INVITE_MIN} max={INVITE_MAX} step={1} value={inviteVal}
-                  disabled={busy || savingCaps} style={numInput}
-                  onChange={(e) => setCap("invite", Number(e.target.value))}
-                />
-                <span style={stepperHint}>{INVITE_MIN}–{INVITE_MAX} invitations/day</span>
-              </label>
-              <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <span style={stepperLabel}>Daily messages</span>
-                <input
-                  type="number" min={MSG_MIN} max={MSG_MAX} step={1} value={messageVal}
-                  disabled={busy || savingCaps} style={numInput}
-                  onChange={(e) => setCap("message", Number(e.target.value))}
-                />
-                <span style={stepperHint}>{MSG_MIN}–{MSG_MAX} messages/day</span>
-              </label>
-              <button
-                style={{ ...sBtnPrimary, opacity: dirty && !savingCaps ? 1 : 0.5, cursor: dirty && !savingCaps ? "pointer" : "not-allowed" }}
-                disabled={!dirty || savingCaps || busy}
-                onClick={() => void saveCaps(connected)}
-              >
-                {savingCaps ? "Saving…" : "Save limits"}
-              </button>
-            </div>
-            <div style={{ fontFamily: "DM Sans,sans-serif", fontSize: 11, color: "#94A3B8", marginTop: 8 }}>
-              These limits are private to your account. Provider errors stop delivery instead of retrying aggressively.
+      ) : (
+        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "2px 0 12px" }}>
+          <div style={{ width: 40, height: 40, borderRadius: 10, background: "#EFF6FF", border: "1px solid #BFDBFE", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Linkedin size={19} color="#0A66C2" />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontFamily: "Space Grotesk,sans-serif", fontWeight: 700, fontSize: 13.5, color: "#0F172A" }}>Connect your LinkedIn account</div>
+            <div style={{ fontFamily: "DM Sans,sans-serif", fontSize: 12, color: "#64748B", marginTop: 2 }}>
+              Agent drafts never send automatically. Review and approve every invitation or message first.
             </div>
           </div>
-        );
-      })() : null}
-      <div style={{ fontFamily: "DM Sans,sans-serif", fontSize: 11.5, color: "#94A3B8" }}>
-        Safety limits: {connected?.daily_invite_cap ?? 20} invitations/day and {connected?.daily_message_cap ?? 40} messages/day. Provider errors stop delivery instead of retrying aggressively.
-      </div>
+          <button style={sBtnPrimary} disabled={busy || loading} onClick={() => connect()}>
+            <Linkedin size={13} /> {busy ? "Opening…" : "Connect LinkedIn"}
+          </button>
+        </div>
+      )}
+
+      {hasAny ? (
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 4 }}>
+          <div style={{ fontFamily: "DM Sans,sans-serif", fontSize: 11.5, color: "#94A3B8", flex: 1, minWidth: 220 }}>
+            Connect a different LinkedIn (e.g. a dedicated sender for an AI agent). Your existing account stays connected.
+          </div>
+          <button style={sBtnGhost} disabled={busy || loading} onClick={() => connect()}>
+            <Linkedin size={13} /> Connect another account
+          </button>
+        </div>
+      ) : null}
     </SCard>
   );
 }

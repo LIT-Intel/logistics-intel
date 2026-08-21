@@ -147,6 +147,47 @@ Deno.serve(async (req) => {
       return json({ ok: true, account: updated });
     }
 
+    if (action === "disconnect") {
+      const localId = String(body.account_id || "");
+      const { data: local } = await auth.admin.from("lit_unipile_accounts")
+        .select("id,unipile_account_id").eq("id", localId)
+        .eq("org_id", orgId).eq("owner_user_id", auth.user.id).maybeSingle();
+      if (!local) return json({ ok: false, code: "ACCOUNT_NOT_FOUND", error: "LinkedIn account not found" }, 404);
+      // Best-effort remote delete — don't fail the whole action if the
+      // Unipile-side account is already gone or the provider rejects it.
+      if (local.unipile_account_id) {
+        try {
+          await unipileRequest(`/accounts/${encodeURIComponent(local.unipile_account_id)}`, { method: "DELETE" });
+        } catch (deleteErr) {
+          console.warn("unipile-account disconnect: remote delete failed (continuing)", JSON.stringify({
+            account_id: local.id,
+            message: deleteErr instanceof Error ? deleteErr.message : String(deleteErr),
+          }));
+        }
+      }
+      // Prefer a hard DELETE so the slot frees up. But
+      // lit_linkedin_outreach_actions.unipile_account_id is FK ON DELETE
+      // RESTRICT: if any past/pending action references this sender the DELETE
+      // is blocked (Postgres 23503). In that case, soft-disconnect instead —
+      // mark DELETED and clear the use flags so nothing sends from it — while
+      // preserving the outreach audit trail.
+      const { error: delError } = await auth.admin.from("lit_unipile_accounts")
+        .delete().eq("id", local.id).eq("org_id", orgId).eq("owner_user_id", auth.user.id);
+      if (delError) {
+        const isFkViolation = String((delError as { code?: string }).code || "") === "23503";
+        if (!isFkViolation) throw delError;
+        const { error: softError } = await auth.admin.from("lit_unipile_accounts").update({
+          status: "DELETED",
+          use_for_campaigns: false,
+          use_for_lead_crm: false,
+          updated_at: new Date().toISOString(),
+        }).eq("id", local.id).eq("org_id", orgId).eq("owner_user_id", auth.user.id);
+        if (softError) throw softError;
+        return json({ ok: true, soft: true });
+      }
+      return json({ ok: true });
+    }
+
     return json({ ok: false, code: "UNKNOWN_ACTION", error: "Unknown action" }, 400);
   } catch (error) {
     const upstreamStatus = Number((error as { status?: number })?.status || 0);
