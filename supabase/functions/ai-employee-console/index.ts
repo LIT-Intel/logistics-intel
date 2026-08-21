@@ -252,8 +252,37 @@ async function buildChatContext(
     "by name/company/title, not generic criteria. If the list is empty, say you have no sourced leads " +
     "yet and offer to source some (prospecting).";
 
-  // Order: knowledge -> template catalog -> relevant template bodies -> runs -> leads -> history.
+  // ── ACTUAL sending capability + current gating state ──────────────────────
+  // Harvey has a REAL dispatch pipeline (harvey-email-dispatch sends approved
+  // email drafts from harvey@logisticintel.com; LinkedIn via the connected
+  // "Harvey Davis" account). It may be gated OFF right now — surface the exact
+  // state so Harvey never falsely claims "I can't send emails."
+  const sendingCfg = (config.sending ?? {}) as Record<string, unknown>;
+  const cfgEnabled = config.enabled === true;
+  const cfgMode = typeof config.mode === "string" ? config.mode : "unknown";
+  const cfgPaused = sendingCfg.paused === true;
+  const dryRun = sendingCfg.dryRun === true || config.testMode === true;
+  const liveSending = cfgEnabled && !dryRun && !cfgPaused;
+  const sendingSection =
+    "YOUR ACTUAL SENDING CAPABILITY (ground truth — do NOT contradict this):\n" +
+    "You CAN send email (from harvey@logisticintel.com) and LinkedIn (via your connected " +
+    "'Harvey Davis' account) through your dispatch pipeline. This is a real send pipeline; it " +
+    "may simply be gated right now.\n" +
+    `Current sending state: enabled=${cfgEnabled}, mode=${cfgMode}, ` +
+    `live_sending=${liveSending} (dryRun=${dryRun}), paused=${cfgPaused}.\n` +
+    "When an admin asks you to send something:\n" +
+    "- If you are enabled AND live (not dry-run, not paused): a draft you generate that is " +
+    "approved WILL be sent by your dispatcher. Say you'll queue/prepare it and note it goes out " +
+    "on the next dispatch — or that the admin can approve/send it from the Drafts tab, or use the " +
+    "'Send test email' button to verify end-to-end.\n" +
+    "- If you are in dry-run, paused, or disabled: tell the admin plainly that sending is currently " +
+    "OFF/dry-run and exactly what to toggle (Live sending toggle, un-pause, or enable).\n" +
+    "NEVER say 'I am not able to send emails directly' — that is false. You have a real send " +
+    "pipeline; it may just be gated.";
+
+  // Order: sending -> knowledge -> template catalog -> relevant template bodies -> runs -> leads -> history.
   const parts: string[] = [
+    sendingSection,
     `APPROVED KNOWLEDGE:\n${knowledgeBlock}`,
     `APPROVED OUTREACH TEMPLATE CATALOG ([key] channel/stage/intent — subject; bodies omitted):\n${templateCatalogBlock}`,
   ];
@@ -806,6 +835,10 @@ async function actionSetConfig(
   if (!config) return { ok: false, error: "agent not found" };
 
   const clean: Record<string, unknown> = {};
+  // Sending sub-object patches (config.sending.dryRun / .paused) are collected
+  // separately so they MERGE into the existing config.sending object rather than
+  // clobbering the daily/hourly limits already stored there.
+  const sendingPatch: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(patch ?? {})) {
     if (key === "enabled") {
       if (typeof value !== "boolean") return { ok: false, error: "enabled must be a boolean" };
@@ -818,13 +851,30 @@ async function actionSetConfig(
     } else if (key === "testMode") {
       if (typeof value !== "boolean") return { ok: false, error: "testMode must be a boolean" };
       clean.testMode = value;
+    } else if (key === "sendingDryRun") {
+      if (typeof value !== "boolean") return { ok: false, error: "sendingDryRun must be a boolean" };
+      sendingPatch.dryRun = value;
+    } else if (key === "sendingPaused") {
+      if (typeof value !== "boolean") return { ok: false, error: "sendingPaused must be a boolean" };
+      sendingPatch.paused = value;
     } else {
       return { ok: false, error: `unknown config key: ${key}` };
     }
   }
-  if (Object.keys(clean).length === 0) return { ok: false, error: "no valid config keys in patch" };
+  if (Object.keys(clean).length === 0 && Object.keys(sendingPatch).length === 0) {
+    return { ok: false, error: "no valid config keys in patch" };
+  }
 
   const merged = { ...(config as Cfg), ...clean };
+  // Merge sending flags into the EXISTING config.sending object (preserving
+  // emailDailyLimit / hourlyLimit / etc.). Only touched when a sending key is set.
+  if (Object.keys(sendingPatch).length > 0) {
+    const existingSending = (config as Cfg).sending;
+    merged.sending = {
+      ...(existingSending && typeof existingSending === "object" ? existingSending : {}),
+      ...sendingPatch,
+    };
+  }
   const { error } = await admin
     .from("lit_agent_config")
     .update({ config: merged, updated_by: userId })
@@ -846,6 +896,89 @@ async function actionSetFlag(admin: SupabaseClient, agentName: string, enabled: 
   if (error) throw new Error(`set_flag update failed: ${error.message}`);
   const flag_enabled = await isAgentFlagEnabled(admin, flagKey);
   return { ok: true, flag_enabled };
+}
+
+// ─── send_test_email — one-click end-to-end send verification ────────────────
+// Creates an APPROVED test draft, then invokes harvey-email-dispatch
+// server-to-server. This honors ALL dispatch gates (flag/enabled/paused/quiet
+// hours/dryRun/suppression/cap) — it does NOT bypass them. If Harvey is disabled
+// or in dry-run, the dispatch response tells us so and nothing sends.
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+async function actionSendTestEmail(
+  admin: SupabaseClient,
+  agentName: string,
+  to: string,
+  adminUserId: string,
+) {
+  const recipient = (to || "").trim().toLowerCase();
+  if (!recipient || !EMAIL_RE.test(recipient)) {
+    return { ok: false, error: "a valid 'to' email address is required" };
+  }
+  const agent = agentName || "harvey";
+
+  // 1. Create the approved test draft via the service-role client.
+  const body =
+    `Hi there,\n\n` +
+    `This is a test message from Harvey to confirm outbound email is wired up ` +
+    `end-to-end. If you're reading this in your inbox, live sending works.\n\n` +
+    `Harvey / Logistics Intel`;
+  const { data: draftRow, error: draftErr } = await admin
+    .from("lit_agent_drafts")
+    .insert({
+      agent_name: agent,
+      channel: "email",
+      status: "approved",
+      requires_approval: false,
+      subject: "Harvey test — Logistics Intel",
+      body,
+      contact_json: { email: recipient, firstName: "there" },
+      stage: "test",
+      intent: "test_send",
+      metadata_json: { test_send: true, created_by: adminUserId },
+      created_by: adminUserId,
+    })
+    .select("id")
+    .single();
+  if (draftErr) throw new Error(`test draft insert failed: ${draftErr.message}`);
+  const draftId = (draftRow as { id: string }).id;
+
+  // 2. Invoke harvey-email-dispatch (same header pattern as run_now/generate_draft:
+  //    Authorization Bearer service role + apikey + X-Internal-Cron). trigger_type
+  //    'manual' so quiet hours are exempt but every other gate still applies.
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const cronSecret = Deno.env.get("LIT_CRON_SECRET");
+  const gatewayKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  if (!supabaseUrl) throw new Error("SUPABASE_URL not configured");
+  if (!cronSecret) return { ok: false, error: "LIT_CRON_SECRET not configured", draft_id: draftId };
+
+  const url = `${supabaseUrl}/functions/v1/harvey-email-dispatch`;
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Internal-Cron": cronSecret,
+        // Gateway needs a valid apikey/JWT to route BEFORE the target's cron check.
+        "Authorization": `Bearer ${gatewayKey}`,
+        "apikey": gatewayKey,
+      },
+      body: JSON.stringify({ trigger_type: "manual" }),
+    });
+  } catch (err) {
+    return {
+      ok: false,
+      error: `dispatch unreachable: ${String((err as Error)?.message ?? err)}`,
+      draft_id: draftId,
+    };
+  }
+  if (res.status === 404) return { ok: false, error: "no dispatcher", draft_id: draftId };
+  const dispatch = await res.json().catch(() => ({ raw: "non-JSON dispatch response" }));
+  // Relay the dispatch response verbatim so the UI can distinguish
+  // sent (dispatch.sent>=1) vs dry_run vs a top-level skip reason.
+  return { ok: true, dispatch, draft_id: draftId };
 }
 
 // ─── handler ─────────────────────────────────────────────────────────────────
@@ -971,6 +1104,12 @@ Deno.serve(async (req: Request) => {
         if (typeof body.enabled !== "boolean") return json({ ok: false, error: "enabled boolean required" }, 400);
         log.info("action", { action, agent_name: agentName, user_id: user.id, enabled: body.enabled });
         return json(await actionSetFlag(admin, agentName, body.enabled));
+      }
+      case "send_test_email": {
+        const to = typeof body.to === "string" ? body.to : "";
+        if (!to) return json({ ok: false, error: "to required" }, 400);
+        log.info("action", { action, agent_name: agentName || "harvey", user_id: user.id });
+        return json(await actionSendTestEmail(admin, agentName, to, user.id));
       }
       case "run_prospect": {
         if (!agentName) return json({ ok: false, error: "agent_name required" }, 400);

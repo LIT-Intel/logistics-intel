@@ -51,6 +51,9 @@ import {
   X,
   Building2,
   Target,
+  Radio,
+  Pause,
+  MailCheck,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
@@ -84,7 +87,13 @@ type AgentConfig = {
   mode?: AgentMode;
   testMode?: boolean;
   sender?: { emailAccount?: string; [k: string]: unknown };
-  sending?: { dailyLimit?: number; hourlyLimit?: number; [k: string]: unknown };
+  sending?: {
+    dailyLimit?: number;
+    hourlyLimit?: number;
+    dryRun?: boolean;
+    paused?: boolean;
+    [k: string]: unknown;
+  };
   quietHours?: { start?: string | number; end?: string | number; tz?: string; [k: string]: unknown };
   [k: string]: unknown;
 };
@@ -833,12 +842,18 @@ function ControlBar({
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [confirmArm, setConfirmArm] = useState(false);
+  const [confirmLive, setConfirmLive] = useState(false);
   const [runResult, setRunResult] = useState<RunControllerResult | null>(null);
   const [runResultError, setRunResultError] = useState<string | null>(null);
 
   const enabled = config.enabled ?? false;
   const mode: AgentMode = (config.mode as AgentMode) ?? "copilot";
   const testMode = config.testMode ?? false;
+  // Live sending is the inverse of config.sending.dryRun. testMode ALSO forces
+  // dry-run in the dispatcher, so surface the effective state to the admin.
+  const dryRunFlag = config.sending?.dryRun ?? false;
+  const live = !dryRunFlag;
+  const paused = config.sending?.paused ?? false;
 
   const run = useCallback(
     async (key: string, fn: () => Promise<void>) => {
@@ -860,7 +875,16 @@ function ControlBar({
       onChanged();
     });
 
-  const setConfig = (patch: { enabled?: boolean; mode?: AgentMode; testMode?: boolean }, key: string) =>
+  const setConfig = (
+    patch: {
+      enabled?: boolean;
+      mode?: AgentMode;
+      testMode?: boolean;
+      sendingDryRun?: boolean;
+      sendingPaused?: boolean;
+    },
+    key: string,
+  ) =>
     run(key, async () => {
       await callConsole({ action: "set_config", agent_name: agentName, patch });
       onChanged();
@@ -950,6 +974,87 @@ function ControlBar({
           />
         </div>
 
+        {/* Live sending */}
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-slate-500">
+            Live sending
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={live}
+              disabled={busy !== null}
+              onClick={() =>
+                live
+                  ? setConfig({ sendingDryRun: true }, "sendingDryRun")
+                  : setConfirmLive(true)
+              }
+              className="inline-flex items-center gap-2 disabled:opacity-50"
+            >
+              <span
+                className={[
+                  "relative inline-flex h-5 w-9 items-center rounded-full transition",
+                  live ? "bg-emerald-600" : "bg-amber-500",
+                ].join(" ")}
+              >
+                <span
+                  className={[
+                    "inline-block h-4 w-4 transform rounded-full bg-white shadow transition",
+                    live ? "translate-x-4" : "translate-x-0.5",
+                  ].join(" ")}
+                />
+              </span>
+              {live ? (
+                <span className="inline-flex items-center gap-1 text-[12px] font-bold text-emerald-700">
+                  <Radio className="h-3.5 w-3.5" aria-hidden />
+                  LIVE — sends real email/LinkedIn
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-[12px] font-bold text-amber-700">
+                  <FlaskConical className="h-3.5 w-3.5" aria-hidden />
+                  Dry-run (no real sends)
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Paused (secondary stop) */}
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-slate-500">Paused</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={paused}
+            disabled={busy !== null}
+            onClick={() => setConfig({ sendingPaused: !paused }, "sendingPaused")}
+            className="inline-flex items-center gap-2 disabled:opacity-50"
+          >
+            <span
+              className={[
+                "relative inline-flex h-5 w-9 items-center rounded-full transition",
+                paused ? "bg-rose-500" : "bg-slate-300",
+              ].join(" ")}
+            >
+              <span
+                className={[
+                  "inline-block h-4 w-4 transform rounded-full bg-white shadow transition",
+                  paused ? "translate-x-4" : "translate-x-0.5",
+                ].join(" ")}
+              />
+            </span>
+            <span
+              className={`inline-flex items-center gap-1 text-[12px] font-semibold ${
+                paused ? "text-rose-700" : "text-slate-600"
+              }`}
+            >
+              <Pause className="h-3.5 w-3.5" aria-hidden />
+              {paused ? "Paused" : "Not paused"}
+            </span>
+          </button>
+        </div>
+
         {/* Run controller now */}
         <div className="ml-auto flex flex-col gap-1.5">
           <span className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-transparent">Run</span>
@@ -964,6 +1069,9 @@ function ControlBar({
           </button>
         </div>
       </div>
+
+      {/* Send test email affordance */}
+      <TestSendRow agentName={agentName} displayName={displayName} live={live && enabled && !paused} />
 
       {/* Autonomous warning */}
       {mode === "autonomous" && (
@@ -1007,6 +1115,202 @@ function ControlBar({
             setFlag(true);
           }}
         />
+      )}
+
+      {/* Live-sending confirm dialog */}
+      {confirmLive && (
+        <ConfirmDialog
+          title="Turn on live sending?"
+          body={`${displayName} will send real emails/LinkedIn messages for approved drafts. This turns OFF dry-run. Sends still respect the master switch, enabled/paused, quiet hours, suppression, and the daily cap.`}
+          confirmLabel="Turn on live sending"
+          confirmTone="emerald"
+          onCancel={() => setConfirmLive(false)}
+          onConfirm={() => {
+            setConfirmLive(false);
+            setConfig({ sendingDryRun: false }, "sendingDryRun");
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ─────────────────────────── Test-send row ────────────────────────────── */
+// One-click end-to-end send verification. Calls send_test_email, which creates
+// an approved test draft and invokes harvey-email-dispatch — HONORING every
+// dispatch gate (does NOT bypass dry-run/enabled/paused). The response tells us
+// whether it actually sent, was dry-run, or was skipped and why.
+
+type TestSendDispatch = {
+  ok?: boolean;
+  sent?: number;
+  skipped?: number;
+  dry_run?: number;
+  cap?: number;
+  reason?: string;
+  error?: string;
+};
+
+function TestSendRow({
+  agentName,
+  displayName,
+  live,
+}: {
+  agentName: string;
+  displayName: string;
+  live: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [to, setTo] = useState("");
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState<{ kind: "sent" | "dry" | "skip"; to: string; reason?: string } | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  // Prefill the admin's own email when opening (best-effort).
+  const openPanel = useCallback(async () => {
+    setOpen(true);
+    setResult(null);
+    setErr(null);
+    if (!to) {
+      try {
+        const { data } = await supabase.auth.getUser();
+        if (data?.user?.email) setTo(data.user.email);
+      } catch {
+        /* leave empty */
+      }
+    }
+  }, [to]);
+
+  // Map a dispatch response to a friendly, plain-English skip reason.
+  const skipMessage = useCallback((d: TestSendDispatch): string => {
+    const r = (d.reason || "").toLowerCase();
+    if (r.includes("enabled is false") || r.includes("row missing")) return "Harvey disabled";
+    if (r.includes("paused")) return "Sending paused";
+    if (r.includes("flag") && (r.includes("killed") || r.includes("missing"))) return "Master switch killed";
+    if (r.includes("quiet hours")) return "Within quiet hours";
+    if (d.reason) return d.reason;
+    // No top-level reason but nothing sent → a per-draft gate stopped it.
+    if ((d.skipped ?? 0) > 0) {
+      return "Not sent — mailbox not connected, suppressed, replied, or daily cap reached";
+    }
+    return "Not sent — no gate passed";
+  }, []);
+
+  const sendTest = useCallback(async () => {
+    const addr = to.trim();
+    if (!addr || sending) return;
+    setSending(true);
+    setErr(null);
+    setResult(null);
+    try {
+      const data = await callConsole<{ ok: boolean; dispatch: TestSendDispatch; draft_id: string }>({
+        action: "send_test_email",
+        agent_name: agentName,
+        to: addr,
+      });
+      const d = data?.dispatch ?? {};
+      if ((d.sent ?? 0) >= 1) {
+        setResult({ kind: "sent", to: addr });
+      } else if ((d.dry_run ?? 0) >= 1) {
+        setResult({ kind: "dry", to: addr });
+      } else {
+        setResult({ kind: "skip", to: addr, reason: skipMessage(d) });
+      }
+    } catch (e: any) {
+      setErr(e?.message || "Test send failed");
+    } finally {
+      setSending(false);
+    }
+  }, [to, sending, agentName, skipMessage]);
+
+  return (
+    <div className="mt-4 border-t border-slate-100 pt-4">
+      {!open ? (
+        <button
+          type="button"
+          onClick={openPanel}
+          className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 text-[13px] font-semibold text-slate-700 transition hover:bg-slate-50"
+        >
+          <MailCheck className="h-3.5 w-3.5 text-blue-600" aria-hidden />
+          Send test email
+        </button>
+      ) : (
+        <div className="space-y-2.5">
+          <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.1em] text-slate-500">
+            <MailCheck className="h-3.5 w-3.5 text-blue-600" aria-hidden />
+            Send test email
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="email"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  sendTest();
+                }
+              }}
+              placeholder="you@example.com"
+              className="h-9 w-64 rounded-lg border border-slate-200 bg-white px-3 text-[13px] text-slate-800 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200"
+            />
+            <button
+              type="button"
+              onClick={sendTest}
+              disabled={sending || !to.trim()}
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 text-[13px] font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
+            >
+              <Send className={`h-3.5 w-3.5 ${sending ? "animate-pulse" : ""}`} aria-hidden />
+              {sending ? "Sending…" : "Send test"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                setResult(null);
+                setErr(null);
+              }}
+              className="inline-flex h-9 items-center rounded-lg border border-slate-200 bg-white px-3 text-[13px] font-semibold text-slate-500 hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+          </div>
+
+          {!live && !result && (
+            <p className="text-[12px] text-amber-700">
+              Live sending is OFF (dry-run/disabled/paused) — a test will be recorded as dry-run and
+              won't reach the inbox until you turn on Live sending.
+            </p>
+          )}
+
+          {err && (
+            <div className="flex items-start gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-[12.5px] text-rose-700">
+              <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+              <span>{err}</span>
+            </div>
+          )}
+
+          {result?.kind === "sent" && (
+            <div className="flex items-start gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12.5px] text-emerald-800">
+              <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" aria-hidden />
+              <span>Sent to {result.to} — check your inbox.</span>
+            </div>
+          )}
+          {result?.kind === "dry" && (
+            <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[12.5px] text-amber-800">
+              <FlaskConical className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+              <span>Dry-run — no real email sent. Turn on Live sending to actually send.</span>
+            </div>
+          )}
+          {result?.kind === "skip" && (
+            <div className="flex items-start gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-[12.5px] text-slate-600">
+              <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+              <span>
+                {displayName} did not send: {result.reason}.
+              </span>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
@@ -1200,6 +1504,16 @@ function OverviewTab({
               config.sending
                 ? `${config.sending.dailyLimit ?? "—"}/day · ${config.sending.hourlyLimit ?? "—"}/hr`
                 : "—"
+            }
+          />
+          <ConfigRow
+            label="Live sending"
+            value={
+              config.sending?.paused
+                ? "Paused"
+                : config.sending?.dryRun
+                  ? "Dry-run — no real sends"
+                  : "LIVE — sends real messages"
             }
           />
           <ConfigRow
