@@ -43,13 +43,23 @@
 //   6 dispatch_email             (real — approved, unsent Harvey email drafts →
 //                                 harvey-email-dispatch. Batch 6. Same fail-closed
 //                                 gates; sends nothing while enabled=false/dryRun=true)
-//   6 research_leads             (real — New-stage leads without company recognition)
-//   7 message_qualified_leads    (real — New-stage leads at/above minimumScore)
-//   8 draft_outreach            (real — researched leads with a brief but no draft
-//                                 yet; autonomous Harvey generates the first-touch)
-//   9 campaign_followups         (real — active Harvey campaigns)
-//  10 prospect                   (real — Harvey-sourced inventory below target)
-//  11 analyze                    (fallback)
+//   7 draft_outreach            (real — WORKABLE leads (owner-sourced AND Harvey-
+//                                 sourced New-stage leads with a usable email/LinkedIn
+//                                 contact, no existing Harvey draft/send) get a
+//                                 first-touch. Research is OPTIONAL — a lead with no
+//                                 brief is still drafted. autonomous mode only.)
+//   8 message_qualified_leads    (real — New-stage leads at/above minimumScore)
+//   9 research_leads             (real — OPPORTUNISTIC enrichment of workable New
+//                                 leads lacking a brief; never gates drafting)
+//  10 campaign_followups         (real — active Harvey campaigns)
+//  11 prospect                   (real — workable inventory below target; GATED on
+//                                 config.prospecting.enabled — auto-source off by
+//                                 default. Manual Source-prospects button unaffected.)
+//  12 analyze                    (fallback)
+//
+// OWNER-INTENT (2026-08): Harvey OUTREACHES the owner's EXISTING enriched CRM
+// leads, not only primary_source='harvey' rows. Eligibility is the single
+// workableLeads() helper. Auto-sourcing is OFF (config.prospecting.enabled=false).
 //
 // EXECUTION: the controller now ACTS on several branches (behind the same gates,
 // respecting mode/testMode/quiet-hours). It invokes the sibling worker fns
@@ -60,9 +70,13 @@
 //                       draft a reply for approval; NEVER sends — Batch 8)
 //   - nurture_trials  → harvey-nurture (draft trial-lifecycle nurtures for
 //                       not-upgraded users; drafts only, never sends)
-//   - prospect        → harvey-prospect (source up to the shortfall)
-//   - research_leads  → harvey-research per lead (small batch)
-//   - draft_outreach  → harvey-writer per researched lead (autonomous only)
+//   - prospect        → harvey-prospect (source up to the shortfall — GATED on
+//                       config.prospecting.enabled; skipped as 'prospecting_disabled'
+//                       when off. Manual Source-prospects button is unaffected.)
+//   - research_leads  → harvey-research per lead (small batch; opportunistic)
+//   - draft_outreach  → harvey-writer per workable lead (autonomous only; channel =
+//                       email if the lead has an email, else linkedin; research
+//                       brief passed through when present but never required)
 //   - dispatch_email  → harvey-email-dispatch (send approved, unsent email drafts;
 //                       Batch 6 — the worker re-checks every gate + dryRun itself)
 // A failing sub-call is caught, recorded in output_json, and the controller run
@@ -346,23 +360,17 @@ async function stageIdsByName(admin: SupabaseClient): Promise<Record<string, str
   return map;
 }
 
-/** Probe 6: New-stage open leads lacking company recognition. REAL. */
+/**
+ * Probe 6: workable New-stage leads that still lack a research brief. REAL.
+ * OPPORTUNISTIC only — research is best-effort enrichment, never a gate on
+ * drafting. Uses the broadened workable set (owner-sourced + Harvey-sourced).
+ */
 async function probeLeadsNeedingResearch(
   admin: SupabaseClient,
-  newStageId: string | undefined,
+  stages: Record<string, string>,
 ): Promise<number> {
-  if (!newStageId) return 0;
-  return await countRows(
-    admin
-      .from("lit_admin_leads")
-      .select("id", { count: "exact", head: true })
-      .eq("stage_id", newStageId)
-      .eq("status", "open")
-      .is("archived_at", null)
-      .is("deleted_at", null)
-      .is("company_id", null),
-    "leads_needing_research",
-  );
+  const pending = await leadsNeedingResearch(admin, stages, 1000);
+  return pending.length;
 }
 
 /** Probe 7: New-stage open leads scored at/above minimumScore. REAL. */
@@ -397,113 +405,231 @@ async function probeActiveHarveyCampaigns(admin: SupabaseClient): Promise<number
   );
 }
 
-/** Probe 9: Harvey-sourced open-lead inventory (primary_source='harvey'). REAL. */
-async function probeHarveyInventory(admin: SupabaseClient): Promise<number> {
-  return await countRows(
-    admin
-      .from("lit_admin_leads")
-      .select("id", { count: "exact", head: true })
-      .eq("primary_source", "harvey")
-      .eq("status", "open")
-      .is("archived_at", null)
-      .is("deleted_at", null),
-    "harvey_prospect_inventory",
-  );
+/**
+ * Probe 9: workable open-lead inventory (for the prospect/analyze fallback).
+ *
+ * OWNER-INTENT CHANGE: Harvey now OUTREACHES the owner's existing CRM leads, not
+ * only primary_source='harvey' rows. The prospecting decision therefore compares
+ * the count of *workable* leads (owner-sourced AND Harvey-sourced, in the
+ * WORKABLE_STAGES set, with a usable contact) against the target, so Harvey only
+ * auto-sources when the whole reachable inventory runs dry — and even then only
+ * when config.prospecting.enabled === true (gated in the execute phase).
+ */
+async function probeWorkableInventory(
+  admin: SupabaseClient,
+  stages: Record<string, string>,
+): Promise<number> {
+  const leads = await workableLeads(admin, stages);
+  return leads.length;
+}
+
+// ─── workable-lead selection (broadened eligibility) ─────────────────────────
+
+// The ONLY pipeline stages Harvey may OUTREACH from. Deliberately excludes
+// Trial/Engaged/Contacted/Subscriber/Lost — those are already in-flight,
+// converted, or dead. Owner-sourced 'New' leads are the primary target.
+const WORKABLE_STAGES = ["New"] as const;
+
+interface WorkableLead {
+  id: string;
+  full_name: string | null;
+  company_name: string | null;
+  title: string | null;
+  email: string | null;
+  linkedin_url: string | null;
+  /** Resolved LinkedIn identifier: linkedin_url OR contact_json.linkedin_url. */
+  linkedin: string | null;
+}
+
+/** Extract a LinkedIn identifier from the linkedin_url column or contact_json. */
+function resolveLinkedin(
+  linkedinUrl: string | null | undefined,
+  contactJson: Record<string, unknown> | null | undefined,
+): string | null {
+  if (typeof linkedinUrl === "string" && linkedinUrl.trim().length > 0) return linkedinUrl.trim();
+  if (contactJson && typeof contactJson === "object") {
+    const v = (contactJson as Record<string, unknown>).linkedin_url;
+    if (typeof v === "string" && v.trim().length > 0) return v.trim();
+  }
+  return null;
 }
 
 /**
- * Harvey's New-stage open leads that have NO lit_agent_lead_research row yet.
- * Returns their ids (capped). Used by both the research probe/execution.
+ * Leads Harvey may OUTREACH — the single source of truth for eligibility.
+ *
+ * Selects lit_admin_leads that are:
+ *   - status='open', archived_at IS NULL, deleted_at IS NULL
+ *   - in a WORKABLE_STAGES stage (currently just 'New')
+ *   - have a USABLE CONTACT: a non-null email OR a LinkedIn identifier
+ *     (linkedin_url column OR contact_json.linkedin_url)
+ * NOTE: primary_source is NOT filtered — owner-sourced AND Harvey-sourced both
+ * qualify (owner intent: "Harvey should pull the leads already inside the LEAD
+ * CRM which I've sourced and enriched").
+ *
+ * Excludes leads that already have a Harvey DRAFT (lit_agent_drafts.lead_id) OR a
+ * Harvey SEND (lit_agent_send_log via that draft) so we never double-outreach.
  */
-async function harveyLeadsNeedingResearch(
+async function workableLeads(
   admin: SupabaseClient,
-  newStageId: string | undefined,
-  cap: number,
-): Promise<string[]> {
-  if (!newStageId) return [];
-  const { data: leads, error } = await admin
+  stages: Record<string, string>,
+): Promise<WorkableLead[]> {
+  // Resolve the workable-stage id set from the name→id map. Today
+  // WORKABLE_STAGES === ['New'], so this is a single id, but any future stage
+  // added to WORKABLE_STAGES is picked up automatically.
+  const stageIds = WORKABLE_STAGES
+    .map((name) => stages[name])
+    .filter((id): id is string => typeof id === "string");
+  if (stageIds.length === 0) return [];
+
+  const { data: rows, error } = await admin
     .from("lit_admin_leads")
-    .select("id")
-    .eq("primary_source", "harvey")
-    .eq("stage_id", newStageId)
+    .select("id, full_name, company_name, title, email, linkedin_url, contact_json")
+    .in("stage_id", stageIds)
     .eq("status", "open")
     .is("archived_at", null)
     .is("deleted_at", null)
     .order("created_at", { ascending: true })
-    .limit(Math.max(cap * 4, cap)); // over-fetch; we filter out already-researched
-  if (error) throw new Error(`harveyLeadsNeedingResearch (leads) failed: ${error.message}`);
-  const ids = (leads ?? []).map((l: { id: string }) => l.id as string);
-  if (ids.length === 0) return [];
+    .limit(1000);
+  if (error) throw new Error(`workableLeads (leads) failed: ${error.message}`);
 
-  const { data: researched, error: rErr } = await admin
-    .from("lit_agent_lead_research")
-    .select("lead_id")
-    .in("lead_id", ids);
-  if (rErr) throw new Error(`harveyLeadsNeedingResearch (research) failed: ${rErr.message}`);
-  const done = new Set((researched ?? []).map((r: { lead_id: string }) => r.lead_id));
-  return ids.filter((id) => !done.has(id)).slice(0, cap);
-}
+  const candidates: WorkableLead[] = [];
+  for (const r of rows ?? []) {
+    const row = r as {
+      id: string;
+      full_name: string | null;
+      company_name: string | null;
+      title: string | null;
+      email: string | null;
+      linkedin_url: string | null;
+      contact_json: Record<string, unknown> | null;
+    };
+    const email = typeof row.email === "string" && row.email.trim().length > 0
+      ? row.email.trim()
+      : null;
+    const linkedin = resolveLinkedin(row.linkedin_url, row.contact_json);
+    // Usable-contact rule: must have EITHER an email OR a LinkedIn identifier.
+    if (!email && !linkedin) continue;
+    candidates.push({
+      id: row.id,
+      full_name: row.full_name,
+      company_name: row.company_name,
+      title: row.title,
+      email,
+      linkedin_url: typeof row.linkedin_url === "string" ? row.linkedin_url : null,
+      linkedin,
+    });
+  }
+  if (candidates.length === 0) return [];
 
-/**
- * Harvey's leads that HAVE a research brief but NO lit_agent_drafts row yet.
- * Returns { lead_id, brief } pairs (capped) so the writer can be handed the
- * recommended channel / research facts.
- */
-interface LeadBrief {
-  lead_id: string;
-  brief: Record<string, unknown> | null;
-}
-
-async function harveyResearchedLeadsNeedingDraft(
-  admin: SupabaseClient,
-  cap: number,
-): Promise<LeadBrief[]> {
-  // Restrict to Harvey's own leads so we never draft for someone else's rows.
-  const { data: leads, error: lErr } = await admin
-    .from("lit_admin_leads")
-    .select("id")
-    .eq("primary_source", "harvey")
-    .eq("status", "open")
-    .is("archived_at", null)
-    .is("deleted_at", null);
-  if (lErr) throw new Error(`harveyResearchedLeadsNeedingDraft (leads) failed: ${lErr.message}`);
-  const harveyLeadIds = new Set((leads ?? []).map((l: { id: string }) => l.id as string));
-  if (harveyLeadIds.size === 0) return [];
-
-  const { data: research, error: rErr } = await admin
-    .from("lit_agent_lead_research")
-    .select("lead_id, brief_json")
-    .in("lead_id", Array.from(harveyLeadIds))
-    .order("created_at", { ascending: true });
-  if (rErr) throw new Error(`harveyResearchedLeadsNeedingDraft (research) failed: ${rErr.message}`);
-  const researchedIds = (research ?? []).map((r: { lead_id: string }) => r.lead_id);
-  if (researchedIds.length === 0) return [];
-
+  // Exclude any lead that already has a Harvey draft OR a Harvey send.
+  const ids = candidates.map((c) => c.id);
   const { data: drafts, error: dErr } = await admin
     .from("lit_agent_drafts")
-    .select("lead_id")
-    .in("lead_id", researchedIds);
-  if (dErr) throw new Error(`harveyResearchedLeadsNeedingDraft (drafts) failed: ${dErr.message}`);
-  const drafted = new Set(
+    .select("id, lead_id")
+    .eq("agent_name", CONFIG_KEY)
+    .in("lead_id", ids);
+  if (dErr) throw new Error(`workableLeads (drafts) failed: ${dErr.message}`);
+  const draftedLeadIds = new Set(
     (drafts ?? [])
       .map((d: { lead_id: string | null }) => d.lead_id)
       .filter((id): id is string => typeof id === "string"),
   );
 
-  const out: LeadBrief[] = [];
-  for (const r of research ?? []) {
-    const row = r as { lead_id: string; brief_json: Record<string, unknown> | null };
-    if (drafted.has(row.lead_id)) continue;
-    out.push({ lead_id: row.lead_id, brief: row.brief_json ?? null });
-    if (out.length >= cap) break;
+  // Also exclude leads with a Harvey SEND. Sends reference a draft_id, so map
+  // any Harvey draft (regardless of lead) that appears in the send log back to
+  // its lead, then union with the drafted set.
+  const draftIdToLead = new Map<string, string>();
+  for (const d of (drafts ?? []) as Array<{ id: string; lead_id: string | null }>) {
+    if (typeof d.lead_id === "string") draftIdToLead.set(d.id, d.lead_id);
   }
-  return out;
+  const draftIds = Array.from(draftIdToLead.keys());
+  const sentLeadIds = new Set<string>();
+  if (draftIds.length > 0) {
+    const { data: sends, error: sErr } = await admin
+      .from("lit_agent_send_log")
+      .select("draft_id")
+      .in("draft_id", draftIds);
+    if (sErr) throw new Error(`workableLeads (send_log) failed: ${sErr.message}`);
+    for (const s of (sends ?? []) as Array<{ draft_id: string | null }>) {
+      if (typeof s.draft_id === "string") {
+        const leadId = draftIdToLead.get(s.draft_id);
+        if (leadId) sentLeadIds.add(leadId);
+      }
+    }
+  }
+
+  return candidates.filter((c) => !draftedLeadIds.has(c.id) && !sentLeadIds.has(c.id));
 }
 
-/** Probe: Harvey's researched leads (brief present) still lacking a draft. REAL. */
-async function probeLeadsResearchedNeedingDraft(admin: SupabaseClient): Promise<number> {
+/**
+ * Workable leads that still LACK a lit_agent_lead_research row.
+ * Returns their ids (capped). Used to OPPORTUNISTICALLY research New leads —
+ * research is best-effort enrichment now, NOT a gate on drafting.
+ */
+async function leadsNeedingResearch(
+  admin: SupabaseClient,
+  stages: Record<string, string>,
+  cap: number,
+): Promise<string[]> {
+  const leads = await workableLeads(admin, stages);
+  if (leads.length === 0) return [];
+  const ids = leads.map((l) => l.id);
+
+  const { data: researched, error: rErr } = await admin
+    .from("lit_agent_lead_research")
+    .select("lead_id")
+    .in("lead_id", ids);
+  if (rErr) throw new Error(`leadsNeedingResearch (research) failed: ${rErr.message}`);
+  const done = new Set((researched ?? []).map((r: { lead_id: string }) => r.lead_id));
+  return ids.filter((id) => !done.has(id)).slice(0, cap);
+}
+
+/**
+ * Workable leads with NO Harvey draft yet, paired with their research brief IF
+ * one exists (LEFT JOIN — brief may be null).
+ *
+ * OWNER-INTENT CHANGE: research is now OPTIONAL. draft_outreach drafts for every
+ * workable lead even when it has no lit_agent_lead_research row; the brief (when
+ * present) is passed through to the writer as best-effort enrichment. The
+ * already-drafted / already-sent exclusion lives in workableLeads(), so this
+ * returns only leads that still need a first-touch.
+ */
+interface LeadDraftItem {
+  lead: WorkableLead;
+  brief: Record<string, unknown> | null;
+}
+
+async function leadsNeedingDraft(
+  admin: SupabaseClient,
+  stages: Record<string, string>,
+  cap: number,
+): Promise<LeadDraftItem[]> {
+  const leads = await workableLeads(admin, stages);
+  if (leads.length === 0) return [];
+  const capped = leads.slice(0, cap);
+  const ids = capped.map((l) => l.id);
+
+  // LEFT JOIN research: brief_json is best-effort; absence never excludes.
+  const briefByLead = new Map<string, Record<string, unknown> | null>();
+  const { data: research, error: rErr } = await admin
+    .from("lit_agent_lead_research")
+    .select("lead_id, brief_json")
+    .in("lead_id", ids);
+  if (rErr) throw new Error(`leadsNeedingDraft (research) failed: ${rErr.message}`);
+  for (const r of (research ?? []) as Array<{ lead_id: string; brief_json: Record<string, unknown> | null }>) {
+    if (!briefByLead.has(r.lead_id)) briefByLead.set(r.lead_id, r.brief_json ?? null);
+  }
+
+  return capped.map((lead) => ({ lead, brief: briefByLead.get(lead.id) ?? null }));
+}
+
+/** Probe: workable leads still needing a first-touch draft (research optional). */
+async function probeLeadsNeedingDraft(
+  admin: SupabaseClient,
+  stages: Record<string, string>,
+): Promise<number> {
   // A count is enough for the decision; execution re-fetches the capped batch.
-  const pending = await harveyResearchedLeadsNeedingDraft(admin, 1000);
+  const pending = await leadsNeedingDraft(admin, stages, 1000);
   return pending.length;
 }
 
@@ -611,45 +737,53 @@ function decide(counts: ProbeCounts): { priority: number; decision: string; reas
       reason: `${counts.approved_email_drafts} approved, unsent Harvey email draft(s) ready to dispatch`,
     };
   }
-  if (counts.leads_needing_research > 0) {
+  if (counts.leads_researched_needing_draft > 0) {
+    // OWNER-INTENT: first-touch OUTREACH of the owner's existing workable leads
+    // now outranks opportunistic research. Research is best-effort enrichment,
+    // not a gate — so drafting must not wait behind it.
     return {
-      priority: 6,
-      decision: "research_leads",
-      reason: `${counts.leads_needing_research} New-stage lead(s) without company recognition`,
+      priority: 7,
+      decision: "draft_outreach",
+      reason:
+        `${counts.leads_researched_needing_draft} workable lead(s) needing a first-touch draft`,
     };
   }
   if (counts.qualified_leads_needing_messaging > 0) {
     return {
-      priority: 7,
+      priority: 8,
       decision: "message_qualified_leads",
       reason: `${counts.qualified_leads_needing_messaging} qualified New-stage lead(s) awaiting messaging`,
     };
   }
-  if (counts.leads_researched_needing_draft > 0) {
+  if (counts.leads_needing_research > 0) {
     return {
-      priority: 8,
-      decision: "draft_outreach",
-      reason:
-        `${counts.leads_researched_needing_draft} researched lead(s) with a brief but no draft yet`,
+      priority: 9,
+      decision: "research_leads",
+      reason: `${counts.leads_needing_research} workable New-stage lead(s) lacking a research brief`,
     };
   }
   if (counts.active_harvey_campaigns > 0) {
     return {
-      priority: 9,
+      priority: 10,
       decision: "campaign_followups",
       reason: `${counts.active_harvey_campaigns} active Harvey campaign(s) to manage`,
     };
   }
   if (counts.harvey_prospect_inventory < counts.prospect_inventory_target) {
+    // NOTE: this only PROPOSES sourcing. The execute phase gates it on
+    // config.prospecting.enabled — when disabled (owner's current setting) the
+    // controller records decision_reason 'prospecting_disabled' and sources
+    // nothing. The manual Source-prospects button (invoking harvey-prospect
+    // directly) is unaffected.
     return {
-      priority: 10,
+      priority: 11,
       decision: "prospect",
       reason:
-        `Harvey-sourced inventory ${counts.harvey_prospect_inventory} below target ` +
+        `workable lead inventory ${counts.harvey_prospect_inventory} below target ` +
         `${counts.prospect_inventory_target}`,
     };
   }
-  return { priority: 11, decision: "analyze", reason: "no higher-priority work; analyze pipeline" };
+  return { priority: 12, decision: "analyze", reason: "no higher-priority work; analyze pipeline" };
 }
 
 // ─── handler ─────────────────────────────────────────────────────────────────
@@ -791,22 +925,22 @@ Deno.serve(async (req: Request) => {
       nurtureCandidates,
       dueOutreach,
       approvedEmailDrafts,
-      leadsNeedingResearch,
+      leadsNeedingResearchCount,
       qualifiedLeads,
-      researchedNeedingDraft,
+      leadsNeedingDraftCount,
       activeHarveyCampaigns,
-      harveyInventory,
+      workableInventory,
     ] = await Promise.all([
       probeUrgentReplies(admin, config),
       probeAwaitingApproval(admin),
       probeNurtureCandidates(admin),
       probeDueOutreach(admin, campaignIds),
       probeApprovedEmailDrafts(admin),
-      probeLeadsNeedingResearch(admin, newStageId),
+      probeLeadsNeedingResearch(admin, stages),
       probeQualifiedLeads(admin, newStageId, minimumScore),
-      probeLeadsResearchedNeedingDraft(admin),
+      probeLeadsNeedingDraft(admin, stages),
       probeActiveHarveyCampaigns(admin),
-      probeHarveyInventory(admin),
+      probeWorkableInventory(admin, stages),
     ]);
 
     const counts: ProbeCounts = {
@@ -817,11 +951,11 @@ Deno.serve(async (req: Request) => {
       nurture_candidates: nurtureCandidates,
       due_outreach: dueOutreach,
       approved_email_drafts: approvedEmailDrafts,
-      leads_needing_research: leadsNeedingResearch,
+      leads_needing_research: leadsNeedingResearchCount,
       qualified_leads_needing_messaging: qualifiedLeads,
-      leads_researched_needing_draft: researchedNeedingDraft,
+      leads_researched_needing_draft: leadsNeedingDraftCount,
       active_harvey_campaigns: activeHarveyCampaigns,
-      harvey_prospect_inventory: harveyInventory,
+      harvey_prospect_inventory: workableInventory,
       prospect_inventory_target: targetInventory,
     };
 
@@ -925,31 +1059,46 @@ Deno.serve(async (req: Request) => {
         execution.dispatch_email = { error: res.error ?? "harvey-email-dispatch failed" };
       }
     } else if (decision === "prospect") {
-      const shortfall = Math.max(0, counts.prospect_inventory_target - counts.harvey_prospect_inventory);
-      // harvey-prospect itself avoids paid spend in testMode, so we still call it.
-      const res = await invokeWorker("harvey-prospect", {
-        agent_name: CONFIG_KEY,
-        trigger_type: triggerType,
-        target: shortfall,
-        created_by: actorUserId,
-      });
-      if (res.ok) {
-        const data = res.data ?? {};
-        const leads = Array.isArray(data.leads) ? data.leads : [];
+      // OWNER-INTENT: auto-sourcing is OFF by default. Only the controller's
+      // AUTO-source is gated here; the manual Source-prospects button in the
+      // console invokes harvey-prospect DIRECTLY and is unaffected. When
+      // config.prospecting.enabled !== true we record the skip and source
+      // nothing.
+      const prospectingEnabled = config.prospecting?.enabled === true;
+      if (!prospectingEnabled) {
         execution.prospect = {
-          requested: shortfall,
-          created: typeof data.created === "number" ? data.created : leads.length,
-          sourced: leads.length,
-          run_id: data.run_id ?? null,
+          skipped: true,
+          reason: "prospecting_disabled",
+          note: "config.prospecting.enabled !== true — controller auto-source is off; " +
+            "the manual Source-prospects button still works",
         };
-        executed = true;
       } else {
-        execution.prospect = { error: res.error ?? "harvey-prospect failed", requested: shortfall };
+        const shortfall = Math.max(0, counts.prospect_inventory_target - counts.harvey_prospect_inventory);
+        // harvey-prospect itself avoids paid spend in testMode, so we still call it.
+        const res = await invokeWorker("harvey-prospect", {
+          agent_name: CONFIG_KEY,
+          trigger_type: triggerType,
+          target: shortfall,
+          created_by: actorUserId,
+        });
+        if (res.ok) {
+          const data = res.data ?? {};
+          const leads = Array.isArray(data.leads) ? data.leads : [];
+          execution.prospect = {
+            requested: shortfall,
+            created: typeof data.created === "number" ? data.created : leads.length,
+            sourced: leads.length,
+            run_id: data.run_id ?? null,
+          };
+          executed = true;
+        } else {
+          execution.prospect = { error: res.error ?? "harvey-prospect failed", requested: shortfall };
+        }
       }
     } else if (decision === "research_leads") {
       let leadIds: string[] = [];
       try {
-        leadIds = await harveyLeadsNeedingResearch(admin, newStageId, RESEARCH_BATCH);
+        leadIds = await leadsNeedingResearch(admin, stages, RESEARCH_BATCH);
       } catch (probeErr) {
         execution.research = { error: `lead selection failed: ${String((probeErr as Error)?.message ?? probeErr)}` };
       }
@@ -974,7 +1123,7 @@ Deno.serve(async (req: Request) => {
         // executed if at least one research call succeeded.
         if (researched > 0) executed = true;
       } else if (!execution.research) {
-        execution.research = { batch: 0, researched: 0, note: "no un-researched Harvey leads found" };
+        execution.research = { batch: 0, researched: 0, note: "no un-researched workable leads found" };
       }
     } else if (decision === "draft_outreach") {
       if (mode !== "autonomous") {
@@ -985,24 +1134,46 @@ Deno.serve(async (req: Request) => {
           reason: `mode '${mode}' — first-touch drafts are generated on human/task request, not autonomously`,
         };
       } else {
-        let batch: LeadBrief[] = [];
+        let batch: LeadDraftItem[] = [];
         try {
-          batch = await harveyResearchedLeadsNeedingDraft(admin, DRAFT_BATCH);
+          batch = await leadsNeedingDraft(admin, stages, DRAFT_BATCH);
         } catch (probeErr) {
           execution.draft_outreach = { error: `lead selection failed: ${String((probeErr as Error)?.message ?? probeErr)}` };
         }
         if (batch.length > 0) {
           let drafted = 0;
+          let skippedNoContact = 0;
+          const byChannel: Record<string, number> = { email: 0, linkedin: 0 };
           const failures: Array<{ lead_id: string; error: string }> = [];
           for (const item of batch) {
+            const lead = item.lead;
+            // CHANNEL SELECTION: email when the lead has an email, else linkedin
+            // when it has a LinkedIn identifier. This is what makes Harvey draft
+            // BOTH email and LinkedIn first-touches. Never invent contact info —
+            // workableLeads() guaranteed at least one, but re-check and skip if
+            // somehow neither is present.
+            let channel: "email" | "linkedin";
+            if (lead.email) channel = "email";
+            else if (lead.linkedin) channel = "linkedin";
+            else { skippedNoContact += 1; continue; }
+
             const brief = (item.brief ?? {}) as Record<string, unknown>;
-            const recommended = typeof brief.recommendedChannel === "string"
-              ? brief.recommendedChannel.toLowerCase()
-              : "email";
-            const channel = recommended === "linkedin" ? "linkedin" : "email";
-            const contact = (brief.contact && typeof brief.contact === "object")
+            // Build the contact from the LEAD's own owner-enriched CRM fields;
+            // any research-brief contact only supplies extra fields.
+            const briefContact = (brief.contact && typeof brief.contact === "object")
               ? brief.contact as Record<string, unknown>
               : {};
+            const firstName = typeof lead.full_name === "string" && lead.full_name.trim().length > 0
+              ? lead.full_name.trim().split(/\s+/)[0]
+              : (typeof briefContact.firstName === "string" ? briefContact.firstName : undefined);
+            const contact: Record<string, unknown> = {
+              ...briefContact,
+              firstName,
+              company: lead.company_name ?? briefContact.company ?? null,
+              title: lead.title ?? briefContact.title ?? null,
+              ...(lead.email ? { email: lead.email } : {}),
+              ...(lead.linkedin ? { linkedin_url: lead.linkedin } : {}),
+            };
             const researchText = typeof brief.summary === "string"
               ? brief.summary
               : (typeof brief.research === "string" ? brief.research : null);
@@ -1011,24 +1182,30 @@ Deno.serve(async (req: Request) => {
               channel,
               stage: "cold_outreach",
               intent: "first_touch",
-              lead_id: item.lead_id,
+              lead_id: lead.id,
               contact,
               research: researchText,
               created_by: actorUserId,
               trigger_type: triggerType,
             });
-            if (res.ok) drafted += 1;
-            else failures.push({ lead_id: item.lead_id, error: res.error ?? "harvey-writer failed" });
+            if (res.ok) {
+              drafted += 1;
+              byChannel[channel] = (byChannel[channel] ?? 0) + 1;
+            } else {
+              failures.push({ lead_id: lead.id, error: res.error ?? "harvey-writer failed" });
+            }
           }
           execution.draft_outreach = {
             batch: batch.length,
             drafted,
+            by_channel: byChannel,
+            ...(skippedNoContact ? { skipped_no_contact: skippedNoContact } : {}),
             failed: failures.length,
             ...(failures.length ? { failures } : {}),
           };
           if (drafted > 0) executed = true;
         } else if (!execution.draft_outreach) {
-          execution.draft_outreach = { batch: 0, drafted: 0, note: "no researched-but-undrafted Harvey leads found" };
+          execution.draft_outreach = { batch: 0, drafted: 0, note: "no workable undrafted leads found" };
         }
       }
     }

@@ -34,6 +34,7 @@
     "fuel-index-refresh",
     "generate-signals",
     "get-billing-status",
+    "harvey-controller",
     "lead-magnet-fulfillment",
     "lead-magnet-list",
     "lead-magnet-report",
