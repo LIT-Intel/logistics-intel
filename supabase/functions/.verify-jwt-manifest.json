@@ -35,6 +35,8 @@
     "generate-signals",
     "get-billing-status",
     "harvey-controller",
+    "harvey-enrich",
+    "harvey-sequence-tick",
     "lead-magnet-fulfillment",
     "lead-magnet-list",
     "lead-magnet-report",
