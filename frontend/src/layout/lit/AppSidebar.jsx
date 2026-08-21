@@ -14,6 +14,7 @@ import {
   BarChart3,
   Send,
   FileText,
+  Bot,
 } from "lucide-react";
 import { LitAppIcon, PulseIcon } from "@/components/shared/AppIcons";
 import { useAuth } from "@/auth/AuthProvider";
@@ -119,6 +120,7 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
               // stay alive for deep links; only the deck + the two everyday
               // outbound tools keep sidebar slots.
               { label: "Admin Control Panel", href: "/app/admin", icon: Shield },
+              { label: "AI Employees", href: "/app/admin/ai-employees", icon: Bot },
               { label: "Demo invites", href: "/app/demo-invites", icon: Send },
               { label: "Team", href: "/app/settings?tab=team", icon: Users },
             ],
