@@ -169,18 +169,31 @@ async function buildChatContext(
 
   // Service-role `admin` client is used throughout — RLS blocks anon from the
   // knowledge/templates tables, so this must never be the user-scoped client.
-  const [knowledge, templates, runsRes, historyRes] = await Promise.all([
-    fetchApprovedKnowledge(admin),
-    fetchApprovedTemplates(admin, agentName),
-    admin.from("lit_agent_runs")
-      .select("created_at, decision, decision_reason, status, output_json")
-      .eq("agent_name", agentName)
-      .order("created_at", { ascending: false }).limit(10),
-    admin.from("lit_agent_chat_messages")
-      .select("role, content, created_at")
-      .eq("agent_name", agentName)
-      .order("created_at", { ascending: false }).limit(10),
-  ]);
+  const [knowledge, templates, runsRes, historyRes, leadsRes, leadsCountRes, stageRes] =
+    await Promise.all([
+      fetchApprovedKnowledge(admin),
+      fetchApprovedTemplates(admin, agentName),
+      admin.from("lit_agent_runs")
+        .select("created_at, decision, decision_reason, status, output_json")
+        .eq("agent_name", agentName)
+        .order("created_at", { ascending: false }).limit(10),
+      admin.from("lit_agent_chat_messages")
+        .select("role, content, created_at")
+        .eq("agent_name", agentName)
+        .order("created_at", { ascending: false }).limit(10),
+      // Compact snapshot of the agent's OWN leads from the LEAD CRM, so Harvey
+      // can answer "give me N leads" with real rows instead of generic criteria.
+      admin.from("lit_admin_leads")
+        .select("full_name, title, company_name, stage_id, lead_score")
+        .eq("primary_source", agentName)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false }).limit(15),
+      admin.from("lit_admin_leads")
+        .select("id", { count: "exact", head: true })
+        .eq("primary_source", agentName)
+        .is("deleted_at", null),
+      admin.from("lit_lead_pipeline_stages").select("id, name"),
+    ]);
 
   const personaLine = buildHarveySystemPrompt(profile);
 
@@ -214,7 +227,32 @@ async function buildChatContext(
     ? history.map((m) => `${m.role.toUpperCase()}: ${m.content}`).join("\n")
     : "(no prior messages)";
 
-  // Order: knowledge -> template catalog -> relevant template bodies -> runs -> history.
+  // ── the agent's own LEAD CRM snapshot (lead-awareness) ─────────────────────
+  const stageNameById = new Map<string, string>();
+  for (const s of (stageRes.data ?? []) as Array<{ id: string; name: string }>) {
+    if (s.id) stageNameById.set(s.id, s.name ?? "");
+  }
+  const leadRows = (leadsRes.data ?? []) as Array<{
+    full_name: string | null; title: string | null; company_name: string | null;
+    stage_id: string | null; lead_score: number | null;
+  }>;
+  const leadsTotal = leadsCountRes.count ?? leadRows.length;
+  const leadsBlock = leadRows.length
+    ? leadRows
+        .map((l, i) => {
+          const stage = l.stage_id ? (stageNameById.get(l.stage_id) ?? "—") : "—";
+          return `${i + 1}. ${l.full_name || "—"} · ${l.title || "—"} · ${l.company_name || "—"} · ${stage} · score ${l.lead_score ?? 0}`;
+        })
+        .join("\n")
+    : "(no sourced leads yet)";
+  const leadsSection =
+    `HARVEY'S CURRENT LEADS (from the LEAD CRM — ${leadsTotal} total, showing ${leadRows.length} most recent):\n` +
+    `${leadsBlock}\n\n` +
+    "When the admin asks you to list/pull leads from the LEAD CRM, use THIS list — return real leads " +
+    "by name/company/title, not generic criteria. If the list is empty, say you have no sourced leads " +
+    "yet and offer to source some (prospecting).";
+
+  // Order: knowledge -> template catalog -> relevant template bodies -> runs -> leads -> history.
   const parts: string[] = [
     `APPROVED KNOWLEDGE:\n${knowledgeBlock}`,
     `APPROVED OUTREACH TEMPLATE CATALOG ([key] channel/stage/intent — subject; bodies omitted):\n${templateCatalogBlock}`,
@@ -229,6 +267,7 @@ async function buildChatContext(
     );
   }
   parts.push(`RECENT AGENT RUNS (most recent first — your own decision log):\n${runsBlock}`);
+  parts.push(leadsSection);
   parts.push(`RECENT CONVERSATION (chronological):\n${historyBlock}`);
 
   const userBlock = parts.join("\n\n");
@@ -493,6 +532,247 @@ async function actionUpdateDraft(
   return { ok: true };
 }
 
+// ─── Harvey PROSPECTS / LEADS actions (Batch 5) ──────────────────────────────
+// The Prospects tab drives four actions:
+//   run_prospect  -> harvey-prospect (LIVE sourcing; forwards the admin JWT so
+//                    Harvey's paid Apollo path is authorized)
+//   run_research  -> harvey-research (builds a research brief for one lead)
+//   list_leads    -> service-role read of lit_admin_leads (agent's own leads)
+//   lead_detail   -> one lead + its latest research brief + its drafts
+// list_leads / lead_detail read the service-role `admin` client directly
+// (lit_admin_leads RLS is lead-CRM-member gated, so anon cannot read it).
+
+/** Resolve a map of stage_id -> stage name from lit_lead_pipeline_stages. */
+async function loadStageNames(admin: SupabaseClient): Promise<Map<string, string>> {
+  const { data, error } = await admin
+    .from("lit_lead_pipeline_stages")
+    .select("id, name");
+  if (error) throw new Error(`lit_lead_pipeline_stages read failed: ${error.message}`);
+  const map = new Map<string, string>();
+  for (const row of (data ?? []) as Array<{ id: string; name: string }>) {
+    if (row.id) map.set(row.id, row.name ?? "");
+  }
+  return map;
+}
+
+/** Server-to-server call to harvey-prospect for a MANUAL admin sourcing run.
+ *  Forwards the admin's Authorization header (member JWT) so harvey-prospect
+ *  can authorize its paid Apollo path — the fn re-verifies platform-admin +
+ *  lead-CRM membership and falls back to internal-only sourcing if no JWT is
+ *  present. `created_by` records the actor for the audit trail. */
+async function actionRunProspect(
+  agentName: string,
+  target: { count?: number; keywords?: string[]; location?: string } | null,
+  authHeader: string,
+  adminUserId: string,
+) {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  if (!supabaseUrl) throw new Error("SUPABASE_URL not configured");
+
+  const url = `${supabaseUrl}/functions/v1/harvey-prospect`;
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  // Forward the caller's member JWT so live Apollo sourcing is authorized. This
+  // routes harvey-prospect into its admin/manual (non-cron) branch, which reads
+  // the JWT from Authorization. Without it the fn stays internal-only.
+  if (authHeader && authHeader.startsWith("Bearer ")) headers["Authorization"] = authHeader;
+  else {
+    // No forwardable JWT — fall back to the internal cron path (no Apollo).
+    const cronSecret = Deno.env.get("LIT_CRON_SECRET");
+    if (!cronSecret) return { ok: false, error: "LIT_CRON_SECRET not configured" };
+    headers["X-Internal-Cron"] = cronSecret;
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        agent_name: agentName || "harvey",
+        trigger_type: "manual",
+        target: target ?? {},
+        created_by: adminUserId,
+      }),
+    });
+  } catch (err) {
+    return { ok: false, error: `prospect unreachable: ${String((err as Error)?.message ?? err)}` };
+  }
+  if (res.status === 404) return { ok: false, error: "no prospector" };
+  const p = await res.json().catch(() => ({ raw: "non-JSON prospect response" }));
+  if (!res.ok || (p && p.ok === false)) {
+    const errMsg = (p && typeof p.error === "string") ? p.error : `prospect HTTP ${res.status}`;
+    return { ok: false, error: errMsg };
+  }
+  return {
+    ok: true,
+    run_id: p.run_id ?? null,
+    sourced: p.sourced ?? 0,
+    created: p.created ?? 0,
+    skipped: p.skipped ?? 0,
+    test_mode: p.test_mode === true,
+    leads: Array.isArray(p.leads) ? p.leads : [],
+  };
+}
+
+/** Server-to-server call to harvey-research to build a brief for one lead. */
+async function actionRunResearch(agentName: string, leadId: string, adminUserId: string) {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const cronSecret = Deno.env.get("LIT_CRON_SECRET");
+  if (!supabaseUrl) throw new Error("SUPABASE_URL not configured");
+  if (!cronSecret) return { ok: false, error: "LIT_CRON_SECRET not configured" };
+
+  const url = `${supabaseUrl}/functions/v1/harvey-research`;
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Internal-Cron": cronSecret,
+      },
+      body: JSON.stringify({
+        agent_name: agentName || "harvey",
+        lead_id: leadId,
+        trigger_type: "manual",
+        created_by: adminUserId,
+      }),
+    });
+  } catch (err) {
+    return { ok: false, error: `research unreachable: ${String((err as Error)?.message ?? err)}` };
+  }
+  if (res.status === 404) return { ok: false, error: "no researcher" };
+  const r = await res.json().catch(() => ({ raw: "non-JSON research response" }));
+  if (!res.ok || (r && r.ok === false)) {
+    const errMsg = (r && typeof r.error === "string") ? r.error : `research HTTP ${res.status}`;
+    return { ok: false, error: errMsg };
+  }
+  return { ok: true, run_id: r.run_id ?? null, brief: r.brief ?? null };
+}
+
+/** List the agent's OWN leads (primary_source=agent), newest first, with
+ *  has_research + draft_count decorations. */
+async function actionListLeads(
+  admin: SupabaseClient,
+  agentName: string,
+  limit: number,
+  stage: string | null,
+  status: string | null,
+) {
+  const source = agentName || "harvey";
+  const capped = Math.min(Math.max(1, limit || 25), 100);
+
+  let q = admin
+    .from("lit_admin_leads")
+    .select(
+      "id, full_name, company_name, title, email, stage_id, status, lead_score, company_domain, company_city, company_state, created_at",
+    )
+    .eq("primary_source", source)
+    .is("deleted_at", null)
+    .is("archived_at", null)
+    .order("created_at", { ascending: false })
+    .limit(capped);
+  if (status) q = q.eq("status", status);
+  const { data, error } = await q;
+  if (error) throw new Error(`list_leads read failed: ${error.message}`);
+
+  const rows = (data ?? []) as Array<{
+    id: string; full_name: string | null; company_name: string | null; title: string | null;
+    email: string | null; stage_id: string | null; status: string | null; lead_score: number | null;
+    company_domain: string | null; company_city: string | null; company_state: string | null;
+    created_at: string | null;
+  }>;
+
+  const stageNames = await loadStageNames(admin);
+
+  // Optional stage-name filter (applied after name resolution).
+  const filtered = stage
+    ? rows.filter((r) => (r.stage_id ? stageNames.get(r.stage_id) : null) === stage)
+    : rows;
+
+  const ids = filtered.map((r) => r.id);
+  const hasResearch = new Set<string>();
+  const draftCounts = new Map<string, number>();
+  if (ids.length > 0) {
+    const [researchRes, draftsRes] = await Promise.all([
+      admin.from("lit_agent_lead_research").select("lead_id").in("lead_id", ids),
+      admin.from("lit_agent_drafts").select("lead_id").in("lead_id", ids),
+    ]);
+    if (researchRes.error) throw new Error(`lead_research read failed: ${researchRes.error.message}`);
+    if (draftsRes.error) throw new Error(`lead_drafts read failed: ${draftsRes.error.message}`);
+    for (const r of (researchRes.data ?? []) as Array<{ lead_id: string | null }>) {
+      if (r.lead_id) hasResearch.add(r.lead_id);
+    }
+    for (const d of (draftsRes.data ?? []) as Array<{ lead_id: string | null }>) {
+      if (d.lead_id) draftCounts.set(d.lead_id, (draftCounts.get(d.lead_id) ?? 0) + 1);
+    }
+  }
+
+  const leads = filtered.map((r) => ({
+    id: r.id,
+    full_name: r.full_name,
+    company_name: r.company_name,
+    title: r.title,
+    email: r.email,
+    stage: r.stage_id ? (stageNames.get(r.stage_id) ?? null) : null,
+    status: r.status,
+    lead_score: r.lead_score ?? 0,
+    company_domain: r.company_domain,
+    company_city: r.company_city,
+    company_state: r.company_state,
+    created_at: r.created_at,
+    has_research: hasResearch.has(r.id),
+    draft_count: draftCounts.get(r.id) ?? 0,
+  }));
+
+  return { ok: true, leads };
+}
+
+/** One lead + its latest research brief + its drafts. */
+async function actionLeadDetail(admin: SupabaseClient, leadId: string) {
+  const { data: leadRow, error: leadErr } = await admin
+    .from("lit_admin_leads")
+    .select(
+      "id, full_name, company_name, title, email, stage_id, status, lead_score, company_domain, company_country, company_city, company_state, primary_source, created_at, archived_at, deleted_at",
+    )
+    .eq("id", leadId)
+    .maybeSingle();
+  if (leadErr) throw new Error(`lead_detail read failed: ${leadErr.message}`);
+  if (!leadRow) return { ok: false, error: "lead not found" };
+
+  const stageNames = await loadStageNames(admin);
+  const lead = {
+    ...leadRow,
+    stage: leadRow.stage_id ? (stageNames.get(leadRow.stage_id) ?? null) : null,
+  };
+
+  const [researchRes, draftsRes] = await Promise.all([
+    admin
+      .from("lit_agent_lead_research")
+      .select("id, brief_json, fit_score, confidence, recommended_channel, recommended_cta, risk_flags, created_at")
+      .eq("lead_id", leadId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    admin
+      .from("lit_agent_drafts")
+      .select(
+        "id, channel, subject, body, angle, confidence, status, requires_approval, contact_json, stage, intent, template_key, created_at, edited_subject, edited_body",
+      )
+      .eq("lead_id", leadId)
+      .order("created_at", { ascending: false })
+      .limit(50),
+  ]);
+  if (researchRes.error) throw new Error(`lead_detail research read failed: ${researchRes.error.message}`);
+  if (draftsRes.error) throw new Error(`lead_detail drafts read failed: ${draftsRes.error.message}`);
+
+  return {
+    ok: true,
+    lead,
+    research: researchRes.data ?? null,
+    drafts: draftsRes.data ?? [],
+  };
+}
+
 const ALLOWED_MODES = ["copilot", "assisted", "autonomous"];
 
 async function actionSetConfig(
@@ -670,6 +950,44 @@ Deno.serve(async (req: Request) => {
         if (typeof body.enabled !== "boolean") return json({ ok: false, error: "enabled boolean required" }, 400);
         log.info("action", { action, agent_name: agentName, user_id: user.id, enabled: body.enabled });
         return json(await actionSetFlag(admin, agentName, body.enabled));
+      }
+      case "run_prospect": {
+        if (!agentName) return json({ ok: false, error: "agent_name required" }, 400);
+        const rawTarget = (body.target && typeof body.target === "object")
+          ? body.target as Record<string, unknown>
+          : {};
+        const count = Number(rawTarget.count);
+        const keywords = Array.isArray(rawTarget.keywords)
+          ? rawTarget.keywords.map((k) => String(k ?? "").trim()).filter(Boolean)
+          : undefined;
+        const location = typeof rawTarget.location === "string" ? rawTarget.location.trim() : undefined;
+        const target = {
+          ...(Number.isFinite(count) && count > 0 ? { count } : {}),
+          ...(keywords && keywords.length ? { keywords } : {}),
+          ...(location ? { location } : {}),
+        };
+        log.info("action", { action, agent_name: agentName, user_id: user.id });
+        return json(await actionRunProspect(agentName, target, authHeader, user.id));
+      }
+      case "run_research": {
+        if (!agentName) return json({ ok: false, error: "agent_name required" }, 400);
+        const leadId = typeof body.lead_id === "string" ? body.lead_id : "";
+        if (!leadId) return json({ ok: false, error: "lead_id required" }, 400);
+        log.info("action", { action, agent_name: agentName, lead_id: leadId, user_id: user.id });
+        return json(await actionRunResearch(agentName, leadId, user.id));
+      }
+      case "list_leads": {
+        const limit = typeof body.limit === "number" ? body.limit : 25;
+        const stage = typeof body.stage === "string" && body.stage ? body.stage : null;
+        const status = typeof body.status === "string" && body.status ? body.status : null;
+        log.info("action", { action, agent_name: agentName || "harvey", user_id: user.id });
+        return json(await actionListLeads(admin, agentName || "harvey", limit, stage, status));
+      }
+      case "lead_detail": {
+        const leadId = typeof body.lead_id === "string" ? body.lead_id : "";
+        if (!leadId) return json({ ok: false, error: "lead_id required" }, 400);
+        log.info("action", { action, lead_id: leadId, user_id: user.id });
+        return json(await actionLeadDetail(admin, leadId));
       }
       case "generate_draft": {
         const channel = typeof body.channel === "string" ? body.channel.trim() : "";

@@ -33,9 +33,21 @@
 //   5 send_due_outreach          (real — due recipients on Harvey campaigns)
 //   6 research_leads             (real — New-stage leads without company recognition)
 //   7 message_qualified_leads    (real — New-stage leads at/above minimumScore)
-//   8 campaign_followups         (real — active Harvey campaigns)
-//   9 prospect                   (real — Harvey-sourced inventory below target)
-//  10 analyze                    (fallback)
+//   8 draft_outreach            (real — researched leads with a brief but no draft
+//                                 yet; autonomous Harvey generates the first-touch)
+//   9 campaign_followups         (real — active Harvey campaigns)
+//  10 prospect                   (real — Harvey-sourced inventory below target)
+//  11 analyze                    (fallback)
+//
+// EXECUTION: the controller now ACTS on three branches (behind the same gates,
+// respecting mode/testMode/quiet-hours). It invokes the sibling worker fns
+// server-to-server (X-Internal-Cron: LIT_CRON_SECRET) exactly like ai-employee-
+// console's run_now proxies the controller:
+//   - prospect        → harvey-prospect (source up to the shortfall)
+//   - research_leads  → harvey-research per lead (small batch)
+//   - draft_outreach  → harvey-writer per researched lead (autonomous only)
+// A failing sub-call is caught, recorded in output_json, and the controller run
+// still completes 'ok' — one bad worker call must not crash the heartbeat.
 //
 // Harvey has no sender identity yet (harvey@logisticintel.com is not a
 // connected lit_email_accounts row, and no rows carry the harvey scope
@@ -72,6 +84,7 @@ interface ProbeCounts {
   due_outreach: number;
   leads_needing_research: number;
   qualified_leads_needing_messaging: number;
+  leads_researched_needing_draft: number;
   active_harvey_campaigns: number;
   harvey_prospect_inventory: number;
   prospect_inventory_target: number;
@@ -245,6 +258,143 @@ async function probeHarveyInventory(admin: SupabaseClient): Promise<number> {
   );
 }
 
+/**
+ * Harvey's New-stage open leads that have NO lit_agent_lead_research row yet.
+ * Returns their ids (capped). Used by both the research probe/execution.
+ */
+async function harveyLeadsNeedingResearch(
+  admin: SupabaseClient,
+  newStageId: string | undefined,
+  cap: number,
+): Promise<string[]> {
+  if (!newStageId) return [];
+  const { data: leads, error } = await admin
+    .from("lit_admin_leads")
+    .select("id")
+    .eq("primary_source", "harvey")
+    .eq("stage_id", newStageId)
+    .eq("status", "open")
+    .is("archived_at", null)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: true })
+    .limit(Math.max(cap * 4, cap)); // over-fetch; we filter out already-researched
+  if (error) throw new Error(`harveyLeadsNeedingResearch (leads) failed: ${error.message}`);
+  const ids = (leads ?? []).map((l: { id: string }) => l.id as string);
+  if (ids.length === 0) return [];
+
+  const { data: researched, error: rErr } = await admin
+    .from("lit_agent_lead_research")
+    .select("lead_id")
+    .in("lead_id", ids);
+  if (rErr) throw new Error(`harveyLeadsNeedingResearch (research) failed: ${rErr.message}`);
+  const done = new Set((researched ?? []).map((r: { lead_id: string }) => r.lead_id));
+  return ids.filter((id) => !done.has(id)).slice(0, cap);
+}
+
+/**
+ * Harvey's leads that HAVE a research brief but NO lit_agent_drafts row yet.
+ * Returns { lead_id, brief } pairs (capped) so the writer can be handed the
+ * recommended channel / research facts.
+ */
+interface LeadBrief {
+  lead_id: string;
+  brief: Record<string, unknown> | null;
+}
+
+async function harveyResearchedLeadsNeedingDraft(
+  admin: SupabaseClient,
+  cap: number,
+): Promise<LeadBrief[]> {
+  // Restrict to Harvey's own leads so we never draft for someone else's rows.
+  const { data: leads, error: lErr } = await admin
+    .from("lit_admin_leads")
+    .select("id")
+    .eq("primary_source", "harvey")
+    .eq("status", "open")
+    .is("archived_at", null)
+    .is("deleted_at", null);
+  if (lErr) throw new Error(`harveyResearchedLeadsNeedingDraft (leads) failed: ${lErr.message}`);
+  const harveyLeadIds = new Set((leads ?? []).map((l: { id: string }) => l.id as string));
+  if (harveyLeadIds.size === 0) return [];
+
+  const { data: research, error: rErr } = await admin
+    .from("lit_agent_lead_research")
+    .select("lead_id, brief")
+    .in("lead_id", Array.from(harveyLeadIds))
+    .order("created_at", { ascending: true });
+  if (rErr) throw new Error(`harveyResearchedLeadsNeedingDraft (research) failed: ${rErr.message}`);
+  const researchedIds = (research ?? []).map((r: { lead_id: string }) => r.lead_id);
+  if (researchedIds.length === 0) return [];
+
+  const { data: drafts, error: dErr } = await admin
+    .from("lit_agent_drafts")
+    .select("lead_id")
+    .in("lead_id", researchedIds);
+  if (dErr) throw new Error(`harveyResearchedLeadsNeedingDraft (drafts) failed: ${dErr.message}`);
+  const drafted = new Set(
+    (drafts ?? [])
+      .map((d: { lead_id: string | null }) => d.lead_id)
+      .filter((id): id is string => typeof id === "string"),
+  );
+
+  const out: LeadBrief[] = [];
+  for (const r of research ?? []) {
+    const row = r as { lead_id: string; brief: Record<string, unknown> | null };
+    if (drafted.has(row.lead_id)) continue;
+    out.push({ lead_id: row.lead_id, brief: row.brief ?? null });
+    if (out.length >= cap) break;
+  }
+  return out;
+}
+
+/** Probe: Harvey's researched leads (brief present) still lacking a draft. REAL. */
+async function probeLeadsResearchedNeedingDraft(admin: SupabaseClient): Promise<number> {
+  // A count is enough for the decision; execution re-fetches the capped batch.
+  const pending = await harveyResearchedLeadsNeedingDraft(admin, 1000);
+  return pending.length;
+}
+
+// ─── server-to-server worker invocation (X-Internal-Cron) ────────────────────
+
+/**
+ * Invoke a sibling Harvey worker fn exactly like ai-employee-console's run_now
+ * proxies the controller: POST to ${SUPABASE_URL}/functions/v1/<fn> with the
+ * X-Internal-Cron: LIT_CRON_SECRET header. Returns a normalized result; NEVER
+ * throws (a failing worker call must not crash the controller heartbeat).
+ */
+async function invokeWorker(
+  fn: string,
+  bodyObj: Record<string, unknown>,
+): Promise<{ ok: boolean; status?: number; data?: Record<string, unknown>; error?: string }> {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const cronSecret = Deno.env.get("LIT_CRON_SECRET");
+  if (!supabaseUrl) return { ok: false, error: "SUPABASE_URL not configured" };
+  if (!cronSecret) return { ok: false, error: "LIT_CRON_SECRET not configured" };
+
+  const url = `${supabaseUrl}/functions/v1/${fn}`;
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Internal-Cron": cronSecret,
+      },
+      body: JSON.stringify(bodyObj),
+    });
+    if (res.status === 404) return { ok: false, status: 404, error: `${fn} not deployed` };
+    const data = await res.json().catch(() => ({} as Record<string, unknown>));
+    if (!res.ok || (data && (data as Record<string, unknown>).ok === false)) {
+      const errMsg = (data && typeof (data as Record<string, unknown>).error === "string")
+        ? String((data as Record<string, unknown>).error)
+        : `${fn} HTTP ${res.status}`;
+      return { ok: false, status: res.status, data, error: errMsg };
+    }
+    return { ok: true, status: res.status, data };
+  } catch (err) {
+    return { ok: false, error: `${fn} unreachable: ${String((err as Error)?.message ?? err)}` };
+  }
+}
+
 // ─── deterministic decision (NO LLM) ─────────────────────────────────────────
 
 function decide(counts: ProbeCounts): { priority: number; decision: string; reason: string } {
@@ -297,23 +447,31 @@ function decide(counts: ProbeCounts): { priority: number; decision: string; reas
       reason: `${counts.qualified_leads_needing_messaging} qualified New-stage lead(s) awaiting messaging`,
     };
   }
-  if (counts.active_harvey_campaigns > 0) {
+  if (counts.leads_researched_needing_draft > 0) {
     return {
       priority: 8,
+      decision: "draft_outreach",
+      reason:
+        `${counts.leads_researched_needing_draft} researched lead(s) with a brief but no draft yet`,
+    };
+  }
+  if (counts.active_harvey_campaigns > 0) {
+    return {
+      priority: 9,
       decision: "campaign_followups",
       reason: `${counts.active_harvey_campaigns} active Harvey campaign(s) to manage`,
     };
   }
   if (counts.harvey_prospect_inventory < counts.prospect_inventory_target) {
     return {
-      priority: 9,
+      priority: 10,
       decision: "prospect",
       reason:
         `Harvey-sourced inventory ${counts.harvey_prospect_inventory} below target ` +
         `${counts.prospect_inventory_target}`,
     };
   }
-  return { priority: 10, decision: "analyze", reason: "no higher-priority work; analyze pipeline" };
+  return { priority: 11, decision: "analyze", reason: "no higher-priority work; analyze pipeline" };
 }
 
 // ─── handler ─────────────────────────────────────────────────────────────────
@@ -455,6 +613,7 @@ Deno.serve(async (req: Request) => {
       dueOutreach,
       leadsNeedingResearch,
       qualifiedLeads,
+      researchedNeedingDraft,
       activeHarveyCampaigns,
       harveyInventory,
     ] = await Promise.all([
@@ -463,6 +622,7 @@ Deno.serve(async (req: Request) => {
       probeDueOutreach(admin, campaignIds),
       probeLeadsNeedingResearch(admin, newStageId),
       probeQualifiedLeads(admin, newStageId, minimumScore),
+      probeLeadsResearchedNeedingDraft(admin),
       probeActiveHarveyCampaigns(admin),
       probeHarveyInventory(admin),
     ]);
@@ -475,13 +635,138 @@ Deno.serve(async (req: Request) => {
       due_outreach: dueOutreach,
       leads_needing_research: leadsNeedingResearch,
       qualified_leads_needing_messaging: qualifiedLeads,
+      leads_researched_needing_draft: researchedNeedingDraft,
       active_harvey_campaigns: activeHarveyCampaigns,
       harvey_prospect_inventory: harveyInventory,
       prospect_inventory_target: targetInventory,
     };
 
-    // ── decide (deterministic) + record. Batch 2 execution = record ONLY. ───
+    // ── decide (deterministic) ──────────────────────────────────────────────
     const { priority, decision, reason } = decide(counts);
+
+    // ── execute the chosen action (behind the gates already passed above) ────
+    // The feature-flag, enabled, and quiet-hours gates all cleared before we got
+    // here (non-manual/test runs are skipped inside quiet hours), so any run that
+    // reaches this point is CLEARED to act. Only prospect / research_leads /
+    // draft_outreach dispatch today; other decisions still record-only. Every
+    // sub-call is wrapped so one failure can't crash the heartbeat — the error is
+    // recorded and the controller run still completes 'ok'.
+    const mode = typeof config.mode === "string" ? config.mode : "assisted";
+    const RESEARCH_BATCH = 5;
+    const DRAFT_BATCH = 5;
+    let executed = false;
+    const execution: Record<string, unknown> = {};
+
+    if (decision === "prospect") {
+      const shortfall = Math.max(0, counts.prospect_inventory_target - counts.harvey_prospect_inventory);
+      // harvey-prospect itself avoids paid spend in testMode, so we still call it.
+      const res = await invokeWorker("harvey-prospect", {
+        agent_name: CONFIG_KEY,
+        trigger_type: triggerType,
+        target: shortfall,
+        created_by: actorUserId,
+      });
+      if (res.ok) {
+        const data = res.data ?? {};
+        const leads = Array.isArray(data.leads) ? data.leads : [];
+        execution.prospect = {
+          requested: shortfall,
+          created: typeof data.created === "number" ? data.created : leads.length,
+          sourced: leads.length,
+          run_id: data.run_id ?? null,
+        };
+        executed = true;
+      } else {
+        execution.prospect = { error: res.error ?? "harvey-prospect failed", requested: shortfall };
+      }
+    } else if (decision === "research_leads") {
+      let leadIds: string[] = [];
+      try {
+        leadIds = await harveyLeadsNeedingResearch(admin, newStageId, RESEARCH_BATCH);
+      } catch (probeErr) {
+        execution.research = { error: `lead selection failed: ${String((probeErr as Error)?.message ?? probeErr)}` };
+      }
+      if (leadIds.length > 0) {
+        let researched = 0;
+        const failures: Array<{ lead_id: string; error: string }> = [];
+        for (const leadId of leadIds) {
+          const res = await invokeWorker("harvey-research", {
+            agent_name: CONFIG_KEY,
+            lead_id: leadId,
+            trigger_type: triggerType,
+          });
+          if (res.ok) researched += 1;
+          else failures.push({ lead_id: leadId, error: res.error ?? "harvey-research failed" });
+        }
+        execution.research = {
+          batch: leadIds.length,
+          researched,
+          failed: failures.length,
+          ...(failures.length ? { failures } : {}),
+        };
+        // executed if at least one research call succeeded.
+        if (researched > 0) executed = true;
+      } else if (!execution.research) {
+        execution.research = { batch: 0, researched: 0, note: "no un-researched Harvey leads found" };
+      }
+    } else if (decision === "draft_outreach") {
+      if (mode !== "autonomous") {
+        // In assisted/copilot, drafting is a human/task-initiated step, not an
+        // autonomous controller action. Skip with a reason (no send either way).
+        execution.draft_outreach = {
+          skipped: true,
+          reason: `mode '${mode}' — first-touch drafts are generated on human/task request, not autonomously`,
+        };
+      } else {
+        let batch: LeadBrief[] = [];
+        try {
+          batch = await harveyResearchedLeadsNeedingDraft(admin, DRAFT_BATCH);
+        } catch (probeErr) {
+          execution.draft_outreach = { error: `lead selection failed: ${String((probeErr as Error)?.message ?? probeErr)}` };
+        }
+        if (batch.length > 0) {
+          let drafted = 0;
+          const failures: Array<{ lead_id: string; error: string }> = [];
+          for (const item of batch) {
+            const brief = (item.brief ?? {}) as Record<string, unknown>;
+            const recommended = typeof brief.recommendedChannel === "string"
+              ? brief.recommendedChannel.toLowerCase()
+              : "email";
+            const channel = recommended === "linkedin" ? "linkedin" : "email";
+            const contact = (brief.contact && typeof brief.contact === "object")
+              ? brief.contact as Record<string, unknown>
+              : {};
+            const researchText = typeof brief.summary === "string"
+              ? brief.summary
+              : (typeof brief.research === "string" ? brief.research : null);
+            const res = await invokeWorker("harvey-writer", {
+              agent_name: CONFIG_KEY,
+              channel,
+              stage: "cold_outreach",
+              intent: "first_touch",
+              lead_id: item.lead_id,
+              contact,
+              research: researchText,
+              created_by: actorUserId,
+              trigger_type: triggerType,
+            });
+            if (res.ok) drafted += 1;
+            else failures.push({ lead_id: item.lead_id, error: res.error ?? "harvey-writer failed" });
+          }
+          execution.draft_outreach = {
+            batch: batch.length,
+            drafted,
+            failed: failures.length,
+            ...(failures.length ? { failures } : {}),
+          };
+          if (drafted > 0) executed = true;
+        } else if (!execution.draft_outreach) {
+          execution.draft_outreach = { batch: 0, drafted: 0, note: "no researched-but-undrafted Harvey leads found" };
+        }
+      }
+    }
+
+    // ── record exactly ONE run row summarizing the decision + execution ──────
     await completeAgentRun(admin, runId, {
       status: "ok",
       priority,
@@ -490,11 +775,12 @@ Deno.serve(async (req: Request) => {
       output_json: {
         counts,
         minimum_score: minimumScore,
-        // BATCH-3+: worker dispatch happens here. Batch 2 records only.
-        executed: false,
+        mode,
+        executed,
+        execution,
       },
     });
-    log.info("run_ok", { run_id: runId, decision, priority, trigger_type: triggerType });
+    log.info("run_ok", { run_id: runId, decision, priority, executed, trigger_type: triggerType });
 
     return json({
       ok: true,

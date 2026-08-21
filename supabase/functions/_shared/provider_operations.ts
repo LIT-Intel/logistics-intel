@@ -18,6 +18,12 @@ export const PROVIDER_OPERATIONS = {
   LANE_REFRESH: "lane_refresh",
   COMPANY_REFRESH: "company_refresh",
   CONTACT_ENRICHMENT: "contact_enrichment",
+  // Project Harvey (Batch 5) — internal SDR agent operations. Metered against
+  // the same providers (apollo) so Harvey's autonomous spend is attributable in
+  // the ledger. Add matching provider_pricing rows when priced.
+  PROSPECT: "harvey.prospect",
+  RESEARCH: "harvey.research",
+  QUALIFY: "harvey.qualify",
   OTHER: "other",
 } as const;
 

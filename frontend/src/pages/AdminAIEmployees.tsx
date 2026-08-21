@@ -46,6 +46,11 @@ import {
   Pencil,
   Save,
   Gauge,
+  Users,
+  Search,
+  X,
+  Building2,
+  Target,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
@@ -143,7 +148,66 @@ type RunControllerResult = {
   error?: string;
 };
 
-type TabKey = "overview" | "chat" | "drafts" | "tasks" | "activity" | "knowledge";
+type TabKey = "overview" | "chat" | "prospects" | "drafts" | "tasks" | "activity" | "knowledge";
+
+/* Prospects / Leads (backend contract) */
+
+type AgentLead = {
+  id: string;
+  full_name: string | null;
+  company_name: string | null;
+  title: string | null;
+  email: string | null;
+  stage: string | null;
+  status: string | null;
+  lead_score: number;
+  company_domain: string | null;
+  company_city: string | null;
+  company_state: string | null;
+  created_at: string | null;
+  has_research: boolean;
+  draft_count: number;
+};
+
+type LeadResearch = {
+  id: string;
+  brief_json: {
+    fitScore?: number;
+    fitReasons?: string[];
+    facts?: Array<{ fact: string; source: string }>;
+    recommendedAngle?: string | null;
+    likelyPain?: string | null;
+    recommendedChannel?: string | null;
+    recommendedCTA?: string | null;
+    riskFlags?: string[];
+    confidence?: number;
+    [k: string]: unknown;
+  } | null;
+  fit_score: number | null;
+  confidence: number | null;
+  recommended_channel: string | null;
+  recommended_cta: string | null;
+  risk_flags: string[] | null;
+  created_at: string | null;
+};
+
+type LeadDetail = {
+  ok: boolean;
+  lead: AgentLead & { company_country?: string | null; primary_source?: string | null };
+  research: LeadResearch | null;
+  drafts: AgentDraft[];
+};
+
+type ProspectResult = {
+  ok: boolean;
+  run_id?: string | null;
+  sourced?: number;
+  created?: number;
+  skipped?: number;
+  test_mode?: boolean;
+  leads?: Array<Record<string, unknown>>;
+  error?: string;
+};
 
 /* Drafts (backend contract) */
 
@@ -181,6 +245,16 @@ type AgentDraft = {
   created_at: string | null;
   edited_subject: string | null;
   edited_body: string | null;
+};
+
+/* Prefill handed from the Prospects tab to the Drafts tab. */
+type DraftPrefill = {
+  firstName?: string;
+  company?: string;
+  title?: string;
+  email?: string;
+  channel?: DraftChannel;
+  intent?: string;
 };
 
 /* ─────────────────────────── Helpers ──────────────────────────────────── */
@@ -575,6 +649,9 @@ function AgentDetailPane({
   const [err, setErr] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [tab, setTab] = useState<TabKey>("overview");
+  // When the Prospects tab hands a lead off to the Drafts tab, the contact +
+  // recommended channel/stage are prefilled here so the writer form opens ready.
+  const [draftPrefill, setDraftPrefill] = useState<DraftPrefill | null>(null);
 
   // Detail: {action:"detail", agent_name}
   useEffect(() => {
@@ -615,6 +692,7 @@ function AgentDetailPane({
   const TABS: Array<{ key: TabKey; label: string; icon: any }> = [
     { key: "overview", label: "Overview", icon: LayoutDashboard },
     { key: "chat", label: "Chat", icon: MessageSquare },
+    { key: "prospects", label: "Prospects", icon: Users },
     { key: "drafts", label: "Drafts", icon: PenLine },
     { key: "tasks", label: "Tasks", icon: ListChecks },
     { key: "activity", label: "Activity", icon: Activity },
@@ -709,8 +787,23 @@ function AgentDetailPane({
           <OverviewTab metrics={detail?.metrics ?? null} config={config} rosterItem={rosterItem} />
         ) : tab === "chat" ? (
           <ChatTab agentName={agentName} displayName={displayName} accent={accent} avatarUrl={avatarUrl} />
+        ) : tab === "prospects" ? (
+          <ProspectsTab
+            agentName={agentName}
+            displayName={displayName}
+            config={config}
+            onDraftLead={(prefill) => {
+              setDraftPrefill(prefill);
+              setTab("drafts");
+            }}
+          />
         ) : tab === "drafts" ? (
-          <DraftsTab agentName={agentName} displayName={displayName} />
+          <DraftsTab
+            agentName={agentName}
+            displayName={displayName}
+            prefill={draftPrefill}
+            onConsumePrefill={() => setDraftPrefill(null)}
+          />
         ) : tab === "tasks" ? (
           <TasksTab agentName={agentName} onChanged={refreshDetail} />
         ) : tab === "activity" ? (
@@ -1592,9 +1685,712 @@ function TasksTab({ agentName, onChanged }: { agentName: string; onChanged: () =
   );
 }
 
+/* ─────────────────────────── Prospects tab ───────────────────────────── */
+
+// Pipeline-stage → chip tone (names come from lit_lead_pipeline_stages).
+const STAGE_TONE: Record<string, { bg: string; text: string }> = {
+  New: { bg: "bg-slate-100", text: "text-slate-600" },
+  Contacted: { bg: "bg-blue-50", text: "text-blue-700" },
+  Engaged: { bg: "bg-indigo-50", text: "text-indigo-700" },
+  Trial: { bg: "bg-amber-50", text: "text-amber-700" },
+  Subscriber: { bg: "bg-emerald-50", text: "text-emerald-700" },
+  Lost: { bg: "bg-rose-50", text: "text-rose-600" },
+};
+
+function scoreTone(score: number): string {
+  if (score >= 70) return "bg-emerald-50 text-emerald-700 ring-emerald-200";
+  if (score >= 40) return "bg-amber-50 text-amber-700 ring-amber-200";
+  return "bg-slate-100 text-slate-600 ring-slate-200";
+}
+
+// Split a stored full_name into a first name for the draft contact.
+function firstNameOf(fullName: string | null): string {
+  if (!fullName) return "";
+  return fullName.trim().split(/\s+/)[0] ?? "";
+}
+
+function ProspectsTab({
+  agentName,
+  displayName,
+  config,
+  onDraftLead,
+}: {
+  agentName: string;
+  displayName: string;
+  config: AgentConfig;
+  onDraftLead: (prefill: DraftPrefill) => void;
+}) {
+  const [leads, setLeads] = useState<AgentLead[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+
+  // Source form.
+  const [count, setCount] = useState("");
+  const [keywords, setKeywords] = useState("");
+  const [location, setLocation] = useState("");
+  const [sourcing, setSourcing] = useState(false);
+  const [sourceResult, setSourceResult] = useState<ProspectResult | null>(null);
+
+  // Per-lead in-flight (research trigger).
+  const [busyLead, setBusyLead] = useState<string | null>(null);
+
+  // Detail drawer.
+  const [openLeadId, setOpenLeadId] = useState<string | null>(null);
+
+  const autonomous = config.mode === "autonomous";
+
+  const load = useCallback(async () => {
+    const data = await callConsole<{ ok: boolean; leads: AgentLead[] }>({
+      action: "list_leads",
+      agent_name: agentName,
+      limit: 50,
+    });
+    if (!data?.ok) throw new Error("Failed to load leads");
+    setLeads(data.leads ?? []);
+  }, [agentName]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setErr(null);
+    (async () => {
+      try {
+        await load();
+      } catch (e: any) {
+        if (!cancelled) setErr(e?.message || "Failed to load leads");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [load]);
+
+  const reload = useCallback(async () => {
+    try {
+      await load();
+    } catch (e: any) {
+      setErr(e?.message || "Failed to reload leads");
+    }
+  }, [load]);
+
+  // run_prospect: {action:"run_prospect", agent_name, target?}
+  const sourceProspects = useCallback(async () => {
+    if (sourcing) return;
+    setSourcing(true);
+    setErr(null);
+    setSourceResult(null);
+    try {
+      const target: Record<string, unknown> = {};
+      const n = parseInt(count, 10);
+      if (Number.isFinite(n) && n > 0) target.count = n;
+      const kw = keywords
+        .split(",")
+        .map((k) => k.trim())
+        .filter(Boolean);
+      if (kw.length) target.keywords = kw;
+      if (location.trim()) target.location = location.trim();
+
+      const data = await callConsole<ProspectResult>({
+        action: "run_prospect",
+        agent_name: agentName,
+        target,
+      });
+      if (!data?.ok) throw new Error(data?.error || "Sourcing failed");
+      setSourceResult(data);
+      await reload();
+    } catch (e: any) {
+      setErr(e?.message || "Sourcing failed");
+    } finally {
+      setSourcing(false);
+    }
+  }, [sourcing, count, keywords, location, agentName, reload]);
+
+  // run_research: {action:"run_research", agent_name, lead_id}
+  const research = useCallback(
+    async (leadId: string) => {
+      setBusyLead(leadId);
+      setErr(null);
+      try {
+        const data = await callConsole<{ ok: boolean; error?: string }>({
+          action: "run_research",
+          agent_name: agentName,
+          lead_id: leadId,
+        });
+        if (!data?.ok) throw new Error(data?.error || "Research failed");
+        await reload();
+      } catch (e: any) {
+        setErr(e?.message || "Research failed");
+      } finally {
+        setBusyLead(null);
+      }
+    },
+    [agentName, reload],
+  );
+
+  const draftFromLead = useCallback(
+    (lead: AgentLead, channel?: DraftChannel) => {
+      onDraftLead({
+        firstName: firstNameOf(lead.full_name),
+        company: lead.company_name ?? "",
+        title: lead.title ?? "",
+        email: lead.email ?? "",
+        channel,
+      });
+    },
+    [onDraftLead],
+  );
+
+  return (
+    <div className="space-y-5">
+      {/* Header row */}
+      <div className="rounded-xl border border-slate-200 bg-slate-50/40 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-start gap-2">
+            <Target className="mt-0.5 h-4 w-4 text-blue-600" aria-hidden />
+            <div>
+              <div className="font-display text-[13px] font-semibold text-slate-800">
+                Source prospects
+              </div>
+              <div className="mt-0.5 text-[12px] text-slate-500">
+                {displayName} builds a freight-sales lead list (brokers / forwarders / 3PLs).
+                {autonomous
+                  ? " Harvey drafts these automatically."
+                  : " Harvey drafts on request; you approve before send."}
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={sourceProspects}
+            disabled={sourcing}
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 text-[13px] font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
+          >
+            {sourcing ? (
+              <>
+                <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                Sourcing…
+              </>
+            ) : (
+              <>
+                <Search className="h-3.5 w-3.5" aria-hidden />
+                Source prospects
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* Optional target inputs */}
+        <div className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+          <input
+            value={count}
+            onChange={(e) => setCount(e.target.value.replace(/[^0-9]/g, ""))}
+            disabled={sourcing}
+            inputMode="numeric"
+            placeholder="Count (default)"
+            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-800 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:opacity-50"
+          />
+          <input
+            value={keywords}
+            onChange={(e) => setKeywords(e.target.value)}
+            disabled={sourcing}
+            placeholder="Keywords (comma-separated)"
+            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-800 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:opacity-50"
+          />
+          <input
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+            disabled={sourcing}
+            placeholder="Location"
+            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-800 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:opacity-50"
+          />
+        </div>
+
+        {sourcing && (
+          <div className="mt-2 text-[11.5px] text-slate-400">
+            Live sourcing can take a while, especially the paid Apollo path — hang tight.
+          </div>
+        )}
+
+        {/* Result strip */}
+        {sourceResult && (
+          <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-[12.5px] text-emerald-900">
+            <div className="flex flex-wrap items-center gap-2">
+              <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600" aria-hidden />
+              <span className="font-semibold">
+                {sourceResult.created ?? 0} new · {sourceResult.sourced ?? 0} found ·{" "}
+                {sourceResult.skipped ?? 0} skipped
+              </span>
+              {sourceResult.test_mode && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-[0.06em] text-amber-800 ring-1 ring-amber-200">
+                  <FlaskConical className="h-3 w-3" aria-hidden />
+                  Test mode — internal only
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {err && (
+        <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[12.5px] text-amber-800">
+          <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+          <span>{err}</span>
+        </div>
+      )}
+
+      {/* Leads table */}
+      {loading ? (
+        <div className="py-10 text-center">
+          <div className="mx-auto h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600" />
+        </div>
+      ) : leads.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-200 py-12 text-center">
+          <Users className="mx-auto h-7 w-7 text-slate-300" aria-hidden />
+          <div className="mt-2 text-[14px] font-semibold text-slate-700">No prospects yet</div>
+          <p className="mx-auto mt-1 max-w-md text-[12.5px] text-slate-500">
+            Click <b>Source prospects</b> to have {displayName} build a freight-sales lead list.
+          </p>
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-xl border border-slate-200">
+          <table className="w-full border-collapse text-[12.5px]">
+            <thead className="bg-slate-50/70 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">
+              <tr>
+                <th className="px-3 py-2.5 text-left">Name</th>
+                <th className="px-3 py-2.5 text-left">Company</th>
+                <th className="px-3 py-2.5 text-left">Stage</th>
+                <th className="px-3 py-2.5 text-left">Score</th>
+                <th className="px-3 py-2.5 text-left">Research</th>
+                <th className="px-3 py-2.5 text-left">Drafts</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {leads.map((l) => {
+                const stageTone = (l.stage && STAGE_TONE[l.stage]) || {
+                  bg: "bg-slate-100",
+                  text: "text-slate-600",
+                };
+                const loc = [l.company_city, l.company_state].filter(Boolean).join(", ");
+                return (
+                  <tr
+                    key={l.id}
+                    className="cursor-pointer hover:bg-slate-50/60"
+                    onClick={() => setOpenLeadId(l.id)}
+                  >
+                    <td className="px-3 py-2.5 align-top">
+                      <div className="font-semibold text-slate-900">{l.full_name || "—"}</div>
+                      <div className="text-[11.5px] text-slate-500">{l.title || "—"}</div>
+                    </td>
+                    <td className="px-3 py-2.5 align-top">
+                      <div className="font-medium text-slate-800">{l.company_name || "—"}</div>
+                      <div className="text-[11px] text-slate-400">
+                        {l.company_domain || loc || "—"}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2.5 align-top">
+                      <span
+                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] ${stageTone.bg} ${stageTone.text}`}
+                      >
+                        {l.stage || "—"}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 align-top">
+                      <span
+                        className={`inline-flex items-center rounded-full px-2 py-0.5 font-mono text-[11px] font-bold ring-1 ${scoreTone(l.lead_score)}`}
+                      >
+                        {l.lead_score}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 align-top" onClick={(e) => e.stopPropagation()}>
+                      {l.has_research ? (
+                        <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-emerald-700">
+                          <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
+                          Done
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={busyLead === l.id}
+                          onClick={() => research(l.id)}
+                          className="inline-flex h-7 items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 text-[11.5px] font-semibold text-blue-700 transition hover:bg-blue-100 disabled:opacity-50"
+                        >
+                          {busyLead === l.id ? (
+                            <div className="h-3 w-3 animate-spin rounded-full border-2 border-blue-300 border-t-blue-600" />
+                          ) : (
+                            <Sparkles className="h-3 w-3" aria-hidden />
+                          )}
+                          Research
+                        </button>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5 align-top" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center gap-2">
+                        {l.draft_count > 0 && (
+                          <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 font-mono text-[10.5px] text-slate-600">
+                            {l.draft_count}
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => draftFromLead(l)}
+                          className="inline-flex h-7 items-center gap-1 rounded-md border border-slate-200 bg-white px-2 text-[11.5px] font-semibold text-slate-700 transition hover:bg-slate-50"
+                        >
+                          <PenLine className="h-3 w-3" aria-hidden />
+                          Draft
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Detail drawer */}
+      {openLeadId && (
+        <ProspectDrawer
+          leadId={openLeadId}
+          agentName={agentName}
+          onClose={() => setOpenLeadId(null)}
+          onResearched={reload}
+          onDraft={(prefill) => {
+            setOpenLeadId(null);
+            onDraftLead(prefill);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ProspectDrawer({
+  leadId,
+  agentName,
+  onClose,
+  onResearched,
+  onDraft,
+}: {
+  leadId: string;
+  agentName: string;
+  onClose: () => void;
+  onResearched: () => void;
+  onDraft: (prefill: DraftPrefill) => void;
+}) {
+  const [detail, setDetail] = useState<LeadDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const data = await callConsole<LeadDetail>({ action: "lead_detail", lead_id: leadId });
+    if (!data?.ok) throw new Error("Failed to load lead");
+    setDetail(data);
+  }, [leadId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setErr(null);
+    (async () => {
+      try {
+        await load();
+      } catch (e: any) {
+        if (!cancelled) setErr(e?.message || "Failed to load lead");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [load]);
+
+  const runResearch = useCallback(async () => {
+    setBusy("research");
+    setErr(null);
+    try {
+      const data = await callConsole<{ ok: boolean; error?: string }>({
+        action: "run_research",
+        agent_name: agentName,
+        lead_id: leadId,
+      });
+      if (!data?.ok) throw new Error(data?.error || "Research failed");
+      await load();
+      onResearched();
+    } catch (e: any) {
+      setErr(e?.message || "Research failed");
+    } finally {
+      setBusy(null);
+    }
+  }, [agentName, leadId, load, onResearched]);
+
+  const lead = detail?.lead;
+  const research = detail?.research;
+  const brief = research?.brief_json ?? null;
+  const drafts = detail?.drafts ?? [];
+
+  const recChannel: DraftChannel | undefined =
+    research?.recommended_channel === "linkedin"
+      ? "linkedin"
+      : research?.recommended_channel === "email"
+        ? "email"
+        : (brief?.recommendedChannel === "linkedin" ? "linkedin" : brief?.recommendedChannel === "email" ? "email" : undefined);
+
+  const generateDraft = () => {
+    if (!lead) return;
+    onDraft({
+      firstName: firstNameOf(lead.full_name),
+      company: lead.company_name ?? "",
+      title: lead.title ?? "",
+      email: lead.email ?? "",
+      channel: recChannel,
+      intent: research?.recommended_cta ?? brief?.recommendedCTA ?? "",
+    });
+  };
+
+  const fitScore = research?.fit_score ?? brief?.fitScore ?? null;
+  const riskFlags = research?.risk_flags ?? brief?.riskFlags ?? [];
+
+  return (
+    <div className="fixed inset-0 z-[80] flex justify-end bg-slate-900/40" role="dialog" aria-modal="true">
+      <div className="flex h-full w-full max-w-lg flex-col overflow-hidden bg-white shadow-xl">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-5">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <Building2 className="h-4 w-4 shrink-0 text-blue-600" aria-hidden />
+              <h3 className="truncate font-display text-[17px] font-semibold text-slate-900">
+                {lead?.full_name || "Lead"}
+              </h3>
+            </div>
+            <div className="mt-0.5 text-[12.5px] text-slate-500">
+              {[lead?.title, lead?.company_name].filter(Boolean).join(" · ") || "—"}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" aria-hidden />
+          </button>
+        </div>
+
+        <div className="flex-1 space-y-5 overflow-y-auto p-5">
+          {loading ? (
+            <div className="py-10 text-center">
+              <div className="mx-auto h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600" />
+            </div>
+          ) : (
+            <>
+              {err && (
+                <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[12.5px] text-amber-800">
+                  <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                  <span>{err}</span>
+                </div>
+              )}
+
+              {/* Lead facts */}
+              {lead && (
+                <div className="rounded-xl border border-slate-200 bg-slate-50/40 p-4">
+                  <dl className="grid grid-cols-1 gap-x-8 gap-y-2.5 sm:grid-cols-2">
+                    <ConfigRow label="Stage" value={lead.stage ?? "—"} />
+                    <ConfigRow label="Status" value={lead.status ?? "—"} />
+                    <ConfigRow label="Score" value={String(lead.lead_score ?? 0)} />
+                    <ConfigRow label="Email" value={lead.email ?? "—"} mono />
+                    <ConfigRow label="Domain" value={lead.company_domain ?? "—"} mono />
+                    <ConfigRow
+                      label="Location"
+                      value={
+                        [lead.company_city, lead.company_state, lead.company_country]
+                          .filter(Boolean)
+                          .join(", ") || "—"
+                      }
+                    />
+                  </dl>
+                </div>
+              )}
+
+              {/* Research brief */}
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                    Research brief
+                  </div>
+                  <button
+                    type="button"
+                    onClick={runResearch}
+                    disabled={busy === "research"}
+                    className="inline-flex h-7 items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2.5 text-[11.5px] font-semibold text-blue-700 transition hover:bg-blue-100 disabled:opacity-50"
+                  >
+                    {busy === "research" ? (
+                      <div className="h-3 w-3 animate-spin rounded-full border-2 border-blue-300 border-t-blue-600" />
+                    ) : (
+                      <Sparkles className="h-3 w-3" aria-hidden />
+                    )}
+                    {research ? "Re-research" : "Research now"}
+                  </button>
+                </div>
+
+                {!research ? (
+                  <div className="rounded-xl border border-dashed border-slate-200 py-6 text-center text-[12.5px] text-slate-500">
+                    No research yet. Click <b>Research now</b> to build a brief.
+                  </div>
+                ) : (
+                  <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {fitScore !== null && (
+                        <span
+                          className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11.5px] font-bold ring-1 ${scoreTone(fitScore)}`}
+                        >
+                          Fit {fitScore}
+                        </span>
+                      )}
+                      {recChannel && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-0.5 text-[11.5px] font-semibold text-blue-700 ring-1 ring-blue-100">
+                          {recChannel === "email" ? <Mail className="h-3 w-3" /> : <Linkedin className="h-3 w-3" />}
+                          {recChannel}
+                        </span>
+                      )}
+                      {typeof research.confidence === "number" && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-2.5 py-0.5 text-[11.5px] font-semibold text-slate-600 ring-1 ring-slate-200">
+                          <Gauge className="h-3 w-3 text-slate-400" aria-hidden />
+                          {Math.round((research.confidence <= 1 ? research.confidence * 100 : research.confidence))}%
+                        </span>
+                      )}
+                    </div>
+
+                    {brief?.recommendedAngle && (
+                      <BriefRow label="Angle" value={brief.recommendedAngle} />
+                    )}
+                    {brief?.likelyPain && <BriefRow label="Likely pain" value={brief.likelyPain} />}
+                    {(research.recommended_cta || brief?.recommendedCTA) && (
+                      <BriefRow label="Recommended CTA" value={research.recommended_cta ?? brief?.recommendedCTA ?? ""} />
+                    )}
+
+                    {Array.isArray(brief?.facts) && brief!.facts!.length > 0 && (
+                      <div>
+                        <div className="mb-1 text-[10.5px] font-bold uppercase tracking-[0.1em] text-slate-400">
+                          Facts
+                        </div>
+                        <ul className="space-y-1">
+                          {brief!.facts!.map((f, i) => (
+                            <li key={i} className="flex gap-1.5 text-[12.5px] text-slate-700">
+                              <span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-slate-400" aria-hidden />
+                              <span>
+                                {f.fact}
+                                {f.source && (
+                                  <span className="ml-1 text-[11px] text-slate-400">({f.source})</span>
+                                )}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {Array.isArray(riskFlags) && riskFlags.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {riskFlags.map((r, i) => (
+                          <span
+                            key={i}
+                            className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 ring-1 ring-amber-200"
+                          >
+                            <AlertCircle className="h-3 w-3" aria-hidden />
+                            {r}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Drafts for this lead */}
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                    Drafts ({drafts.length})
+                  </div>
+                  <button
+                    type="button"
+                    onClick={generateDraft}
+                    className="inline-flex h-7 items-center gap-1 rounded-md bg-blue-600 px-2.5 text-[11.5px] font-semibold text-white transition hover:bg-blue-700"
+                  >
+                    <PenLine className="h-3 w-3" aria-hidden />
+                    Generate draft
+                  </button>
+                </div>
+                {drafts.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-slate-200 py-5 text-center text-[12.5px] text-slate-500">
+                    No drafts for this lead yet.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {drafts.map((d) => {
+                      const dtone = DRAFT_STATUS_TONE[d.status] ?? DRAFT_STATUS_TONE.draft;
+                      return (
+                        <div key={d.id} className="rounded-lg border border-slate-200 bg-white p-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] text-slate-600">
+                              {d.channel === "email" ? <Mail className="h-3 w-3" /> : <Linkedin className="h-3 w-3" />}
+                              {d.channel}
+                            </span>
+                            <span
+                              className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] ring-1 ${dtone.bg} ${dtone.text} ${dtone.ring}`}
+                            >
+                              {dtone.label}
+                            </span>
+                          </div>
+                          {d.channel === "email" && (d.edited_subject ?? d.subject) && (
+                            <div className="mt-2 text-[13px] font-bold text-slate-900">
+                              {d.edited_subject ?? d.subject}
+                            </div>
+                          )}
+                          <div className="mt-1 line-clamp-3 whitespace-pre-wrap text-[12px] leading-relaxed text-slate-600">
+                            {d.edited_body ?? d.body}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BriefRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-slate-400">{label}</div>
+      <div className="mt-0.5 whitespace-pre-wrap text-[12.5px] leading-relaxed text-slate-700">{value}</div>
+    </div>
+  );
+}
+
 /* ─────────────────────────── Drafts tab ──────────────────────────────── */
 
-function DraftsTab({ agentName, displayName }: { agentName: string; displayName: string }) {
+function DraftsTab({
+  agentName,
+  displayName,
+  prefill,
+  onConsumePrefill,
+}: {
+  agentName: string;
+  displayName: string;
+  prefill?: DraftPrefill | null;
+  onConsumePrefill?: () => void;
+}) {
   const [drafts, setDrafts] = useState<AgentDraft[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -1611,6 +2407,21 @@ function DraftsTab({ agentName, displayName }: { agentName: string; displayName:
   const [generating, setGenerating] = useState(false);
 
   const [busyDraft, setBusyDraft] = useState<string | null>(null);
+
+  // Apply a lead hand-off from the Prospects tab: prefill the contact + the
+  // research-recommended channel, then clear the hand-off so a later manual
+  // edit is not overwritten on re-render.
+  useEffect(() => {
+    if (!prefill) return;
+    if (prefill.firstName !== undefined) setFirstName(prefill.firstName ?? "");
+    if (prefill.company !== undefined) setCompany(prefill.company ?? "");
+    if (prefill.title !== undefined) setTitle(prefill.title ?? "");
+    if (prefill.email !== undefined) setEmail(prefill.email ?? "");
+    if (prefill.channel === "email" || prefill.channel === "linkedin") setChannel(prefill.channel);
+    if (prefill.intent !== undefined) setIntent(prefill.intent ?? "");
+    onConsumePrefill?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefill]);
 
   // list_drafts: {action:"list_drafts", agent_name, status?}
   useEffect(() => {

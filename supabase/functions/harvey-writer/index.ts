@@ -87,13 +87,25 @@ type ParsedDraft = {
   requires_approval: boolean;
 };
 
-// Topics that force human approval regardless of mode (config.approval matrix).
-const APPROVAL_SENSITIVE = ["pricing", "enterprise", "legal", "security"];
+// Categories that ALWAYS force human approval (mapped from config.approval).
+// If config.approval[topic] is explicitly false, that category is de-escalated;
+// any other value (true or unset) keeps it sensitive when the draft matches.
+const APPROVAL_SENSITIVE = ["pricing", "enterprise", "legal", "security", "billing"];
 
-/** Whether this stage/intent touches a sensitive approval topic. */
-function touchesSensitiveTopic(stage: string | null, intent: string | null, config: AgentConfig): boolean {
-  const hay = `${stage ?? ""} ${intent ?? ""}`.toLowerCase();
+/**
+ * Whether this stage/intent touches a sensitive approval topic — pricing,
+ * enterprise, legal, security, billing, or an 'unknown' stage/intent. Sensitive
+ * drafts ALWAYS require human approval regardless of mode.
+ */
+function isSensitive(stage: string | null, intent: string | null, config: AgentConfig): boolean {
+  const rawStage = (stage ?? "").trim().toLowerCase();
+  const rawIntent = (intent ?? "").trim().toLowerCase();
+  const hay = `${rawStage} ${rawIntent}`;
   const approval = (config.approval ?? {}) as Record<string, boolean>;
+
+  // Missing / 'unknown' classification → treat as sensitive (fail safe).
+  if (rawStage === "unknown" || rawIntent === "unknown") return true;
+
   for (const topic of APPROVAL_SENSITIVE) {
     if (hay.includes(topic) && approval[topic] !== false) return true;
   }
@@ -102,15 +114,81 @@ function touchesSensitiveTopic(stage: string | null, intent: string | null, conf
   return false;
 }
 
+/** Whether this draft is a cold first-touch (no prior relationship). */
+function isColdFirstTouch(stage: string | null, intent: string | null): boolean {
+  const hay = `${stage ?? ""} ${intent ?? ""}`.toLowerCase();
+  return hay.includes("cold") || hay.includes("first") || hay.includes("first_touch") ||
+    hay.includes("first-touch");
+}
+
+interface ApprovalDecision {
+  requires_approval: boolean;
+  mode: string;
+  sensitive: boolean;
+  firstTouch: boolean;
+  reason: string;
+}
+
 /**
- * Decide requires_approval. For this batch it is effectively always true:
- * anything but a fully autonomous mode requires approval, and sensitive topics
- * always require it even in autonomous mode.
+ * Mode-driven approval decision. This is the real autonomy switch:
+ *
+ *   • copilot     → ALWAYS requires approval (human sends everything).
+ *   • assisted    → requires approval (this phase keeps humans on outbound
+ *                   sends), and sensitive is of course still true.
+ *   • autonomous  → auto-approved (requires_approval=false) for non-sensitive
+ *                   drafts, UNLESS the draft is sensitive OR it's a cold
+ *                   first-touch and config.approval.firstTouch is on.
+ *
+ * Sensitive ALWAYS forces requires_approval=true regardless of mode.
  */
-function computeRequiresApproval(config: AgentConfig, stage: string | null, intent: string | null): boolean {
+function decideApproval(config: AgentConfig, stage: string | null, intent: string | null): ApprovalDecision {
   const mode = typeof config.mode === "string" ? config.mode : "assisted";
-  if (mode !== "autonomous") return true;
-  return touchesSensitiveTopic(stage, intent, config);
+  const sensitive = isSensitive(stage, intent, config);
+  const approval = (config.approval ?? {}) as Record<string, boolean>;
+  const firstTouchGate = approval.firstTouch === true;
+  const coldFirstTouch = isColdFirstTouch(stage, intent);
+  const firstTouch = firstTouchGate && coldFirstTouch;
+
+  // Sensitive always escalates — short-circuit before any mode relaxation.
+  if (sensitive) {
+    return {
+      requires_approval: true,
+      mode,
+      sensitive: true,
+      firstTouch,
+      reason: `sensitive category (pricing/enterprise/legal/security/billing/unknown) always requires approval`,
+    };
+  }
+
+  if (mode === "autonomous") {
+    if (firstTouch) {
+      return {
+        requires_approval: true,
+        mode,
+        sensitive: false,
+        firstTouch: true,
+        reason: "autonomous but config.approval.firstTouch requires human sign-off on cold first-touch",
+      };
+    }
+    return {
+      requires_approval: false,
+      mode,
+      sensitive: false,
+      firstTouch: false,
+      reason: "autonomous mode, non-sensitive, not a gated first-touch — auto-approved",
+    };
+  }
+
+  // copilot / assisted (and any unknown mode) → human approval this phase.
+  return {
+    requires_approval: true,
+    mode,
+    sensitive: false,
+    firstTouch,
+    reason: mode === "copilot"
+      ? "copilot mode — human sends everything"
+      : "assisted mode — human approves outbound sends this phase",
+  };
 }
 
 /** Strip ```json fences / prose and parse the first JSON object found. */
@@ -344,7 +422,8 @@ Deno.serve(async (req: Request) => {
       ? meeting.calendarLink.trim()
       : null;
 
-    const requiresApproval = computeRequiresApproval(config, input.stage, input.intent);
+    const approvalDecision = decideApproval(config, input.stage, input.intent);
+    const requiresApproval = approvalDecision.requires_approval;
 
     // ── open the run before the LLM call so an error still has a run id ──────
     runId = await recordAgentRun(admin, {
@@ -432,7 +511,22 @@ Deno.serve(async (req: Request) => {
     }
 
     // Never trust the model to relax approval; OR with the config-derived value.
+    // If the config decision says approval IS required, that always wins. If the
+    // config decision cleared it (autonomous, non-sensitive), still honor a model
+    // that flags approval — the model may only raise the bar, never lower it.
     const finalRequiresApproval = requiresApproval || parsed.requires_approval;
+    // A parse fallback is low-confidence raw text — never auto-approve it.
+    const autoApproved = !finalRequiresApproval && !usedFallback;
+    // pending_approval when a human must sign off; approved = auto-approved and
+    // ready for the FUTURE dispatcher. NOTHING is sent here.
+    const draftStatus = autoApproved ? "approved" : "pending_approval";
+    // The rationale the config produced may have cleared approval that the model
+    // then re-raised; capture whichever reason is truthful.
+    const approvalReason = finalRequiresApproval && !requiresApproval
+      ? "model raised requires_approval on an otherwise-cleared draft"
+      : (usedFallback && !requiresApproval
+        ? "parse fallback — low-confidence raw text held for approval"
+        : approvalDecision.reason);
     // LinkedIn never carries a subject.
     const subject = input.channel === "linkedin" ? null : parsed.subject;
     const confidence = usedFallback ? 0 : parsed.confidence;
@@ -453,7 +547,7 @@ Deno.serve(async (req: Request) => {
         angle: parsed.angle,
         facts_used: parsed.facts_used,
         confidence,
-        status: "pending_approval",
+        status: draftStatus,
         requires_approval: finalRequiresApproval,
         created_by: input.created_by,
         metadata_json: {
@@ -461,6 +555,15 @@ Deno.serve(async (req: Request) => {
           test_mode: testMode,
           parse_fallback: usedFallback,
           request_id: rid,
+          auto_approved: autoApproved,
+          ...(autoApproved ? { auto_approved_reason: approvalReason } : {}),
+          approval: {
+            mode: approvalDecision.mode,
+            sensitive: approvalDecision.sensitive,
+            firstTouch: approvalDecision.firstTouch,
+            requires_approval: finalRequiresApproval,
+            reason: approvalReason,
+          },
         },
       })
       .select("id")
@@ -480,9 +583,22 @@ Deno.serve(async (req: Request) => {
         confidence,
         template_key: topTemplateKey,
         parse_fallback: usedFallback,
+        status: draftStatus,
+        requires_approval: finalRequiresApproval,
+        auto_approved: autoApproved,
+        mode: approvalDecision.mode,
+        sensitive: approvalDecision.sensitive,
       },
     });
-    log.info("run_ok", { run_id: runId, draft_id: draftId, channel: input.channel, confidence });
+    log.info("run_ok", {
+      run_id: runId,
+      draft_id: draftId,
+      channel: input.channel,
+      confidence,
+      status: draftStatus,
+      requires_approval: finalRequiresApproval,
+      auto_approved: autoApproved,
+    });
 
     return json({
       ok: true,
@@ -495,6 +611,7 @@ Deno.serve(async (req: Request) => {
         facts_used: parsed.facts_used,
         confidence,
         requires_approval: finalRequiresApproval,
+        status: draftStatus,
         template_key: topTemplateKey,
       },
     });
