@@ -215,6 +215,74 @@ async function sendGmail(args: {
   }
 }
 
+// ─── lifecycle (trial-nurture) helpers ───────────────────────────────────────
+// A draft written by harvey-nurture carries metadata_json.lifecycle:
+//   { user_id, stage, event_type, campaign:'lifecycle', deep_link }
+// For those drafts we (a) re-check the user has NOT upgraded since the draft was
+// written (an UPGRADE-STOP), and (b) after a REAL send, record the send in the
+// cross-engine dedup ledger (lit_lifecycle_sends) via lit_lifecycle_record_send
+// so the old lifecycle drip engine won't double-send.
+
+interface LifecycleMeta {
+  user_id: string;
+  stage: string;
+  event_type: string | null;
+  campaign: string;
+}
+
+/** Extract a well-formed lifecycle payload from a draft, or null when the draft
+ *  is not a lifecycle nurture send. Requires a user_id + stage to be actionable. */
+function lifecycleOf(draft: DraftRow): LifecycleMeta | null {
+  const lc = (draft.metadata_json as Record<string, unknown> | null)?.lifecycle;
+  if (!lc || typeof lc !== "object") return null;
+  const rec = lc as Record<string, unknown>;
+  const user_id = typeof rec.user_id === "string" ? rec.user_id.trim() : "";
+  const stage = typeof rec.stage === "string" ? rec.stage.trim() : "";
+  if (!user_id || !stage) return null;
+  return {
+    user_id,
+    stage,
+    event_type: typeof rec.event_type === "string" ? rec.event_type : null,
+    campaign: typeof rec.campaign === "string" && rec.campaign.trim() ? rec.campaign.trim() : "lifecycle",
+  };
+}
+
+/**
+ * UPGRADE-STOP. Returns true when a lifecycle draft's user has upgraded (or is
+ * otherwise no longer a nurture target) SINCE the draft was written, so we must
+ * SKIP the send. Two independent signals (either one stops the send):
+ *   1. The user is NO LONGER present in lit_lifecycle_user_stages — that view
+ *      excludes converted-paid users, so absence means they converted (or were
+ *      suspended/banned/became internal).
+ *   2. Their subscription is now paid/active (defense-in-depth, in case the view
+ *      lags): a subscriptions row with a paid-ish status.
+ */
+async function lifecycleUserUpgraded(
+  admin: SupabaseClient,
+  userId: string,
+): Promise<boolean> {
+  // Signal 1 — gone from the not-upgraded stage view.
+  const { data: stageRow, error: stageErr } = await admin
+    .from("lit_lifecycle_user_stages")
+    .select("user_id")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (!stageErr && !stageRow) return true; // no longer a nurture target → upgraded/converted
+
+  // Signal 2 — an active/paid subscription (best-effort; a query error does not
+  // count as "upgraded" so we never wrongly SUPPRESS a legitimate nurture).
+  const { data: subRow } = await admin
+    .from("subscriptions")
+    .select("status")
+    .eq("user_id", userId)
+    .in("status", ["active", "trialing_paid", "paid", "past_due"])
+    .limit(1)
+    .maybeSingle();
+  if (subRow) return true;
+
+  return false;
+}
+
 // ─── per-draft gate helpers ──────────────────────────────────────────────────
 
 /** Resolve recipient email for a draft: lit_admin_leads.email, else contact_json.email. */
@@ -254,14 +322,18 @@ async function resolveRecipient(
 }
 
 /** Suppression gate — reuse send-campaign-email's RPC + legacy-table fallback. */
-async function isSuppressed(admin: SupabaseClient, email: string): Promise<string | null> {
+async function isSuppressed(admin: SupabaseClient, email: string, allowConverted = false): Promise<string | null> {
   try {
     const { data: rpcRow } = await admin.rpc("lit_email_suppression_status", { p_email: email });
     const supp = Array.isArray(rpcRow) ? rpcRow[0] : rpcRow;
     if (supp?.unsubscribed) return "unsubscribed";
     if (supp?.bounced) return "bounced";
     if (supp?.complained) return "complained";
-    if (supp?.converted) return "converted";
+    // `converted` = the address already has a LIT profile. That correctly blocks
+    // COLD prospecting (never cold-email an existing user), but must NOT block a
+    // test send or a trial-nurture send — those recipients are account-holders by
+    // design. Callers pass allowConverted=true for those.
+    if (supp?.converted && !allowConverted) return "converted";
   } catch (_e) {
     // Fall through to legacy table check.
   }
@@ -539,8 +611,14 @@ Deno.serve(async (req: Request) => {
           summary.skipped += 1; bumpReason(`stage_${stageName}`); continue;
         }
 
-        // Gate: suppression list.
-        const suppressed = await isSuppressed(admin, email);
+        // Gate: suppression list. `converted` (recipient already has a LIT
+        // profile) blocks cold prospecting only — a test send or trial-nurture
+        // send legitimately targets account-holders, so allow converted there.
+        const isTestDraft = Boolean(
+          (draft.metadata_json as Record<string, unknown> | null)?.test_send,
+        );
+        const allowConverted = isTestDraft || lifecycleOf(draft) !== null;
+        const suppressed = await isSuppressed(admin, email, allowConverted);
         if (suppressed) {
           await logSkip(admin, draft, `suppressed:${suppressed}`);
           summary.skipped += 1; bumpReason(`suppressed_${suppressed}`); continue;
@@ -550,6 +628,15 @@ Deno.serve(async (req: Request) => {
         if (await hasReplied(admin, email, mailboxIds)) {
           await logSkip(admin, draft, "stop_on_reply");
           summary.skipped += 1; bumpReason("stop_on_reply"); continue;
+        }
+
+        // Gate (lifecycle only): UPGRADE-STOP — a trial-nurture draft must not
+        // send if the user has upgraded/converted since the draft was written.
+        // Non-lifecycle drafts (lifecycle === null) skip this entirely.
+        const lifecycle = lifecycleOf(draft);
+        if (lifecycle && (await lifecycleUserUpgraded(admin, lifecycle.user_id))) {
+          await logSkip(admin, draft, "user_upgraded");
+          summary.skipped += 1; bumpReason("user_upgraded"); continue;
         }
 
         // ── IDEMPOTENCY: claim the draft BEFORE sending. The UNIQUE(draft_id)
@@ -651,6 +738,27 @@ Deno.serve(async (req: Request) => {
           .update({ provider_message_id: sendRes.messageId, sent_at: new Date().toISOString() })
           .eq("id", logId);
         await finalizeDraftSent(admin, draft, { messageId: sendRes.messageId, dryRun: false, senderUserId: sender.user_id });
+
+        // Lifecycle cross-engine dedup: after a REAL send of a trial-nurture
+        // draft, record it in lit_lifecycle_sends so the old lifecycle drip
+        // won't double-send this user for this (stage, campaign). Best-effort:
+        // a recording hiccup NEVER fails or un-does the send that already went out.
+        if (lifecycle) {
+          try {
+            await admin.rpc("lit_lifecycle_record_send", {
+              p_user: lifecycle.user_id,
+              p_stage: lifecycle.stage,
+              p_campaign: lifecycle.campaign,
+              p_event_type: lifecycle.event_type,
+            });
+          } catch (recErr) {
+            log.warn("lifecycle_record_send_failed", {
+              draft_id: draft.id, user_id: lifecycle.user_id, stage: lifecycle.stage,
+              err: recErr instanceof Error ? recErr.message : String(recErr),
+            });
+          }
+        }
+
         sentSoFar += 1;
         summary.sent += 1;
       } catch (perDraftErr) {

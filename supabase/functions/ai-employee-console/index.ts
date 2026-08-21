@@ -981,6 +981,179 @@ async function actionSendTestEmail(
   return { ok: true, dispatch, draft_id: draftId };
 }
 
+// ─── Trial-Nurture actions (Project Harvey lifecycle) ────────────────────────
+// list_trials -> per-stage segment counts + a page of not-upgraded trial users
+//                (from lit_lifecycle_user_stages), decorated with names, whether
+//                they've already been nurtured for their CURRENT stage, and how
+//                many lifecycle drafts already exist for them.
+// run_nurture -> server-to-server invoke of harvey-nurture (which drafts trial-
+//                nurture emails into lit_agent_drafts). Same internal-cron header
+//                pattern as run_now / send_test_email.
+
+type LifecycleStageRow = {
+  user_id: string;
+  email: string | null;
+  stage: string;
+  event_type: string | null;
+  current_plan: string | null;
+  activity_count_30d: number | null;
+  last_active_at: string | null;
+  trial_started_at: string | null;
+};
+
+/** list_trials — segments (from lit_admin_lifecycle_segments()) + up to 50
+ *  not-upgraded users from lit_lifecycle_user_stages with name / nurtured /
+ *  draft_count decorations, plus rollup totals. Service-role reads throughout
+ *  (the stage view + lifecycle sends table are service-role only). */
+async function actionListTrials(admin: SupabaseClient) {
+  // Per-stage segment counts. The RPC is is_platform_admin()-gated internally,
+  // and we call it with the service-role client (which bypasses that check via
+  // SECURITY DEFINER's caller). If it errors, fall back to a group-by so the
+  // tab still renders counts.
+  let segments: Array<{
+    stage: string; event_type: string | null; total: number;
+    eligible: number; already_nudged: number; suppressed: number;
+  }> = [];
+  const segRes = await admin.rpc("lit_admin_lifecycle_segments");
+  if (!segRes.error && Array.isArray(segRes.data)) {
+    segments = (segRes.data as any[]).map((r) => ({
+      stage: r.stage,
+      event_type: r.event_type ?? null,
+      total: Number(r.total ?? 0),
+      eligible: Number(r.eligible ?? 0),
+      already_nudged: Number(r.already_nudged ?? 0),
+      suppressed: Number(r.suppressed ?? 0),
+    }));
+  }
+
+  // The not-upgraded user page (view already excludes converted-paid users).
+  const { data: stageData, error: stageErr } = await admin
+    .from("lit_lifecycle_user_stages")
+    .select("user_id, email, stage, event_type, current_plan, activity_count_30d, last_active_at, trial_started_at")
+    .order("last_active_at", { ascending: false, nullsFirst: false })
+    .limit(50);
+  if (stageErr) throw new Error(`lit_lifecycle_user_stages read failed: ${stageErr.message}`);
+  const stageRows = (stageData ?? []) as LifecycleStageRow[];
+
+  // If the segments RPC failed, derive counts from a broader group-by over the
+  // view (best-effort; unbounded-ish but the view is small).
+  if (segments.length === 0) {
+    const { data: allRows } = await admin
+      .from("lit_lifecycle_user_stages")
+      .select("stage, event_type");
+    const byStage = new Map<string, { event_type: string | null; total: number }>();
+    for (const r of (allRows ?? []) as Array<{ stage: string; event_type: string | null }>) {
+      const cur = byStage.get(r.stage) ?? { event_type: r.event_type ?? null, total: 0 };
+      cur.total += 1;
+      byStage.set(r.stage, cur);
+    }
+    segments = [...byStage.entries()]
+      .map(([stage, v]) => ({ stage, event_type: v.event_type, total: v.total, eligible: 0, already_nudged: 0, suppressed: 0 }))
+      .sort((a, b) => a.stage.localeCompare(b.stage));
+  }
+
+  const userIds = stageRows.map((r) => r.user_id);
+
+  // Names (profiles), nurtured flags (lit_lifecycle_sends for this stage,
+  // campaign 'lifecycle'), and lifecycle draft counts — all scoped to the page.
+  const nameById = new Map<string, string | null>();
+  const nurturedByUserStage = new Set<string>();       // key: `${user_id}|${stage}`
+  const draftCountByUser = new Map<string, number>();
+
+  if (userIds.length > 0) {
+    const [profilesRes, sendsRes, draftsRes] = await Promise.all([
+      admin.from("profiles").select("id, full_name").in("id", userIds),
+      admin.from("lit_lifecycle_sends").select("user_id, stage").in("user_id", userIds).eq("campaign", "lifecycle"),
+      // Lifecycle drafts carry metadata_json.lifecycle.user_id; filter by the
+      // JSON path so we count only nurture drafts for these users.
+      admin.from("lit_agent_drafts").select("metadata_json").in("metadata_json->lifecycle->>user_id", userIds),
+    ]);
+    for (const p of (profilesRes.data ?? []) as Array<{ id: string; full_name: string | null }>) {
+      nameById.set(p.id, p.full_name ?? null);
+    }
+    for (const s of (sendsRes.data ?? []) as Array<{ user_id: string; stage: string }>) {
+      nurturedByUserStage.add(`${s.user_id}|${s.stage}`);
+    }
+    for (const d of (draftsRes.data ?? []) as Array<{ metadata_json: Record<string, unknown> | null }>) {
+      const lc = (d.metadata_json?.lifecycle ?? null) as Record<string, unknown> | null;
+      const uid = lc && typeof lc.user_id === "string" ? lc.user_id : null;
+      if (uid) draftCountByUser.set(uid, (draftCountByUser.get(uid) ?? 0) + 1);
+    }
+  }
+
+  const users = stageRows.map((r) => ({
+    user_id: r.user_id,
+    email: r.email,
+    full_name: nameById.get(r.user_id) ?? null,
+    stage: r.stage,
+    event_type: r.event_type,
+    current_plan: r.current_plan,
+    activity_count_30d: r.activity_count_30d ?? 0,
+    last_active_at: r.last_active_at,
+    trial_started_at: r.trial_started_at,
+    nurtured: nurturedByUserStage.has(`${r.user_id}|${r.stage}`),
+    draft_count: draftCountByUser.get(r.user_id) ?? 0,
+  }));
+
+  const total_not_upgraded = segments.reduce((s, seg) => s + seg.total, 0);
+  const nurtured = segments.reduce((s, seg) => s + seg.already_nudged, 0);
+  const pending_drafts = [...draftCountByUser.values()].reduce((s, n) => s + n, 0);
+
+  return {
+    ok: true,
+    segments,
+    users,
+    totals: { total_not_upgraded, nurtured, pending_drafts },
+  };
+}
+
+/** run_nurture — server-to-server invoke of harvey-nurture so it drafts trial-
+ *  nurture emails. Same internal-cron header pattern as run_now. */
+async function actionRunNurture(agentName: string, limit: number | undefined, adminUserId: string) {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const cronSecret = Deno.env.get("LIT_CRON_SECRET");
+  const gatewayKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  if (!supabaseUrl) throw new Error("SUPABASE_URL not configured");
+  if (!cronSecret) return { ok: false, error: "LIT_CRON_SECRET not configured" };
+
+  const url = `${supabaseUrl}/functions/v1/harvey-nurture`;
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Internal-Cron": cronSecret,
+        // Gateway needs a valid apikey/JWT to route BEFORE the target's cron check.
+        "Authorization": `Bearer ${gatewayKey}`,
+        "apikey": gatewayKey,
+      },
+      body: JSON.stringify({
+        agent_name: agentName || "harvey",
+        trigger_type: "manual",
+        ...(Number.isFinite(limit) && (limit as number) > 0 ? { limit } : {}),
+        created_by: adminUserId,
+      }),
+    });
+  } catch (err) {
+    return { ok: false, error: `nurture unreachable: ${String((err as Error)?.message ?? err)}` };
+  }
+  if (res.status === 404) return { ok: false, error: "no nurture engine" };
+  const n = await res.json().catch(() => ({ raw: "non-JSON nurture response" }));
+  if (!res.ok || (n && n.ok === false)) {
+    const errMsg = (n && typeof n.error === "string") ? n.error : `nurture HTTP ${res.status}`;
+    return { ok: false, error: errMsg };
+  }
+  return {
+    ok: true,
+    run_id: n.run_id ?? null,
+    drafted: n.drafted ?? 0,
+    candidates: n.candidates ?? 0,
+    skipped: n.skipped ?? 0,
+    by_stage: n.by_stage ?? {},
+  };
+}
+
 // ─── handler ─────────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
@@ -1180,6 +1353,15 @@ Deno.serve(async (req: Request) => {
         const draftBody = typeof body.body === "string" ? body.body : null;
         log.info("action", { action, draft_id: draftId, status, user_id: user.id });
         return json(await actionUpdateDraft(admin, draftId, status, subject, draftBody, user.id));
+      }
+      case "list_trials": {
+        log.info("action", { action, agent_name: agentName || "harvey", user_id: user.id });
+        return json(await actionListTrials(admin));
+      }
+      case "run_nurture": {
+        const limit = typeof body.limit === "number" ? body.limit : undefined;
+        log.info("action", { action, agent_name: agentName || "harvey", user_id: user.id });
+        return json(await actionRunNurture(agentName || "harvey", limit, user.id));
       }
       default:
         return json({ ok: false, error: `unknown action: ${action || "(none)"}` }, 400);

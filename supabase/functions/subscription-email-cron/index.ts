@@ -138,7 +138,56 @@ serve(async (req: Request) => {
     body = {};
   }
   if (body?.trigger_one_off === true) {
+    // One-off (manual/webhook) sends still work regardless of the handoff flag.
+    // These include the TRANSACTIONAL events (paid_plan_welcome,
+    // upgrade_confirmation, payment_failed, cancellation_confirmation,
+    // trial_limit_reached) which Harvey does NOT own. Do NOT gate this path.
     return await handleOneOffTrigger(db, selfUrl, serviceRoleKey, body);
+  }
+
+  // ── HANDOFF: Harvey owns TRIAL NURTURE ──────────────────────────────────────
+  // If lit_internal_meta['harvey_owns_trial_nurture'] is true, the BEHAVIORAL
+  // trial sweeps below (day1 run_first_search, day2 activation, day3 founder
+  // note, day4/day6 tips, day5 book_demo, inactivity check-in, day12
+  // trial_ending_soon) are now handled by harvey-nurture. Skip ALL of them.
+  //
+  // This does NOT affect the pure TRANSACTIONAL emails — those only fire via the
+  // one-off trigger path above (paid_plan_welcome / upgrade_confirmation /
+  // payment_failed / cancellation_confirmation / trial_limit_reached) and are
+  // deliberately left untouched: Harvey does not own them.
+  let harveyOwnsTrialNurture = false;
+  try {
+    const { data: metaRow } = await db
+      .from("lit_internal_meta")
+      .select("meta_value")
+      .eq("meta_key", "harvey_owns_trial_nurture")
+      .maybeSingle();
+    const v = (metaRow as { meta_value?: unknown } | null)?.meta_value;
+    harveyOwnsTrialNurture = v === true || v === "true" ||
+      (typeof v === "string" && v.trim().toLowerCase() === "true");
+  } catch (err) {
+    // Fail OPEN for the legacy drip: if we cannot read the flag, keep the old
+    // behavior (send the behavioral sweeps) rather than silently going dark.
+    logWarn("harvey_ownership_flag_read_failed", {
+      request_id: reqId,
+      err: err instanceof Error ? err.message : String(err),
+    });
+    harveyOwnsTrialNurture = false;
+  }
+  if (harveyOwnsTrialNurture) {
+    logInfo("skipped_harvey_owns_trial_nurture", {
+      request_id: reqId,
+      note:
+        "skipped: harvey owns trial nurture — behavioral trial sweeps handed off to harvey-nurture; transactional emails unaffected",
+    });
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        skipped: "harvey owns trial nurture",
+        processed: {},
+      }),
+      { headers: { "Content-Type": "application/json" } },
+    );
   }
 
   function dayWindow(daysAgoStart: number, daysAgoEnd: number) {

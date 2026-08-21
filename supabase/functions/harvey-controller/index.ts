@@ -30,8 +30,12 @@
 //   2 handle_urgent_replies      (real — unread inbound on Harvey's mailbox)
 //   3 handle_meeting_requests    (stub — Batch 4 intent classification)
 //   4 awaiting_human_approval    (real — Harvey-marked pending LinkedIn actions)
-//   5 send_due_outreach          (real — due recipients on Harvey campaigns)
-//   5 dispatch_email             (real — approved, unsent Harvey email drafts →
+//   5 nurture_trials             (real — not-upgraded trial users needing a
+//                                 lifecycle nurture touch → harvey-nurture.
+//                                 Harvey OWNS trial nurture; this outranks all
+//                                 cold prospecting/outreach.)
+//   6 send_due_outreach          (real — due recipients on Harvey campaigns)
+//   6 dispatch_email             (real — approved, unsent Harvey email drafts →
 //                                 harvey-email-dispatch. Batch 6. Same fail-closed
 //                                 gates; sends nothing while enabled=false/dryRun=true)
 //   6 research_leads             (real — New-stage leads without company recognition)
@@ -42,10 +46,12 @@
 //  10 prospect                   (real — Harvey-sourced inventory below target)
 //  11 analyze                    (fallback)
 //
-// EXECUTION: the controller now ACTS on three branches (behind the same gates,
+// EXECUTION: the controller now ACTS on several branches (behind the same gates,
 // respecting mode/testMode/quiet-hours). It invokes the sibling worker fns
 // server-to-server (X-Internal-Cron: LIT_CRON_SECRET) exactly like ai-employee-
 // console's run_now proxies the controller:
+//   - nurture_trials  → harvey-nurture (draft trial-lifecycle nurtures for
+//                       not-upgraded users; drafts only, never sends)
 //   - prospect        → harvey-prospect (source up to the shortfall)
 //   - research_leads  → harvey-research per lead (small batch)
 //   - draft_outreach  → harvey-writer per researched lead (autonomous only)
@@ -86,6 +92,7 @@ interface ProbeCounts {
   urgent_replies: number;
   meeting_requests: number;
   awaiting_approval: number;
+  nurture_candidates: number;
   due_outreach: number;
   approved_email_drafts: number;
   leads_needing_research: number;
@@ -160,6 +167,76 @@ async function probeAwaitingApproval(admin: SupabaseClient): Promise<number> {
       .eq("metadata->>internal_agent", "harvey"),
     "awaiting_approval",
   );
+}
+
+/**
+ * Probe (nurture): not-upgraded lifecycle users who still need a trial-nurture
+ * touch — i.e. rows in lit_lifecycle_user_stages that do NOT yet have a
+ * current-stage 'lifecycle' send AND do NOT already have a pending nurture
+ * draft (metadata_json.lifecycle for that user+stage). Harvey OWNS the trial
+ * nurture (lit_internal_meta['harvey_owns_trial_nurture']='true'). REAL.
+ *
+ * This is a bounded count for the decision; harvey-nurture re-selects + caps
+ * its own batch. Fails SAFE-ish: on any query error it returns 0 so a broken
+ * probe never fabricates work (the outer decide() just falls through).
+ */
+async function probeNurtureCandidates(admin: SupabaseClient): Promise<number> {
+  // Bound the scan — we only need to know "is there work" and roughly how much.
+  const SCAN = 500;
+  const { data: rows, error } = await admin
+    .from("lit_lifecycle_user_stages")
+    .select("user_id, stage")
+    .limit(SCAN);
+  if (error) throw new Error(`probe nurture_candidates (view) failed: ${error.message}`);
+  const candidates = (rows ?? []) as Array<{ user_id: string; stage: string | null }>;
+  if (candidates.length === 0) return 0;
+
+  const userIds = Array.from(new Set(candidates.map((c) => c.user_id).filter(Boolean)));
+  if (userIds.length === 0) return 0;
+
+  // Already-sent (user_id, stage) under campaign='lifecycle'.
+  const sentKeys = new Set<string>();
+  const { data: sends, error: sendsErr } = await admin
+    .from("lit_lifecycle_sends")
+    .select("user_id, stage, campaign")
+    .in("user_id", userIds)
+    .eq("campaign", "lifecycle");
+  if (sendsErr) throw new Error(`probe nurture_candidates (sends) failed: ${sendsErr.message}`);
+  for (const s of sends ?? []) {
+    const row = s as { user_id: string; stage: string | null };
+    sentKeys.add(`${row.user_id}|${row.stage ?? ""}`);
+  }
+
+  // Pending nurture drafts (harvey, stage='trial') tagged with lifecycle meta.
+  const pendingKeys = new Set<string>();
+  const { data: drafts, error: draftErr } = await admin
+    .from("lit_agent_drafts")
+    .select("status, metadata_json")
+    .eq("agent_name", CONFIG_KEY)
+    .eq("stage", "trial")
+    .in("status", ["pending_approval", "approved", "draft"])
+    .limit(1000);
+  if (draftErr) throw new Error(`probe nurture_candidates (drafts) failed: ${draftErr.message}`);
+  for (const d of drafts ?? []) {
+    const meta = (d as { metadata_json?: Record<string, unknown> | null }).metadata_json ?? null;
+    const lc = meta && typeof meta === "object" ? (meta as Record<string, unknown>).lifecycle : null;
+    if (lc && typeof lc === "object") {
+      const uid = (lc as Record<string, unknown>).user_id;
+      const st = (lc as Record<string, unknown>).stage;
+      if (typeof uid === "string") pendingKeys.add(`${uid}|${typeof st === "string" ? st : ""}`);
+    }
+  }
+
+  const seen = new Set<string>();
+  let eligible = 0;
+  for (const c of candidates) {
+    if (!c.user_id || seen.has(c.user_id)) continue;
+    const key = `${c.user_id}|${c.stage ?? ""}`;
+    if (sentKeys.has(key) || pendingKeys.has(key)) continue;
+    seen.add(c.user_id);
+    eligible++;
+  }
+  return eligible;
 }
 
 /** Resolve Harvey-scoped campaign ids (metrics.internal_agent='harvey'). */
@@ -469,16 +546,26 @@ function decide(counts: ProbeCounts): { priority: number; decision: string; reas
       reason: `${counts.awaiting_approval} Harvey action(s) parked at pending_approval`,
     };
   }
-  if (counts.due_outreach > 0) {
+  if (counts.nurture_candidates > 0) {
+    // Nurturing existing not-upgraded trials that are going cold is more
+    // valuable than any cold prospecting — slot it ABOVE due_outreach /
+    // dispatch / prospect, just under reply + approval handling.
     return {
       priority: 5,
+      decision: "nurture_trials",
+      reason: `${counts.nurture_candidates} not-upgraded trial user(s) need a lifecycle nurture touch`,
+    };
+  }
+  if (counts.due_outreach > 0) {
+    return {
+      priority: 6,
       decision: "send_due_outreach",
       reason: `${counts.due_outreach} due recipient(s) on Harvey campaigns`,
     };
   }
   if (counts.approved_email_drafts > 0) {
     return {
-      priority: 5,
+      priority: 6,
       decision: "dispatch_email",
       reason: `${counts.approved_email_drafts} approved, unsent Harvey email draft(s) ready to dispatch`,
     };
@@ -660,6 +747,7 @@ Deno.serve(async (req: Request) => {
     const [
       urgentReplies,
       awaitingApproval,
+      nurtureCandidates,
       dueOutreach,
       approvedEmailDrafts,
       leadsNeedingResearch,
@@ -670,6 +758,7 @@ Deno.serve(async (req: Request) => {
     ] = await Promise.all([
       probeUrgentReplies(admin, config),
       probeAwaitingApproval(admin),
+      probeNurtureCandidates(admin),
       probeDueOutreach(admin, campaignIds),
       probeApprovedEmailDrafts(admin),
       probeLeadsNeedingResearch(admin, newStageId),
@@ -684,6 +773,7 @@ Deno.serve(async (req: Request) => {
       urgent_replies: urgentReplies,
       meeting_requests: probeMeetingRequests(),
       awaiting_approval: awaitingApproval,
+      nurture_candidates: nurtureCandidates,
       due_outreach: dueOutreach,
       approved_email_drafts: approvedEmailDrafts,
       leads_needing_research: leadsNeedingResearch,
@@ -713,7 +803,32 @@ Deno.serve(async (req: Request) => {
     let executed = false;
     const execution: Record<string, unknown> = {};
 
-    if (decision === "dispatch_email") {
+    if (decision === "nurture_trials") {
+      // Not-upgraded trial users need lifecycle nurture drafts → invoke
+      // harvey-nurture. That worker DRAFTS ONLY (never sends): it selects
+      // candidates, invokes harvey-writer, and stamps metadata_json.lifecycle so
+      // the dispatcher records the send + dedups. It re-checks the same
+      // fail-closed gates itself. invokeWorker never throws; a failure is
+      // recorded and the heartbeat still completes 'ok'.
+      const res = await invokeWorker("harvey-nurture", {
+        agent_name: CONFIG_KEY,
+        trigger_type: triggerType,
+        created_by: actorUserId,
+      });
+      if (res.ok) {
+        const data = res.data ?? {};
+        execution.nurture_trials = {
+          drafted: typeof data.drafted === "number" ? data.drafted : 0,
+          candidates: typeof data.candidates === "number" ? data.candidates : 0,
+          skipped: typeof data.skipped === "number" ? data.skipped : 0,
+          by_stage: (data.by_stage && typeof data.by_stage === "object") ? data.by_stage : {},
+          run_id: data.run_id ?? null,
+        };
+        executed = true;
+      } else {
+        execution.nurture_trials = { error: res.error ?? "harvey-nurture failed" };
+      }
+    } else if (decision === "dispatch_email") {
       // Approved, unsent Harvey email drafts exist → invoke harvey-email-dispatch.
       // That worker enforces its OWN full fail-closed gate chain (flag, enabled,
       // paused, quiet-hours, dryRun/testMode, suppression, stop-on-reply, daily

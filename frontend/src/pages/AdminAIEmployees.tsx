@@ -54,6 +54,9 @@ import {
   Radio,
   Pause,
   MailCheck,
+  Rocket,
+  Zap,
+  TrendingUp,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
@@ -157,7 +160,50 @@ type RunControllerResult = {
   error?: string;
 };
 
-type TabKey = "overview" | "chat" | "prospects" | "drafts" | "tasks" | "activity" | "knowledge";
+type TabKey = "overview" | "chat" | "prospects" | "nurture" | "drafts" | "tasks" | "activity" | "knowledge";
+
+/* Trial Nurture (backend contract — list_trials / run_nurture) */
+
+type TrialSegment = {
+  stage: string;
+  event_type: string | null;
+  total: number;
+  eligible: number;
+  already_nudged: number;
+  suppressed: number;
+};
+
+type TrialUser = {
+  user_id: string;
+  email: string | null;
+  full_name: string | null;
+  stage: string;
+  event_type: string | null;
+  current_plan: string | null;
+  activity_count_30d: number;
+  last_active_at: string | null;
+  trial_started_at: string | null;
+  nurtured: boolean;
+  draft_count: number;
+};
+
+type TrialsResult = {
+  ok: boolean;
+  segments: TrialSegment[];
+  users: TrialUser[];
+  totals: { total_not_upgraded: number; nurtured: number; pending_drafts: number };
+  error?: string;
+};
+
+type NurtureResult = {
+  ok: boolean;
+  run_id?: string | null;
+  drafted?: number;
+  candidates?: number;
+  skipped?: number;
+  by_stage?: Record<string, number>;
+  error?: string;
+};
 
 /* Prospects / Leads (backend contract) */
 
@@ -702,6 +748,7 @@ function AgentDetailPane({
     { key: "overview", label: "Overview", icon: LayoutDashboard },
     { key: "chat", label: "Chat", icon: MessageSquare },
     { key: "prospects", label: "Prospects", icon: Users },
+    { key: "nurture", label: "Trial Nurture", icon: Rocket },
     { key: "drafts", label: "Drafts", icon: PenLine },
     { key: "tasks", label: "Tasks", icon: ListChecks },
     { key: "activity", label: "Activity", icon: Activity },
@@ -806,6 +853,8 @@ function AgentDetailPane({
               setTab("drafts");
             }}
           />
+        ) : tab === "nurture" ? (
+          <TrialNurtureTab agentName={agentName} displayName={displayName} config={config} />
         ) : tab === "drafts" ? (
           <DraftsTab
             agentName={agentName}
@@ -2688,6 +2737,293 @@ function BriefRow({ label, value }: { label: string; value: string }) {
     <div>
       <div className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-slate-400">{label}</div>
       <div className="mt-0.5 whitespace-pre-wrap text-[12.5px] leading-relaxed text-slate-700">{value}</div>
+    </div>
+  );
+}
+
+/* ─────────────────────────── Trial Nurture tab ────────────────────────── */
+// Harvey's trial follow-up surface. Lists signed-up-but-not-upgraded users
+// (from lit_lifecycle_user_stages) with their computed lifecycle stage, and a
+// one-click "Nurture trials now" that invokes harvey-nurture to draft emails.
+// Harvey now owns trial follow-up; the old behavioral drip is paused so no one
+// is double-emailed. Drafts flow through the normal dispatch gates — nothing
+// sends unless Live sending is on.
+
+// Lifecycle stage → chip tone + friendly label.
+const NURTURE_STAGE_TONE: Record<string, { bg: string; text: string; ring: string; label: string }> = {
+  stage0: { bg: "bg-slate-100", text: "text-slate-600", ring: "ring-slate-200", label: "Signed up · no search" },
+  stage1: { bg: "bg-sky-50", text: "text-sky-700", ring: "ring-sky-200", label: "Searched · no save" },
+  stage2: { bg: "bg-blue-50", text: "text-blue-700", ring: "ring-blue-200", label: "Saved · no intel" },
+  stage3: { bg: "bg-indigo-50", text: "text-indigo-700", ring: "ring-indigo-200", label: "Viewed intel · no contacts" },
+  stage4: { bg: "bg-violet-50", text: "text-violet-700", ring: "ring-violet-200", label: "Engaged · not converted" },
+  trial_expiry: { bg: "bg-amber-50", text: "text-amber-700", ring: "ring-amber-200", label: "Trial expiring" },
+};
+
+function nurtureStageMeta(stage: string) {
+  return (
+    NURTURE_STAGE_TONE[stage] ?? {
+      bg: "bg-slate-100",
+      text: "text-slate-600",
+      ring: "ring-slate-200",
+      label: stage,
+    }
+  );
+}
+
+function TrialNurtureTab({
+  agentName,
+  displayName,
+  config,
+}: {
+  agentName: string;
+  displayName: string;
+  config: AgentConfig;
+}) {
+  const [data, setData] = useState<TrialsResult | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [nurturing, setNurturing] = useState(false);
+  const [nurtureResult, setNurtureResult] = useState<NurtureResult | null>(null);
+
+  // Live-sending awareness (mirrors the ControlBar logic): sends actually go out
+  // only when enabled AND not dry-run AND not paused.
+  const dryRun = config.sending?.dryRun ?? false;
+  const paused = config.sending?.paused ?? false;
+  const enabled = config.enabled ?? false;
+  const live = enabled && !dryRun && !paused;
+
+  // list_trials: {action:"list_trials", agent_name}
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setErr(null);
+    (async () => {
+      try {
+        const res = await callConsole<TrialsResult>({ action: "list_trials", agent_name: agentName });
+        if (cancelled) return;
+        if (!res?.ok) throw new Error(res?.error || "Failed to load trial users");
+        setData(res);
+      } catch (e: any) {
+        if (cancelled) return;
+        setErr(e?.message || "Failed to load trial users");
+        setData(null);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [agentName, refreshKey]);
+
+  // run_nurture: {action:"run_nurture", agent_name, limit?}
+  const runNurture = useCallback(async () => {
+    if (nurturing) return;
+    setNurturing(true);
+    setErr(null);
+    setNurtureResult(null);
+    try {
+      const res = await callConsole<NurtureResult>({ action: "run_nurture", agent_name: agentName });
+      if (!res?.ok) throw new Error(res?.error || "Nurture run failed");
+      setNurtureResult(res);
+      setRefreshKey((k) => k + 1); // refresh counts + rows after drafting
+    } catch (e: any) {
+      setErr(e?.message || "Nurture run failed");
+    } finally {
+      setNurturing(false);
+    }
+  }, [nurturing, agentName]);
+
+  const segments = data?.segments ?? [];
+  const users = data?.users ?? [];
+  const totals = data?.totals ?? { total_not_upgraded: 0, nurtured: 0, pending_drafts: 0 };
+
+  const nurtureSummary = useMemo(() => {
+    if (!nurtureResult) return null;
+    const drafted = nurtureResult.drafted ?? 0;
+    const byStage = nurtureResult.by_stage ?? {};
+    const stageCount = Object.keys(byStage).length;
+    const stagesLabel = stageCount === 1 ? "1 stage" : `${stageCount} stages`;
+    return `${drafted} draft${drafted === 1 ? "" : "s"} created across ${stagesLabel}`;
+  }, [nurtureResult]);
+
+  return (
+    <div className="space-y-5">
+      {/* Header: stage chips + nurture button */}
+      <div className="rounded-xl border border-slate-200 bg-slate-50/40 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">
+            <Rocket className="h-3.5 w-3.5 text-blue-600" aria-hidden />
+            Trial nurture — by stage
+          </div>
+          <button
+            type="button"
+            onClick={runNurture}
+            disabled={nurturing || loading}
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 text-[13px] font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
+          >
+            <Zap className={`h-3.5 w-3.5 ${nurturing ? "animate-pulse" : ""}`} aria-hidden />
+            {nurturing ? "Nurturing…" : "Nurture trials now"}
+          </button>
+        </div>
+
+        {/* Stage-count chips */}
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {loading ? (
+            <div className="h-6 w-64 animate-pulse rounded-full bg-slate-100" />
+          ) : segments.length === 0 ? (
+            <span className="text-[12.5px] text-slate-500">No trial users in any stage.</span>
+          ) : (
+            segments.map((s) => {
+              const meta = nurtureStageMeta(s.stage);
+              return (
+                <span
+                  key={s.stage}
+                  title={`${meta.label} · ${s.eligible} eligible · ${s.already_nudged} nurtured · ${s.suppressed} suppressed`}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11.5px] font-semibold ring-1 ${meta.bg} ${meta.text} ${meta.ring}`}
+                >
+                  {meta.label}
+                  <b className="font-mono">{s.total}</b>
+                </span>
+              );
+            })
+          )}
+        </div>
+
+        {/* Nurture run result strip */}
+        {nurtureSummary && (
+          <div className="mt-3 flex items-start gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12.5px] text-emerald-800">
+            <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" aria-hidden />
+            <span>
+              {nurtureSummary}
+              {nurtureResult?.candidates != null && (
+                <span className="text-emerald-700/80"> · {nurtureResult.candidates} candidates, {nurtureResult.skipped ?? 0} skipped</span>
+              )}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {err && (
+        <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[12.5px] text-amber-800" role="alert">
+          <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+          <span>{err}</span>
+        </div>
+      )}
+
+      {/* Explainer note */}
+      <div className="flex items-start gap-2 rounded-md border border-blue-100 bg-blue-50/60 px-3 py-2 text-[12px] text-slate-600">
+        <TrendingUp className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-600" aria-hidden />
+        <span>
+          {displayName} now owns trial follow-up; the old drip's behavioral emails are paused so no one is
+          double-emailed.{" "}
+          {live ? (
+            <span className="font-semibold text-emerald-700">Live sending is on — approved nurture drafts will actually send.</span>
+          ) : (
+            <span className="font-semibold text-amber-700">
+              Drafts are prepared; turn on Live sending to actually send.
+            </span>
+          )}
+        </span>
+      </div>
+
+      {/* Users table */}
+      {loading ? (
+        <div className="py-10 text-center">
+          <div className="mx-auto h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600" />
+        </div>
+      ) : users.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-200 py-10 text-center text-[13px] text-slate-500">
+          No signed-up, not-upgraded users to nurture right now.
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-xl border border-slate-200">
+          <table className="w-full text-left text-[13px]">
+            <thead className="bg-slate-50 text-[10.5px] font-bold uppercase tracking-[0.08em] text-slate-500">
+              <tr>
+                <th className="px-3.5 py-2.5">User</th>
+                <th className="px-3.5 py-2.5">Stage</th>
+                <th className="px-3.5 py-2.5">Plan</th>
+                <th className="px-3.5 py-2.5">Activity</th>
+                <th className="px-3.5 py-2.5 text-center">Nurtured</th>
+                <th className="px-3.5 py-2.5 text-center">Drafts</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 bg-white">
+              {users.map((u) => {
+                const meta = nurtureStageMeta(u.stage);
+                return (
+                  <tr key={u.user_id} className="hover:bg-slate-50/60">
+                    <td className="px-3.5 py-2.5">
+                      <div className="font-semibold text-slate-900">{u.full_name || "—"}</div>
+                      <div className="truncate text-[11.5px] text-slate-500">{u.email || "—"}</div>
+                    </td>
+                    <td className="px-3.5 py-2.5">
+                      <span
+                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-semibold ring-1 ${meta.bg} ${meta.text} ${meta.ring}`}
+                        title={u.event_type ?? undefined}
+                      >
+                        {meta.label}
+                      </span>
+                    </td>
+                    <td className="px-3.5 py-2.5 text-slate-600">{u.current_plan || "—"}</td>
+                    <td className="px-3.5 py-2.5">
+                      <div className="text-slate-700">
+                        <span className="font-mono font-semibold">{u.activity_count_30d}</span>
+                        <span className="text-[11px] text-slate-400"> /30d</span>
+                      </div>
+                      <div className="text-[11px] text-slate-400" title={fmtAbsolute(u.last_active_at)}>
+                        {fmtRelative(u.last_active_at)}
+                      </div>
+                    </td>
+                    <td className="px-3.5 py-2.5 text-center">
+                      {u.nurtured ? (
+                        <span
+                          className="inline-flex items-center gap-1 text-[11.5px] font-semibold text-emerald-700"
+                          title="Already nurtured for this stage"
+                        >
+                          <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
+                          Sent
+                        </span>
+                      ) : (
+                        <span className="text-[11.5px] text-slate-400">—</span>
+                      )}
+                    </td>
+                    <td className="px-3.5 py-2.5 text-center">
+                      <span
+                        className={`inline-flex min-w-[1.75rem] items-center justify-center rounded-full px-2 py-0.5 font-mono text-[11.5px] font-semibold ${
+                          u.draft_count > 0 ? "bg-blue-50 text-blue-700 ring-1 ring-blue-100" : "text-slate-400"
+                        }`}
+                      >
+                        {u.draft_count}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Summary strip */}
+      {!loading && (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-slate-200 bg-white px-3 py-2 text-[12.5px] text-slate-600">
+          <Users className="h-3.5 w-3.5 text-slate-400" aria-hidden />
+          <span>
+            <b className="text-slate-900">{totals.total_not_upgraded.toLocaleString()}</b> signed up, not upgraded
+          </span>
+          <span className="text-slate-300">·</span>
+          <span>
+            <b className="text-emerald-700">{totals.nurtured.toLocaleString()}</b> nurtured
+          </span>
+          <span className="text-slate-300">·</span>
+          <span>
+            <b className="text-blue-700">{totals.pending_drafts.toLocaleString()}</b> drafts pending
+          </span>
+        </div>
+      )}
     </div>
   );
 }
