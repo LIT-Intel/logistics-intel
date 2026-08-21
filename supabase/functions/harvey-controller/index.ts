@@ -323,7 +323,7 @@ async function probeDueOutreach(admin: SupabaseClient, campaignIds: string[]): P
  * yet been recorded in lit_agent_send_log — i.e. the harvey-email-dispatch
  * worker has real work to do. 0 until Harvey has approved email drafts.
  */
-async function probeApprovedEmailDrafts(admin: SupabaseClient): Promise<number> {
+async function probeApprovedEmailDrafts(admin: SupabaseClient, dailyCap: number): Promise<number> {
   const { data: drafts, error } = await admin
     .from("lit_agent_drafts")
     .select("id")
@@ -346,7 +346,25 @@ async function probeApprovedEmailDrafts(admin: SupabaseClient): Promise<number> 
       .map((r: { draft_id: string | null }) => r.draft_id)
       .filter((id): id is string => typeof id === "string"),
   );
-  return draftIds.filter((id) => !handled.has(id)).length;
+  const unsent = draftIds.filter((id) => !handled.has(id)).length;
+  if (unsent === 0) return 0;
+
+  // CAP-AWARE: only surface dispatchable drafts when there's daily-cap room
+  // left. Once today's cap is reached this returns 0, so the controller falls
+  // through to drafting more (for tomorrow) instead of looping on a dispatch
+  // that would send nothing.
+  const startOfDay = new Date();
+  startOfDay.setUTCHours(0, 0, 0, 0);
+  const { count: sentToday, error: sentErr } = await admin
+    .from("lit_agent_send_log")
+    .select("id", { count: "exact", head: true })
+    .eq("agent_name", CONFIG_KEY)
+    .eq("channel", "email")
+    .eq("status", "sent")
+    .gte("created_at", startOfDay.toISOString());
+  if (sentErr) throw new Error(`probe approved_email_drafts (sent_today) failed: ${sentErr.message}`);
+  const room = dailyCap - (sentToday ?? 0);
+  return room > 0 ? Math.min(unsent, room) : 0;
 }
 
 /** Fetch the pipeline stage name→id map (6 global stages). */
@@ -713,14 +731,16 @@ function decide(counts: ProbeCounts): { priority: number; decision: string; reas
       reason: `${counts.awaiting_approval} Harvey action(s) parked at pending_approval`,
     };
   }
-  if (counts.nurture_candidates > 0) {
-    // Nurturing existing not-upgraded trials that are going cold is more
-    // valuable than any cold prospecting — slot it ABOVE due_outreach /
-    // dispatch / prospect, just under reply + approval handling.
+  // SEND what's already approved BEFORE drafting anything new. Otherwise a
+  // steady supply of nurture/outreach candidates starves dispatch and approved
+  // drafts never actually go out (the bug the owner hit: 47 approved, 0 sent).
+  // The probe is CAP-AWARE, so once today's send cap is reached this is 0 and
+  // we fall through to drafting more for tomorrow.
+  if (counts.approved_email_drafts > 0) {
     return {
       priority: 5,
-      decision: "nurture_trials",
-      reason: `${counts.nurture_candidates} not-upgraded trial user(s) need a lifecycle nurture touch`,
+      decision: "dispatch_email",
+      reason: `${counts.approved_email_drafts} approved, unsent Harvey email draft(s) ready to dispatch`,
     };
   }
   if (counts.due_outreach > 0) {
@@ -730,11 +750,11 @@ function decide(counts: ProbeCounts): { priority: number; decision: string; reas
       reason: `${counts.due_outreach} due recipient(s) on Harvey campaigns`,
     };
   }
-  if (counts.approved_email_drafts > 0) {
+  if (counts.nurture_candidates > 0) {
     return {
-      priority: 6,
-      decision: "dispatch_email",
-      reason: `${counts.approved_email_drafts} approved, unsent Harvey email draft(s) ready to dispatch`,
+      priority: 7,
+      decision: "nurture_trials",
+      reason: `${counts.nurture_candidates} not-upgraded trial user(s) need a lifecycle nurture touch`,
     };
   }
   if (counts.leads_researched_needing_draft > 0) {
@@ -935,7 +955,7 @@ Deno.serve(async (req: Request) => {
       probeAwaitingApproval(admin),
       probeNurtureCandidates(admin),
       probeDueOutreach(admin, campaignIds),
-      probeApprovedEmailDrafts(admin),
+      probeApprovedEmailDrafts(admin, Number((config.sending as { emailDailyLimit?: number } | undefined)?.emailDailyLimit) || 25),
       probeLeadsNeedingResearch(admin, stages),
       probeQualifiedLeads(admin, newStageId, minimumScore),
       probeLeadsNeedingDraft(admin, stages),
