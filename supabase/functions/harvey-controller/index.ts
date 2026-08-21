@@ -483,7 +483,7 @@ async function workableLeads(
 
   const { data: rows, error } = await admin
     .from("lit_admin_leads")
-    .select("id, full_name, company_name, title, email, linkedin_url, contact_json")
+    .select("id, full_name, company_name, title, email, linkedin_url")
     .in("stage_id", stageIds)
     .eq("status", "open")
     .is("archived_at", null)
@@ -501,12 +501,12 @@ async function workableLeads(
       title: string | null;
       email: string | null;
       linkedin_url: string | null;
-      contact_json: Record<string, unknown> | null;
     };
     const email = typeof row.email === "string" && row.email.trim().length > 0
       ? row.email.trim()
       : null;
-    const linkedin = resolveLinkedin(row.linkedin_url, row.contact_json);
+    // lit_admin_leads has no contact_json column — LinkedIn comes from linkedin_url.
+    const linkedin = resolveLinkedin(row.linkedin_url, null);
     // Usable-contact rule: must have EITHER an email OR a LinkedIn identifier.
     if (!email && !linkedin) continue;
     candidates.push({
