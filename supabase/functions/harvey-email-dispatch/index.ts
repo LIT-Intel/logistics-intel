@@ -93,6 +93,18 @@ function toBase64Url(str: string): string {
   return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
+/** RFC 2047 header encoder. Email headers must be 7-bit ASCII, so any non-ASCII
+ *  (em-dashes, smart quotes, accented names) MUST be wrapped as an encoded-word
+ *  =?UTF-8?B?...?= — otherwise clients misdecode the raw UTF-8 bytes as Latin-1
+ *  and you get mojibake like "Ã¢Â€Â"" instead of "—". Pure-ASCII passes through. */
+function encodeHeaderWord(text: string): string {
+  if (/^[\x00-\x7F]*$/.test(text)) return text;
+  const bytes = new TextEncoder().encode(text);
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return `=?UTF-8?B?${btoa(bin)}?=`;
+}
+
 /** RFC 2045 base64 body encoder (wrapped at 76 chars). Matches send-campaign-email. */
 function encodeBodyMimeBase64(body: string): string {
   const bytes = new TextEncoder().encode(body);
@@ -181,13 +193,19 @@ async function sendGmail(args: {
   body: string;
 }): Promise<{ ok: true; messageId: string } | { ok: false; error: string }> {
   const { accessToken, from, to, subject, body } = args;
-  const fromLine = from.display_name ? `"${from.display_name}" <${from.email}>` : from.email;
+  // From display name: RFC 2047-encode if non-ASCII (encoded-words are NOT quoted);
+  // a plain ASCII name keeps the usual quoted-phrase form.
+  const fromLine = from.display_name
+    ? (/^[\x00-\x7F]*$/.test(from.display_name)
+        ? `"${from.display_name}" <${from.email}>`
+        : `${encodeHeaderWord(from.display_name)} <${from.email}>`)
+    : from.email;
   const isHtml = /^<[a-z!]/i.test(body.trim()) || /<table|<div|<p[\s>]/i.test(body);
   const messageId = `<harvey-${crypto.randomUUID()}@logisticintel.com>`;
   const raw = [
     `From: ${fromLine}`,
     `To: ${to}`,
-    `Subject: ${subject}`,
+    `Subject: ${encodeHeaderWord(subject)}`,
     `Message-ID: ${messageId}`,
     `MIME-Version: 1.0`,
     `Content-Type: ${isHtml ? "text/html" : "text/plain"}; charset=UTF-8`,
