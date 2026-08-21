@@ -255,8 +255,12 @@ async function probeNurtureCandidates(admin: SupabaseClient): Promise<number> {
     .eq("campaign", "lifecycle");
   if (sendsErr) throw new Error(`probe nurture_candidates (sends) failed: ${sendsErr.message}`);
   for (const s of sends ?? []) {
-    const row = s as { user_id: string; stage: string | null };
-    sentKeys.add(`${row.user_id}|${row.stage ?? ""}`);
+    const row = s as { user_id: string };
+    // Exclude by user_id (not user_id|stage): once a user has any lifecycle
+    // send, they've been nurtured. Stage-keying caused the probe to over-count
+    // (worker skips them as already-sent/pending) → controller looped on
+    // nurture forever and never reached CRM-lead outreach.
+    sentKeys.add(row.user_id);
   }
 
   // Pending nurture drafts (harvey, stage='trial') tagged with lifecycle meta.
@@ -274,8 +278,8 @@ async function probeNurtureCandidates(admin: SupabaseClient): Promise<number> {
     const lc = meta && typeof meta === "object" ? (meta as Record<string, unknown>).lifecycle : null;
     if (lc && typeof lc === "object") {
       const uid = (lc as Record<string, unknown>).user_id;
-      const st = (lc as Record<string, unknown>).stage;
-      if (typeof uid === "string") pendingKeys.add(`${uid}|${typeof st === "string" ? st : ""}`);
+      // Exclude by user_id: any existing nurture draft means this user is done.
+      if (typeof uid === "string") pendingKeys.add(uid);
     }
   }
 
@@ -283,8 +287,7 @@ async function probeNurtureCandidates(admin: SupabaseClient): Promise<number> {
   let eligible = 0;
   for (const c of candidates) {
     if (!c.user_id || seen.has(c.user_id)) continue;
-    const key = `${c.user_id}|${c.stage ?? ""}`;
-    if (sentKeys.has(key) || pendingKeys.has(key)) continue;
+    if (sentKeys.has(c.user_id) || pendingKeys.has(c.user_id)) continue;
     seen.add(c.user_id);
     eligible++;
   }
