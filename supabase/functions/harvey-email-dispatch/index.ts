@@ -611,23 +611,27 @@ Deno.serve(async (req: Request) => {
           summary.skipped += 1; bumpReason(`stage_${stageName}`); continue;
         }
 
-        // Gate: suppression list. `converted` (recipient already has a LIT
-        // profile) blocks cold prospecting only — a test send or trial-nurture
-        // send legitimately targets account-holders, so allow converted there.
+        // An explicit admin TEST send (metadata.test_send) targets an address the
+        // admin deliberately chose — it bypasses ALL recipient gates (suppression,
+        // bounce, stop-on-reply). Cold prospects get full suppression; lifecycle
+        // nurture bypasses only `converted` (recipients are account-holders by
+        // design) but still respects bounce/complaint/unsubscribe + stop-on-reply.
         const isTestDraft = Boolean(
           (draft.metadata_json as Record<string, unknown> | null)?.test_send,
         );
-        const allowConverted = isTestDraft || lifecycleOf(draft) !== null;
-        const suppressed = await isSuppressed(admin, email, allowConverted);
-        if (suppressed) {
-          await logSkip(admin, draft, `suppressed:${suppressed}`);
-          summary.skipped += 1; bumpReason(`suppressed_${suppressed}`); continue;
-        }
+        if (!isTestDraft) {
+          // Gate: suppression list.
+          const suppressed = await isSuppressed(admin, email, lifecycleOf(draft) !== null);
+          if (suppressed) {
+            await logSkip(admin, draft, `suppressed:${suppressed}`);
+            summary.skipped += 1; bumpReason(`suppressed_${suppressed}`); continue;
+          }
 
-        // Gate: STOP-ON-REPLY — never re-touch a lead who already replied.
-        if (await hasReplied(admin, email, mailboxIds)) {
-          await logSkip(admin, draft, "stop_on_reply");
-          summary.skipped += 1; bumpReason("stop_on_reply"); continue;
+          // Gate: STOP-ON-REPLY — never re-touch a lead who already replied.
+          if (await hasReplied(admin, email, mailboxIds)) {
+            await logSkip(admin, draft, "stop_on_reply");
+            summary.skipped += 1; bumpReason("stop_on_reply"); continue;
+          }
         }
 
         // Gate (lifecycle only): UPGRADE-STOP — a trial-nurture draft must not
@@ -768,18 +772,16 @@ Deno.serve(async (req: Request) => {
           err: perDraftErr instanceof Error ? perDraftErr.message : String(perDraftErr),
         });
         try {
-          await admin.from("lit_agent_send_log").upsert(
-            {
-              agent_name: LOG_AGENT,
-              draft_id: draft.id,
-              lead_id: draft.lead_id,
-              channel: "email",
-              status: "failed",
-              error: (perDraftErr instanceof Error ? perDraftErr.message : String(perDraftErr)).slice(0, 500),
-            },
-            { onConflict: "draft_id", ignoreDuplicates: true },
-          );
-        } catch (_e) { /* best-effort audit */ }
+          // Plain insert (partial unique index can't be inferred by onConflict).
+          await admin.from("lit_agent_send_log").insert({
+            agent_name: LOG_AGENT,
+            draft_id: draft.id,
+            lead_id: draft.lead_id,
+            channel: "email",
+            status: "failed",
+            error: (perDraftErr instanceof Error ? perDraftErr.message : String(perDraftErr)).slice(0, 500),
+          });
+        } catch (_e) { /* best-effort audit (23505 = already logged) */ }
         summary.failed += 1; bumpReason("exception");
       }
     }
@@ -836,19 +838,24 @@ Deno.serve(async (req: Request) => {
 
 // ─── send-log skip helper ────────────────────────────────────────────────────
 
-/** Record a 'skipped' send-log row (idempotent via UNIQUE draft_id). */
+/** Record a 'skipped' send-log row (idempotent via the UNIQUE partial index on
+ *  draft_id). Uses a plain INSERT — an upsert with onConflict cannot infer a
+ *  PARTIAL unique index, so it silently no-ops and the skip is never persisted
+ *  (which left skipped drafts to be re-processed forever). A 23505 here just
+ *  means it was already logged, which is fine. */
 async function logSkip(admin: SupabaseClient, draft: DraftRow, reason: string): Promise<void> {
-  await admin.from("lit_agent_send_log").upsert(
-    {
-      agent_name: LOG_AGENT,
-      draft_id: draft.id,
-      lead_id: draft.lead_id,
-      channel: "email",
-      status: "skipped",
-      skip_reason: reason.slice(0, 500),
-    },
-    { onConflict: "draft_id", ignoreDuplicates: true },
-  );
+  const { error } = await admin.from("lit_agent_send_log").insert({
+    agent_name: LOG_AGENT,
+    draft_id: draft.id,
+    lead_id: draft.lead_id,
+    channel: "email",
+    status: "skipped",
+    skip_reason: reason.slice(0, 500),
+  });
+  if (error && (error as { code?: string }).code !== "23505") {
+    // Best-effort: don't fail the run on an audit-log hiccup.
+    console.warn("logSkip insert failed:", error.message);
+  }
 }
 
 // ─── CRM side-effects after a (real or dry-run) send ─────────────────────────
