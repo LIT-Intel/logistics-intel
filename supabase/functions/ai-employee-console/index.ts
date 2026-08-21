@@ -31,90 +31,25 @@ import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supa
 import { handlePreflight, json } from "../_shared/auth.ts";
 import { createLogger, requestId } from "../_shared/logger.ts";
 import { isAgentFlagEnabled, loadAgentConfig } from "../_shared/agent.ts";
+// Shared Harvey pieces (Batch 4 refactor — single source of truth for the
+// persona, the dual-vendor LLM caller, and the knowledge/template grounding).
+import { HARVEY_SYSTEM_PROMPT, buildHarveySystemPrompt } from "../_shared/harvey_persona.ts";
+import { callLlm } from "../_shared/llm.ts";
+import {
+  fetchApprovedKnowledge,
+  fetchApprovedTemplates,
+  renderKnowledgeBlock,
+  renderTemplateBodies,
+  renderTemplateCatalog,
+  selectRelevantTemplates,
+  MAX_TEMPLATE_BODIES,
+} from "../_shared/harvey_context.ts";
 
 const FN_NAME = "ai-employee-console";
 
-// LLM config (chat only — no web search, unlike company-relationship-intel).
-const ANTHROPIC_MODEL = "claude-sonnet-4-6";
-const OPENAI_MODEL = "gpt-4o";
-const MAX_TOKENS = 1024;
-
-// ─── Harvey persona (single source of truth) ─────────────────────────────────
-// Exported so future Writer / Conversation agents (Batch 4/8) import the SAME
-// persona rather than re-inventing one. Keep this tight and instructive — the
-// approved lit_agent_knowledge rows + lit_agent_outreach_templates carry the
-// detailed copy/examples; this string encodes WHO Harvey is and the guardrails.
-export const HARVEY_SYSTEM_PROMPT = [
-  "You are Harvey, a freight salesperson at Logistics Intel (LIT). You have 15+ years selling",
-  "in freight forwarding and logistics. You talk like an experienced freight rep talking to a",
-  "peer — not like an AI, not like a generic SaaS SDR trying to book a meeting.",
-  "",
-  "WHAT YOU SELL & WHO YOU SELL TO:",
-  "You sell LIT's SOFTWARE — a freight-sales intelligence, prospecting, contact-enrichment, and",
-  "CRM platform — to other freight-sales professionals: freight brokers, freight forwarders,",
-  "NVOCCs, 3PL sales teams, customs brokers, drayage providers, domestic transportation sales,",
-  "and logistics business-development people. HARD GUARDRAIL: you are NOT selling freight",
-  "services and you are NOT trying to move anyone's freight. The person you're talking to is a",
-  "SALES PEER, never a shipper. Language like 'who is shipping / what are they moving / who to",
-  "call' describes what LIT helps the CUSTOMER do — it is never an offer to haul freight.",
-  "",
-  "POSITIONING: Find the freight -> Find the company -> Find the person -> Work the opportunity.",
-  "LIT is a freight-sales workflow, not just a lead database, BOL database, or CRM. It brings",
-  "together workflows reps otherwise split across shipment data, ZoomInfo, Panjiva, ImportGenius,",
-  "Revenue Vessel, LinkedIn, Apollo, spreadsheets, and a CRM.",
-  "",
-  "THE 7 RULES:",
-  "1. Sound human. Talk like a freight salesperson, not a brochure.",
-  "2. Don't dump features. Cold outreach creates curiosity — never explain the whole platform up front.",
-  "3. Never attack competitors. Respect ZoomInfo, Panjiva, ImportGenius, Revenue Vessel, Apollo,",
-  "   LinkedIn Sales Nav, etc. — validate them, then explain how LIT's workflow differs.",
-  "4. Listen. Not every reply is an objection. 'How much?' is a question — answer it. 'Not",
-  "   interested' is a boundary — respect it. Don't force every thread toward a demo.",
-  "5. Never invent capabilities. If you don't know whether LIT supports a feature, data source,",
-  "   integration, country, mode, API, or CRM behavior, say 'Great question. Let me confirm that",
-  "   before I give you the wrong answer.' and flag it for a human. Do not guess.",
-  "6. Never invent pricing. Use only approved current pricing. If you don't have it, say 'Happy",
-  "   to send pricing over — let me confirm the current plans so I don't give you outdated info.'",
-  "7. Freight relevance first. Lead with active shippers, trade lanes, volume, ports, FTL/drayage",
-  "   opportunities, import/export activity, decision-makers, and real reasons to call now.",
-  "",
-  "HARD GUARDRAILS:",
-  "- NEVER invent product features, data sources, integrations, pricing, coverage, or metrics.",
-  "- On a HARD rejection ('not interested', 'stop', 'remove me', 'do not contact'): stop",
-  "  immediately, do NOT rebut, do NOT pitch again, and note that the prospect should be suppressed.",
-  "- On a soft rejection ('we're good', 'happy with what we have', 'maybe next year'): acknowledge,",
-  "  stay on radar, reduce cadence — do not keep pitching.",
-  "- On unknown product questions: 'Great question. Let me confirm that before I give you the",
-  "  wrong answer.' and flag for a human. Never hallucinate an answer.",
-  "- Competitors are always respected: validate them, explain the workflow difference, never insult.",
-  "- NEVER claim a prospect viewed, clicked, searched, or downloaded anything unless tracking",
-  "  confirms it. Never invent case studies, customer names, ROI stats, or performance metrics.",
-  "",
-  "VOICE: Prefer human phrasing like 'Curious what you're using today.', 'That's actually what",
-  "frustrated me when I was selling freight.', 'If what you're using works, I wouldn't change it",
-  "either.', 'Bring one lane you're trying to grow.' BANNED SaaS clichés: revolutionary,",
-  "game-changing, cutting-edge, best-in-class, transform your business, unlock your potential,",
-  "synergies, AI-powered ecosystem, seamless omnichannel, 'just circling back', 'I know you're busy'.",
-  "",
-  "GOAL: Optimize for conversation QUALITY, not demos booked. A good outcome can simply be earning",
-  "permission to reconnect later. Behave like an experienced freight salesperson who happens to",
-  "have LIT available — listen first, understand the freight problem, then show where LIT fits.",
-].join("\n");
-
-/** Build the full system persona, layering the config.profile display identity on top. */
-export function buildHarveySystemPrompt(profile: Record<string, unknown> | null): string {
-  const displayName = profile && typeof profile.displayName === "string" ? profile.displayName : "Harvey";
-  const role = profile && typeof profile.role === "string" ? profile.role : "freight salesperson";
-  const tagline = profile && typeof profile.tagline === "string" ? profile.tagline : "";
-  return (
-    `${HARVEY_SYSTEM_PROMPT}\n\n` +
-    "CONTEXT: You are talking to a LIT platform admin inside an internal admin console — this is " +
-    "not customer-facing. When the admin asks you to draft or critique outreach, apply everything " +
-    "above; when they ask operational questions, be concise, direct, and practical.\n" +
-    `Your display identity: ${displayName} — ${role}.` +
-    (tagline ? ` ${tagline}` : "")
-  );
-}
+// Re-export the persona so any external importer of ai-employee-console keeps
+// working after the move to _shared/harvey_persona.ts.
+export { HARVEY_SYSTEM_PROMPT, buildHarveySystemPrompt };
 
 // ─── flag mapping (multi-agent) ──────────────────────────────────────────────
 function flagKeyFor(agentName: string, profile: Record<string, unknown> | null): string {
@@ -136,84 +71,7 @@ function statusOf(cfg: Cfg): string {
 }
 
 // ─── dual-vendor LLM (chat; no tools) ────────────────────────────────────────
-type LlmResult = { ok: true; text: string } | { ok: false; error: string };
-
-function sanitizeKey(raw: string | undefined | null): string {
-  return String(raw ?? "").trim().replace(/^["']+|["']+$/g, "").trim();
-}
-
-async function callLlm(system: string, userText: string): Promise<LlmResult> {
-  const apiKey = sanitizeKey(Deno.env.get("OPENAI_API_KEY")) ||
-    sanitizeKey(Deno.env.get("ANTHROPIC_API_KEY"));
-  if (!apiKey) return { ok: false, error: "OPENAI_API_KEY / ANTHROPIC_API_KEY not configured" };
-  const useAnthropic = apiKey.startsWith("sk-ant-");
-
-  try {
-    if (useAnthropic) {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-        },
-        body: JSON.stringify({
-          model: ANTHROPIC_MODEL,
-          max_tokens: MAX_TOKENS,
-          system,
-          messages: [{ role: "user", content: userText }],
-        }),
-      });
-      if (!res.ok) {
-        const t = await res.text().catch(() => "");
-        return { ok: false, error: `Anthropic API HTTP ${res.status}: ${t.slice(0, 240)}` };
-      }
-      const data = (await res.json()) as { content?: Array<{ type?: string; text?: string }> };
-      const text = (data.content ?? [])
-        .filter((b) => b?.type === "text")
-        .map((b) => String(b.text ?? ""))
-        .join("\n")
-        .trim();
-      if (!text) return { ok: false, error: "Model returned no text" };
-      return { ok: true, text };
-    }
-
-    // OpenAI Responses API (single call; no web search).
-    const res = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: OPENAI_MODEL,
-        max_output_tokens: MAX_TOKENS,
-        instructions: system,
-        input: userText,
-      }),
-    });
-    if (!res.ok) {
-      const t = await res.text().catch(() => "");
-      return { ok: false, error: `OpenAI API HTTP ${res.status}: ${t.slice(0, 240)}` };
-    }
-    const data = (await res.json()) as Record<string, unknown>;
-    const parts: string[] = [];
-    const output = Array.isArray(data.output) ? (data.output as Array<Record<string, unknown>>) : [];
-    for (const item of output) {
-      if (item?.type !== "message") continue;
-      const content = Array.isArray(item.content) ? (item.content as Array<Record<string, unknown>>) : [];
-      for (const part of content) {
-        if (part?.type === "output_text" && String(part.text ?? "").trim()) parts.push(String(part.text));
-      }
-    }
-    if (parts.length === 0 && String(data.output_text ?? "").trim()) parts.push(String(data.output_text));
-    const text = parts.join("\n").trim();
-    if (!text) return { ok: false, error: "Model returned no text" };
-    return { ok: true, text };
-  } catch (err) {
-    return { ok: false, error: `LLM call threw: ${String((err as Error)?.message ?? err)}` };
-  }
-}
+// Moved to _shared/llm.ts (callLlm) — imported above so the writer reuses it.
 
 // ─── action handlers ─────────────────────────────────────────────────────────
 
@@ -294,73 +152,9 @@ async function actionDetail(admin: SupabaseClient, agentName: string) {
 }
 
 // ─── outreach-template grounding ─────────────────────────────────────────────
-type OutreachTemplate = {
-  template_key: string;
-  channel: string | null;
-  stage: string | null;
-  intent: string | null;
-  subject: string | null;
-  body: string | null;
-};
-
-// Cap on how many full template bodies we inject so the prompt stays reasonable.
-const MAX_TEMPLATE_BODIES = 6;
-
-/**
- * Score a template against the admin's message using plain string matching (no LLM).
- * Higher score = more relevant. Channel/stage/intent/key mentions all contribute.
- */
-function scoreTemplate(tpl: OutreachTemplate, msgLower: string): number {
-  let score = 0;
-
-  // Channel intent in the message.
-  if (tpl.channel) {
-    const ch = tpl.channel.toLowerCase();
-    if (ch === "linkedin" && (msgLower.includes("linkedin") || msgLower.includes("connection request") || msgLower.includes("dm"))) score += 4;
-    if (ch === "email" && (msgLower.includes("email") || msgLower.includes("subject") || msgLower.includes("inbox"))) score += 4;
-  }
-
-  // Direct token matches on stage / intent / key (split on non-word chars).
-  const tokens = new Set(
-    `${tpl.stage ?? ""} ${tpl.intent ?? ""} ${tpl.template_key ?? ""}`
-      .toLowerCase()
-      .split(/[^a-z0-9]+/)
-      .filter((t) => t.length >= 3),
-  );
-  for (const tok of tokens) {
-    if (msgLower.includes(tok)) score += 2;
-  }
-
-  // Freight / lifecycle keyword hints → stage/intent buckets.
-  const KEYWORD_STAGE: Array<[string[], string[]]> = [
-    [["broker", "brokerage"], ["freight_hook", "cold_outreach"]],
-    [["forwarder", "forwarding", "nvocc"], ["cold_outreach", "freight_hook"]],
-    [["drayage", "port", "cartage"], ["freight_hook"]],
-    [["ftl", "ltl", "domestic", "truckload"], ["freight_hook"]],
-    [["trial"], ["trial"]],
-    [["pric", "cost", "how much", "expensive", "budget"], ["pricing"]],
-    [["demo"], ["demo", "post_demo"]],
-    [["objection", "not interested", "happy with", "we use"], ["objection", "competitor"]],
-    [["zoominfo", "panjiva", "importgenius", "revenue vessel", "apollo", "competitor"], ["competitor"]],
-    [["reject", "no thanks", "stop", "remove me"], ["rejection", "breakup"]],
-    [["re-engage", "reengage", "reconnect", "old lead", "follow up", "follow-up", "no response"], ["re_engagement", "no_response"]],
-    [["referral", "wrong person"], ["referral"]],
-    [["expansion", "seats", "upsell"], ["expansion"]],
-    [["partner", "influencer", "consultant"], ["partner"]],
-    [["website", "visitor", "pricing page", "intent"], ["website_intent"]],
-    [["curious", "curiosity", "interesting"], ["curiosity"]],
-    [["connect", "connected", "accepted"], ["connected"]],
-  ];
-  const stageLower = (tpl.stage ?? "").toLowerCase();
-  const intentLower = (tpl.intent ?? "").toLowerCase();
-  for (const [keywords, stages] of KEYWORD_STAGE) {
-    if (keywords.some((k) => msgLower.includes(k))) {
-      if (stages.some((s) => stageLower.includes(s) || intentLower.includes(s))) score += 3;
-    }
-  }
-
-  return score;
-}
+// The OutreachTemplate type, MAX_TEMPLATE_BODIES cap, and scoreTemplate/select
+// relevance logic moved to _shared/harvey_context.ts (Batch 4 refactor) so the
+// writer and chat select templates identically. Imported above.
 
 /** Assemble the LLM prompt: persona + knowledge + template catalog + relevant
  *  template bodies + recent runs + chat history. `message` is the current admin
@@ -375,16 +169,9 @@ async function buildChatContext(
 
   // Service-role `admin` client is used throughout — RLS blocks anon from the
   // knowledge/templates tables, so this must never be the user-scoped client.
-  const [knowledgeRes, templatesRes, runsRes, historyRes] = await Promise.all([
-    admin.from("lit_agent_knowledge")
-      .select("category, title, content")
-      .eq("approved", true)
-      .order("category", { ascending: true }),
-    admin.from("lit_agent_outreach_templates")
-      .select("template_key, channel, stage, intent, subject, body")
-      .eq("agent_name", agentName)
-      .eq("approved", true)
-      .order("stage", { ascending: true }),
+  const [knowledge, templates, runsRes, historyRes] = await Promise.all([
+    fetchApprovedKnowledge(admin),
+    fetchApprovedTemplates(admin, agentName),
     admin.from("lit_agent_runs")
       .select("created_at, decision, decision_reason, status, output_json")
       .eq("agent_name", agentName)
@@ -397,43 +184,15 @@ async function buildChatContext(
 
   const personaLine = buildHarveySystemPrompt(profile);
 
-  const knowledge = (knowledgeRes.data ?? []) as Array<{ category: string; title: string; content: string }>;
-  const knowledgeBlock = knowledge.length
-    ? knowledge.map((k) => `- [${k.category}] ${k.title}: ${k.content}`).join("\n")
-    : "(no approved knowledge on file)";
+  const knowledgeBlock = renderKnowledgeBlock(knowledge);
 
   // ── outreach templates: compact catalog (all) + full bodies (most relevant) ──
-  const templates = (templatesRes.data ?? []) as OutreachTemplate[];
-  let templateCatalogBlock = "(no approved outreach templates on file)";
-  let templateBodiesBlock = "";
-  if (templates.length) {
-    // Compact one-line-per-template catalog so Harvey knows what exists (no bodies).
-    templateCatalogBlock = templates
-      .map((t) => {
-        const meta = [t.channel, t.stage, t.intent].filter(Boolean).join("/");
-        const subj = t.subject ? ` — ${t.subject}` : "";
-        return `- [${t.template_key}] ${meta}${subj}`;
-      })
-      .join("\n");
-
-    // Pick up to MAX_TEMPLATE_BODIES most relevant to the current admin message.
-    const msgLower = (message || "").toLowerCase();
-    const ranked = templates
-      .map((t, i) => ({ t, i, score: scoreTemplate(t, msgLower) }))
-      .sort((a, b) => (b.score - a.score) || (a.i - b.i)) // stable: preserve order on ties
-      .slice(0, MAX_TEMPLATE_BODIES)
-      .filter((r) => r.score > 0);
-
-    if (ranked.length) {
-      templateBodiesBlock = ranked
-        .map(({ t }) => {
-          const meta = [t.channel, t.stage, t.intent].filter(Boolean).join("/");
-          const subj = t.subject ? `\nSubject: ${t.subject}` : "";
-          return `### [${t.template_key}] ${meta}${subj}\n${t.body ?? ""}`.trim();
-        })
-        .join("\n\n");
-    }
-  }
+  const templateCatalogBlock = renderTemplateCatalog(templates);
+  // Pick up to MAX_TEMPLATE_BODIES most relevant to the current admin message.
+  // Chat matches on the raw message text only (no channel/stage filter), so
+  // behavior is equivalent to the original inline scoring.
+  const ranked = selectRelevantTemplates(templates, { text: message, limit: MAX_TEMPLATE_BODIES });
+  const templateBodiesBlock = ranked.length ? renderTemplateBodies(ranked) : "";
 
   const runs = (runsRes.data ?? []) as Array<{
     created_at: string; decision: string | null; decision_reason: string | null;
@@ -626,6 +385,114 @@ async function actionRunNow(agentName: string) {
   return { ok: true, controller };
 }
 
+// ─── Harvey WRITER draft actions (Batch 4) ───────────────────────────────────
+// These are the three actions the Drafts tab in AdminAIEmployees.tsx calls.
+// generate_draft proxies to the harvey-writer edge fn (server-to-server with
+// the internal cron secret); list_drafts / update_draft touch lit_agent_drafts
+// directly with the service-role client.
+
+type WriterContact = {
+  firstName?: string;
+  lastName?: string;
+  company?: string;
+  title?: string;
+  email?: string;
+  persona?: string;
+};
+
+/** Server-to-server call to harvey-writer, injecting the authenticated admin id. */
+async function actionGenerateDraft(
+  agentName: string,
+  channel: string,
+  stage: string | null,
+  intent: string | null,
+  leadId: string | null,
+  contact: WriterContact,
+  instructions: string | null,
+  adminUserId: string,
+) {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const cronSecret = Deno.env.get("LIT_CRON_SECRET");
+  if (!supabaseUrl) throw new Error("SUPABASE_URL not configured");
+  if (!cronSecret) return { ok: false, error: "LIT_CRON_SECRET not configured" };
+
+  const url = `${supabaseUrl}/functions/v1/harvey-writer`;
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Internal-Cron": cronSecret,
+      },
+      body: JSON.stringify({
+        agent_name: agentName || "harvey",
+        channel,
+        stage,
+        intent,
+        lead_id: leadId,
+        contact: contact ?? {},
+        instructions,
+        created_by: adminUserId,
+        trigger_type: "manual",
+      }),
+    });
+  } catch (err) {
+    return { ok: false, error: `writer unreachable: ${String((err as Error)?.message ?? err)}` };
+  }
+  if (res.status === 404) return { ok: false, error: "no writer" };
+  const writer = await res.json().catch(() => ({ raw: "non-JSON writer response" }));
+  if (!res.ok || (writer && writer.ok === false)) {
+    const errMsg = (writer && typeof writer.error === "string")
+      ? writer.error
+      : `writer HTTP ${res.status}`;
+    return { ok: false, error: errMsg };
+  }
+  return { ok: true, draft_id: writer.draft_id, draft: writer.draft };
+}
+
+async function actionListDrafts(admin: SupabaseClient, agentName: string, status: string | null) {
+  let q = admin
+    .from("lit_agent_drafts")
+    .select(
+      "id, channel, subject, body, angle, confidence, status, requires_approval, contact_json, stage, intent, template_key, created_at, edited_subject, edited_body",
+    )
+    .eq("agent_name", agentName || "harvey")
+    .order("created_at", { ascending: false })
+    .limit(50);
+  if (status) q = q.eq("status", status);
+  const { data, error } = await q;
+  if (error) throw new Error(`list_drafts read failed: ${error.message}`);
+  return { ok: true, drafts: data ?? [] };
+}
+
+const DRAFT_REVIEW_STATUSES = ["approved", "rejected", "edited"];
+
+async function actionUpdateDraft(
+  admin: SupabaseClient,
+  draftId: string,
+  status: string,
+  subject: string | null,
+  body: string | null,
+  adminUserId: string,
+) {
+  if (!DRAFT_REVIEW_STATUSES.includes(status)) return { ok: false, error: "invalid status" };
+  const patch: Record<string, unknown> = {
+    status,
+    reviewed_by: adminUserId,
+    reviewed_at: new Date().toISOString(),
+  };
+  // On an edit, persist the human-corrected copy alongside the original body.
+  // Do NOT send on approve — sending is a later batch; approving marks it ready.
+  if (status === "edited") {
+    if (typeof subject === "string") patch.edited_subject = subject;
+    if (typeof body === "string") patch.edited_body = body;
+  }
+  const { error } = await admin.from("lit_agent_drafts").update(patch).eq("id", draftId);
+  if (error) throw new Error(`update_draft failed: ${error.message}`);
+  return { ok: true };
+}
+
 const ALLOWED_MODES = ["copilot", "assisted", "autonomous"];
 
 async function actionSetConfig(
@@ -803,6 +670,38 @@ Deno.serve(async (req: Request) => {
         if (typeof body.enabled !== "boolean") return json({ ok: false, error: "enabled boolean required" }, 400);
         log.info("action", { action, agent_name: agentName, user_id: user.id, enabled: body.enabled });
         return json(await actionSetFlag(admin, agentName, body.enabled));
+      }
+      case "generate_draft": {
+        const channel = typeof body.channel === "string" ? body.channel.trim() : "";
+        if (channel !== "email" && channel !== "linkedin") {
+          return json({ ok: false, error: "channel must be 'email' or 'linkedin'" }, 400);
+        }
+        const stage = typeof body.stage === "string" ? body.stage : null;
+        const intent = typeof body.intent === "string" ? body.intent : null;
+        const leadId = typeof body.lead_id === "string" ? body.lead_id : null;
+        const contact = (body.contact && typeof body.contact === "object")
+          ? body.contact as WriterContact
+          : {};
+        const instructions = typeof body.instructions === "string" ? body.instructions : null;
+        log.info("action", { action, agent_name: agentName || "harvey", channel, user_id: user.id });
+        return json(await actionGenerateDraft(
+          agentName || "harvey", channel, stage, intent, leadId, contact, instructions, user.id,
+        ));
+      }
+      case "list_drafts": {
+        const status = typeof body.status === "string" ? body.status : null;
+        log.info("action", { action, agent_name: agentName || "harvey", user_id: user.id });
+        return json(await actionListDrafts(admin, agentName, status));
+      }
+      case "update_draft": {
+        const draftId = typeof body.draft_id === "string" ? body.draft_id : "";
+        const status = typeof body.status === "string" ? body.status : "";
+        if (!draftId) return json({ ok: false, error: "draft_id required" }, 400);
+        if (!status) return json({ ok: false, error: "status required" }, 400);
+        const subject = typeof body.subject === "string" ? body.subject : null;
+        const draftBody = typeof body.body === "string" ? body.body : null;
+        log.info("action", { action, draft_id: draftId, status, user_id: user.id });
+        return json(await actionUpdateDraft(admin, draftId, status, subject, draftBody, user.id));
       }
       default:
         return json({ ok: false, error: `unknown action: ${action || "(none)"}` }, 400);

@@ -40,6 +40,12 @@ import {
   Plus,
   FlaskConical,
   Sparkles,
+  PenLine,
+  Mail,
+  Linkedin,
+  Pencil,
+  Save,
+  Gauge,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
@@ -53,6 +59,7 @@ type AgentProfile = {
   role: string;
   tagline: string;
   avatarKey?: string;
+  avatarUrl?: string;
   accent?: string;
   capabilities?: string[];
 };
@@ -136,7 +143,45 @@ type RunControllerResult = {
   error?: string;
 };
 
-type TabKey = "overview" | "chat" | "tasks" | "activity" | "knowledge";
+type TabKey = "overview" | "chat" | "drafts" | "tasks" | "activity" | "knowledge";
+
+/* Drafts (backend contract) */
+
+type DraftChannel = "email" | "linkedin";
+
+type DraftStatus =
+  | "draft"
+  | "pending_approval"
+  | "approved"
+  | "rejected"
+  | "edited"
+  | "sent";
+
+type DraftContact = {
+  firstName?: string;
+  lastName?: string;
+  company?: string;
+  title?: string;
+  email?: string;
+};
+
+type AgentDraft = {
+  id: string;
+  channel: DraftChannel;
+  subject: string | null;
+  body: string;
+  angle: string | null;
+  confidence: number | null;
+  status: DraftStatus;
+  requires_approval: boolean;
+  contact_json: DraftContact | null;
+  stage: string | null;
+  intent: string | null;
+  template_key: string | null;
+  created_at: string | null;
+  edited_subject: string | null;
+  edited_body: string | null;
+};
 
 /* ─────────────────────────── Helpers ──────────────────────────────────── */
 
@@ -209,6 +254,26 @@ const TASK_STATUS_TONE: Record<string, { bg: string; text: string }> = {
   cancelled: { bg: "bg-slate-100", text: "text-slate-500" },
   failed: { bg: "bg-rose-50", text: "text-rose-700" },
 };
+
+const DRAFT_STATUS_TONE: Record<DraftStatus, { label: string; bg: string; text: string; ring: string }> = {
+  draft: { label: "Draft", bg: "bg-slate-100", text: "text-slate-600", ring: "ring-slate-200" },
+  pending_approval: { label: "Pending approval", bg: "bg-amber-50", text: "text-amber-700", ring: "ring-amber-200" },
+  approved: { label: "Approved", bg: "bg-emerald-50", text: "text-emerald-700", ring: "ring-emerald-200" },
+  rejected: { label: "Rejected", bg: "bg-slate-100", text: "text-slate-500", ring: "ring-slate-200" },
+  edited: { label: "Edited", bg: "bg-blue-50", text: "text-blue-700", ring: "ring-blue-200" },
+  sent: { label: "Sent", bg: "bg-violet-50", text: "text-violet-700", ring: "ring-violet-200" },
+};
+
+// Common outreach stages → backend stage strings.
+const DRAFT_STAGES: Array<{ value: string; label: string }> = [
+  { value: "cold_outreach", label: "Cold outreach" },
+  { value: "no_response", label: "Follow-up" },
+  { value: "competitor", label: "Competitor reply" },
+  { value: "objection", label: "Objection" },
+  { value: "curiosity", label: "Curiosity / Demo" },
+  { value: "trial", label: "Trial" },
+  { value: "re_engagement", label: "Re-engagement" },
+];
 
 /* ─────────────────────────── Page ─────────────────────────────────────── */
 
@@ -379,7 +444,12 @@ function RosterCard({
       ].join(" ")}
     >
       <div className="flex items-start gap-3">
-        <AgentAvatar name={agent.profile.displayName} accent={accent} size={44} />
+        <AgentAvatar
+          name={agent.profile.displayName}
+          accent={accent}
+          size={44}
+          avatarUrl={agent.profile.avatarUrl}
+        />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             <span className="truncate text-[14px] font-semibold text-slate-900">
@@ -426,7 +496,38 @@ function AddPlaceholder() {
   );
 }
 
-function AgentAvatar({ name, accent, size = 40 }: { name: string; accent: string; size?: number }) {
+function AgentAvatar({
+  name,
+  accent,
+  size = 40,
+  avatarUrl,
+}: {
+  name: string;
+  accent: string;
+  size?: number;
+  avatarUrl?: string;
+}) {
+  // Show the photo when a URL is present AND it hasn't failed to load.
+  const [imgFailed, setImgFailed] = useState(false);
+  const showImg = !!avatarUrl && !imgFailed;
+
+  // Reset the failed flag if the URL changes (e.g. switching agents).
+  useEffect(() => {
+    setImgFailed(false);
+  }, [avatarUrl]);
+
+  if (showImg) {
+    return (
+      <img
+        src={avatarUrl}
+        alt={name}
+        onError={() => setImgFailed(true)}
+        className="shrink-0 rounded-xl object-cover"
+        style={{ width: size, height: size }}
+      />
+    );
+  }
+
   return (
     <div
       className="flex shrink-0 items-center justify-center rounded-xl font-semibold text-white"
@@ -508,11 +609,13 @@ function AgentDetailPane({
   const profile = rosterItem?.profile;
   const accent = profile?.accent || "#2563EB";
   const displayName = profile?.displayName || agentName;
+  const avatarUrl = profile?.avatarUrl;
   const config = detail?.agent.config ?? {};
 
   const TABS: Array<{ key: TabKey; label: string; icon: any }> = [
     { key: "overview", label: "Overview", icon: LayoutDashboard },
     { key: "chat", label: "Chat", icon: MessageSquare },
+    { key: "drafts", label: "Drafts", icon: PenLine },
     { key: "tasks", label: "Tasks", icon: ListChecks },
     { key: "activity", label: "Activity", icon: Activity },
     { key: "knowledge", label: "Knowledge", icon: BookOpen },
@@ -523,7 +626,7 @@ function AgentDetailPane({
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 p-5">
         <div className="flex items-start gap-3">
-          <AgentAvatar name={displayName} accent={accent} size={52} />
+          <AgentAvatar name={displayName} accent={accent} size={52} avatarUrl={avatarUrl} />
           <div>
             <div className="flex items-center gap-2">
               <h2 className="font-display text-[20px] font-semibold tracking-[-0.01em] text-slate-900">
@@ -605,7 +708,9 @@ function AgentDetailPane({
         ) : tab === "overview" ? (
           <OverviewTab metrics={detail?.metrics ?? null} config={config} rosterItem={rosterItem} />
         ) : tab === "chat" ? (
-          <ChatTab agentName={agentName} displayName={displayName} accent={accent} />
+          <ChatTab agentName={agentName} displayName={displayName} accent={accent} avatarUrl={avatarUrl} />
+        ) : tab === "drafts" ? (
+          <DraftsTab agentName={agentName} displayName={displayName} />
         ) : tab === "tasks" ? (
           <TasksTab agentName={agentName} onChanged={refreshDetail} />
         ) : tab === "activity" ? (
@@ -1086,10 +1191,12 @@ function ChatTab({
   agentName,
   displayName,
   accent,
+  avatarUrl,
 }: {
   agentName: string;
   displayName: string;
   accent: string;
+  avatarUrl?: string;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1196,11 +1303,13 @@ function ChatTab({
             </p>
           </div>
         ) : (
-          messages.map((m) => <ChatBubble key={m.id} msg={m} accent={accent} displayName={displayName} />)
+          messages.map((m) => (
+            <ChatBubble key={m.id} msg={m} accent={accent} displayName={displayName} avatarUrl={avatarUrl} />
+          ))
         )}
         {typing && (
           <div className="flex items-center gap-2 text-[12px] text-slate-400">
-            <AgentAvatar name={displayName} accent={accent} size={26} />
+            <AgentAvatar name={displayName} accent={accent} size={26} avatarUrl={avatarUrl} />
             <span className="inline-flex gap-1">
               <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.2s]" />
               <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.1s]" />
@@ -1239,7 +1348,17 @@ function ChatTab({
   );
 }
 
-function ChatBubble({ msg, accent, displayName }: { msg: ChatMessage; accent: string; displayName: string }) {
+function ChatBubble({
+  msg,
+  accent,
+  displayName,
+  avatarUrl,
+}: {
+  msg: ChatMessage;
+  accent: string;
+  displayName: string;
+  avatarUrl?: string;
+}) {
   if (msg.role === "system") {
     return (
       <div className="mx-auto max-w-[80%] rounded-md bg-slate-100 px-3 py-1.5 text-center text-[11.5px] text-slate-500">
@@ -1250,7 +1369,7 @@ function ChatBubble({ msg, accent, displayName }: { msg: ChatMessage; accent: st
   const isUser = msg.role === "user";
   return (
     <div className={`flex items-end gap-2 ${isUser ? "justify-end" : "justify-start"}`}>
-      {!isUser && <AgentAvatar name={displayName} accent={accent} size={28} />}
+      {!isUser && <AgentAvatar name={displayName} accent={accent} size={28} avatarUrl={avatarUrl} />}
       <div
         className={[
           "max-w-[75%] whitespace-pre-wrap rounded-2xl px-3.5 py-2 text-[13px] leading-relaxed",
@@ -1468,6 +1587,506 @@ function TasksTab({ agentName, onChanged }: { agentName: string; onChanged: () =
             );
           })}
         </div>
+      )}
+    </div>
+  );
+}
+
+/* ─────────────────────────── Drafts tab ──────────────────────────────── */
+
+function DraftsTab({ agentName, displayName }: { agentName: string; displayName: string }) {
+  const [drafts, setDrafts] = useState<AgentDraft[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+
+  // Generate form state.
+  const [channel, setChannel] = useState<DraftChannel>("email");
+  const [stage, setStage] = useState<string>("cold_outreach");
+  const [intent, setIntent] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [company, setCompany] = useState("");
+  const [title, setTitle] = useState("");
+  const [email, setEmail] = useState("");
+  const [instructions, setInstructions] = useState("");
+  const [generating, setGenerating] = useState(false);
+
+  const [busyDraft, setBusyDraft] = useState<string | null>(null);
+
+  // list_drafts: {action:"list_drafts", agent_name, status?}
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setErr(null);
+    (async () => {
+      try {
+        const data = await callConsole<{ ok: boolean; drafts: AgentDraft[] }>({
+          action: "list_drafts",
+          agent_name: agentName,
+        });
+        if (cancelled) return;
+        if (!data?.ok) throw new Error("Failed to load drafts");
+        setDrafts(data.drafts ?? []);
+      } catch (e: any) {
+        if (cancelled) return;
+        setErr(e?.message || "Failed to load drafts");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [agentName]);
+
+  const reloadDrafts = useCallback(async () => {
+    try {
+      const data = await callConsole<{ ok: boolean; drafts: AgentDraft[] }>({
+        action: "list_drafts",
+        agent_name: agentName,
+      });
+      if (data?.ok) setDrafts(data.drafts ?? []);
+    } catch (e: any) {
+      setErr(e?.message || "Failed to reload drafts");
+    }
+  }, [agentName]);
+
+  // generate_draft: {action:"generate_draft", agent_name, channel, stage?, intent?, contact, instructions?}
+  const generate = useCallback(async () => {
+    if (!firstName.trim() || generating) return;
+    setGenerating(true);
+    setErr(null);
+    try {
+      const data = await callConsole<{ ok: boolean; draft_id: string; draft: any }>({
+        action: "generate_draft",
+        agent_name: agentName,
+        channel,
+        stage: stage || undefined,
+        intent: intent.trim() || undefined,
+        contact: {
+          firstName: firstName.trim(),
+          company: company.trim() || undefined,
+          title: title.trim() || undefined,
+          email: email.trim() || undefined,
+        },
+        instructions: instructions.trim() || undefined,
+      });
+      if (!data?.ok) throw new Error("Draft generation failed");
+      // Prepend the new draft (compose from the generate response + form context).
+      const d = data.draft ?? {};
+      const newDraft: AgentDraft = {
+        id: data.draft_id,
+        channel: d.channel ?? channel,
+        subject: d.subject ?? null,
+        body: d.body ?? "",
+        angle: d.angle ?? null,
+        confidence: typeof d.confidence === "number" ? d.confidence : null,
+        status: "pending_approval",
+        requires_approval: d.requires_approval ?? true,
+        contact_json: {
+          firstName: firstName.trim(),
+          company: company.trim() || undefined,
+          title: title.trim() || undefined,
+          email: email.trim() || undefined,
+        },
+        stage: stage || null,
+        intent: intent.trim() || null,
+        template_key: d.template_key ?? null,
+        created_at: new Date().toISOString(),
+        edited_subject: null,
+        edited_body: null,
+      };
+      setDrafts((prev) => [newDraft, ...prev]);
+      // Clear the contact fields for the next draft.
+      setFirstName("");
+      setCompany("");
+      setTitle("");
+      setEmail("");
+      // Re-sync from server so we get the authoritative record.
+      reloadDrafts();
+    } catch (e: any) {
+      setErr(e?.message || "Draft generation failed");
+    } finally {
+      setGenerating(false);
+    }
+  }, [
+    firstName,
+    company,
+    title,
+    email,
+    channel,
+    stage,
+    intent,
+    instructions,
+    generating,
+    agentName,
+    reloadDrafts,
+  ]);
+
+  // update_draft: {action:"update_draft", draft_id, status, subject?, body?}
+  const updateDraft = useCallback(
+    async (
+      draftId: string,
+      status: "approved" | "rejected" | "edited",
+      edited?: { subject?: string; body?: string },
+    ) => {
+      setBusyDraft(draftId);
+      setErr(null);
+      try {
+        await callConsole({
+          action: "update_draft",
+          draft_id: draftId,
+          status,
+          ...(edited?.subject !== undefined ? { subject: edited.subject } : {}),
+          ...(edited?.body !== undefined ? { body: edited.body } : {}),
+        });
+        await reloadDrafts();
+      } catch (e: any) {
+        setErr(e?.message || "Failed to update draft");
+      } finally {
+        setBusyDraft(null);
+      }
+    },
+    [reloadDrafts],
+  );
+
+  return (
+    <div className="space-y-5">
+      {/* Generate form */}
+      <div className="rounded-xl border border-slate-200 bg-slate-50/40 p-4">
+        <div className="mb-3 flex items-center gap-2">
+          <PenLine className="h-3.5 w-3.5 text-blue-600" aria-hidden />
+          <span className="font-display text-[13px] font-semibold text-slate-800">Generate a draft</span>
+        </div>
+
+        {/* Channel selector */}
+        <div className="mb-3 flex flex-wrap items-center gap-3">
+          <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5">
+            {(["email", "linkedin"] as DraftChannel[]).map((c) => {
+              const Icon = c === "email" ? Mail : Linkedin;
+              return (
+                <button
+                  key={c}
+                  type="button"
+                  disabled={generating}
+                  onClick={() => setChannel(c)}
+                  className={[
+                    "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-semibold capitalize transition disabled:opacity-50",
+                    channel === c
+                      ? "bg-blue-600 text-white shadow-sm"
+                      : "text-slate-500 hover:text-slate-700",
+                  ].join(" ")}
+                >
+                  <Icon className="h-3.5 w-3.5" aria-hidden />
+                  {c === "linkedin" ? "LinkedIn" : "Email"}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Stage selector */}
+          <select
+            value={stage}
+            onChange={(e) => setStage(e.target.value)}
+            disabled={generating}
+            className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-[13px] text-slate-700 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:opacity-50"
+          >
+            {DRAFT_STAGES.map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Intent */}
+        <input
+          value={intent}
+          onChange={(e) => setIntent(e.target.value)}
+          disabled={generating}
+          placeholder="Intent (optional) — e.g. book a 15-min demo"
+          className="mb-2.5 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-800 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:opacity-50"
+        />
+
+        {/* Contact fields */}
+        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+          <input
+            value={firstName}
+            onChange={(e) => setFirstName(e.target.value)}
+            disabled={generating}
+            placeholder="First name (required)"
+            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-800 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:opacity-50"
+          />
+          <input
+            value={company}
+            onChange={(e) => setCompany(e.target.value)}
+            disabled={generating}
+            placeholder="Company"
+            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-800 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:opacity-50"
+          />
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            disabled={generating}
+            placeholder="Title"
+            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-800 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:opacity-50"
+          />
+          <input
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            disabled={generating}
+            placeholder="Email"
+            type="email"
+            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-800 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:opacity-50"
+          />
+        </div>
+
+        {/* Extra instructions */}
+        <textarea
+          value={instructions}
+          onChange={(e) => setInstructions(e.target.value)}
+          disabled={generating}
+          rows={2}
+          placeholder="Extra instructions (optional)…"
+          className="mt-2.5 w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-800 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:opacity-50"
+        />
+
+        <div className="mt-3 flex items-center justify-end">
+          <button
+            type="button"
+            onClick={generate}
+            disabled={generating || !firstName.trim()}
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 text-[13px] font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
+          >
+            {generating ? (
+              <>
+                <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                Generating…
+              </>
+            ) : (
+              <>
+                <Sparkles className="h-3.5 w-3.5" aria-hidden />
+                Generate draft
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {err && (
+        <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[12.5px] text-amber-800">
+          <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+          <span>{err}</span>
+        </div>
+      )}
+
+      {/* Drafts list */}
+      {loading ? (
+        <div className="py-10 text-center">
+          <div className="mx-auto h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600" />
+        </div>
+      ) : drafts.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-200 py-10 text-center text-[13px] text-slate-500">
+          No drafts yet. Generate {displayName}&apos;s first outreach draft above.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {drafts.map((d) => (
+            <DraftCard
+              key={d.id}
+              draft={d}
+              busy={busyDraft === d.id}
+              onApprove={() => updateDraft(d.id, "approved")}
+              onReject={() => updateDraft(d.id, "rejected")}
+              onSaveEdit={(subject, body) => updateDraft(d.id, "edited", { subject, body })}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DraftCard({
+  draft,
+  busy,
+  onApprove,
+  onReject,
+  onSaveEdit,
+}: {
+  draft: AgentDraft;
+  busy: boolean;
+  onApprove: () => void;
+  onReject: () => void;
+  onSaveEdit: (subject: string, body: string) => void;
+}) {
+  const tone = DRAFT_STATUS_TONE[draft.status] ?? DRAFT_STATUS_TONE.draft;
+  const isEmail = draft.channel === "email";
+  const ChannelIcon = isEmail ? Mail : Linkedin;
+
+  // Prefer edited content when present.
+  const displaySubject = draft.edited_subject ?? draft.subject ?? "";
+  const displayBody = draft.edited_body ?? draft.body ?? "";
+
+  const [editing, setEditing] = useState(false);
+  const [editSubject, setEditSubject] = useState(displaySubject);
+  const [editBody, setEditBody] = useState(displayBody);
+
+  const startEdit = () => {
+    setEditSubject(displaySubject);
+    setEditBody(displayBody);
+    setEditing(true);
+  };
+
+  const canAct = draft.status === "pending_approval" || draft.status === "edited" || draft.status === "draft";
+
+  const contact = draft.contact_json ?? {};
+  const contactLine = [contact.firstName, contact.company].filter(Boolean).join(" · ");
+  const confidencePct =
+    typeof draft.confidence === "number"
+      ? Math.round((draft.confidence <= 1 ? draft.confidence * 100 : draft.confidence))
+      : null;
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4">
+      {/* Header row: channel + status + contact */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-600">
+          <ChannelIcon className="h-3 w-3" aria-hidden />
+          {isEmail ? "Email" : "LinkedIn"}
+        </span>
+        <span
+          className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] ring-1 ${tone.bg} ${tone.text} ${tone.ring}`}
+        >
+          {tone.label}
+        </span>
+        {contactLine && (
+          <span className="text-[12px] font-medium text-slate-500">{contactLine}</span>
+        )}
+        <span className="ml-auto text-[11px] text-slate-400" title={fmtAbsolute(draft.created_at)}>
+          {fmtRelative(draft.created_at)}
+        </span>
+      </div>
+
+      {editing ? (
+        <div className="mt-3 space-y-2.5">
+          {isEmail && (
+            <input
+              value={editSubject}
+              onChange={(e) => setEditSubject(e.target.value)}
+              placeholder="Subject"
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] font-semibold text-slate-800 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200"
+            />
+          )}
+          <textarea
+            value={editBody}
+            onChange={(e) => setEditBody(e.target.value)}
+            rows={6}
+            placeholder="Body"
+            className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] leading-relaxed text-slate-800 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200"
+          />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                onSaveEdit(editSubject, editBody);
+                setEditing(false);
+              }}
+              className="inline-flex h-8 items-center gap-1 rounded-md bg-blue-600 px-2.5 text-[12px] font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
+            >
+              <Save className="h-3.5 w-3.5" aria-hidden />
+              Save
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => setEditing(false)}
+              className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 text-[12px] font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          {isEmail && displaySubject && (
+            <div className="mt-3 text-[14px] font-bold text-slate-900">{displaySubject}</div>
+          )}
+          <div className="mt-2 whitespace-pre-wrap text-[13px] leading-relaxed text-slate-700">
+            {displayBody}
+          </div>
+
+          {/* Angle + confidence + template */}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {draft.angle && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-0.5 text-[11.5px] font-medium text-blue-700 ring-1 ring-blue-100">
+                <Sparkles className="h-3 w-3" aria-hidden />
+                {draft.angle}
+              </span>
+            )}
+            {confidencePct !== null && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-2.5 py-0.5 text-[11.5px] font-semibold text-slate-600 ring-1 ring-slate-200">
+                <Gauge className="h-3 w-3 text-slate-400" aria-hidden />
+                <span
+                  className="inline-block h-1.5 w-14 overflow-hidden rounded-full bg-slate-200"
+                  aria-hidden
+                >
+                  <span
+                    className={`block h-full rounded-full ${
+                      confidencePct >= 70 ? "bg-emerald-500" : confidencePct >= 40 ? "bg-amber-500" : "bg-rose-500"
+                    }`}
+                    style={{ width: `${Math.max(0, Math.min(100, confidencePct))}%` }}
+                  />
+                </span>
+                {confidencePct}%
+              </span>
+            )}
+            {draft.template_key && (
+              <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 font-mono text-[10.5px] text-slate-500">
+                {draft.template_key}
+              </span>
+            )}
+          </div>
+
+          {/* Actions */}
+          {canAct && (
+            <div className="mt-3.5 border-t border-slate-100 pt-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={onApprove}
+                  className="inline-flex h-8 items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 text-[12px] font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-50"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
+                  Approve
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={onReject}
+                  className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 text-[12px] font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+                >
+                  <XCircle className="h-3.5 w-3.5" aria-hidden />
+                  Reject
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={startEdit}
+                  className="inline-flex h-8 items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2.5 text-[12px] font-semibold text-blue-700 transition hover:bg-blue-100 disabled:opacity-50"
+                >
+                  <Pencil className="h-3.5 w-3.5" aria-hidden />
+                  Edit
+                </button>
+              </div>
+              <div className="mt-2 flex items-start gap-1.5 text-[11.5px] text-amber-700">
+                <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
+                <span>Approving marks a draft ready — Harvey does not send yet (sending ships in a later batch).</span>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
