@@ -1651,7 +1651,7 @@ function OverviewTab({
             label="Sending limits"
             value={
               config.sending
-                ? `${config.sending.dailyLimit ?? "—"}/day · ${config.sending.hourlyLimit ?? "—"}/hr`
+                ? `${config.sending.emailDailyLimit ?? "—"} email/day · ${config.sending.linkedinInviteDailyLimit ?? "—"} LI invites/day · ${config.sending.linkedinMessageDailyLimit ?? "—"} LI msgs/day`
                 : "—"
             }
           />

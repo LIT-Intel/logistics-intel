@@ -109,21 +109,25 @@ async function actionDetail(admin: SupabaseClient, agentName: string) {
   const startOfToday = new Date();
   startOfToday.setUTCHours(0, 0, 0, 0);
 
+  // Runs are recorded under the WORKER function names (harvey-controller,
+  // harvey-nurture, harvey-email-dispatch, harvey-writer, …), NOT the config key
+  // 'harvey'. Aggregate across all of them: agent_name = '<agent>' OR '<agent>-*'.
+  const runFilter = `agent_name.eq.${agentName},agent_name.like.${agentName}-*`;
   const [runsTodayRes, runsTotalRes, lastRunRes, tasksOpenRes, recentRunsRes] = await Promise.all([
     admin.from("lit_agent_runs").select("id", { count: "exact", head: true })
-      .eq("agent_name", agentName).gte("created_at", startOfToday.toISOString()),
+      .or(runFilter).gte("created_at", startOfToday.toISOString()),
     admin.from("lit_agent_runs").select("id", { count: "exact", head: true })
-      .eq("agent_name", agentName),
+      .or(runFilter),
     admin.from("lit_agent_runs")
       .select("created_at, decision, status")
-      .eq("agent_name", agentName)
+      .or(runFilter)
       .order("created_at", { ascending: false }).limit(1).maybeSingle(),
     admin.from("lit_agent_tasks").select("id", { count: "exact", head: true })
       .eq("agent_name", agentName).in("status", ["queued", "in_progress"]),
     admin.from("lit_agent_runs")
-      .select("id, trigger_type, status, priority, decision, decision_reason, test_mode, started_at, completed_at, created_at")
-      .eq("agent_name", agentName)
-      .order("created_at", { ascending: false }).limit(20),
+      .select("id, agent_name, trigger_type, status, priority, decision, decision_reason, test_mode, started_at, completed_at, created_at")
+      .or(runFilter)
+      .order("created_at", { ascending: false }).limit(25),
   ]);
 
   if (runsTodayRes.error) throw new Error(`runs_today failed: ${runsTodayRes.error.message}`);
@@ -175,7 +179,7 @@ async function buildChatContext(
       fetchApprovedTemplates(admin, agentName),
       admin.from("lit_agent_runs")
         .select("created_at, decision, decision_reason, status, output_json")
-        .eq("agent_name", agentName)
+        .or(`agent_name.eq.${agentName},agent_name.like.${agentName}-*`)
         .order("created_at", { ascending: false }).limit(10),
       admin.from("lit_agent_chat_messages")
         .select("role, content, created_at")
