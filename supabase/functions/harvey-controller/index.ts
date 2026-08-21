@@ -753,22 +753,23 @@ function decide(counts: ProbeCounts): { priority: number; decision: string; reas
       reason: `${counts.due_outreach} due recipient(s) on Harvey campaigns`,
     };
   }
-  if (counts.nurture_candidates > 0) {
-    return {
-      priority: 7,
-      decision: "nurture_trials",
-      reason: `${counts.nurture_candidates} not-upgraded trial user(s) need a lifecycle nurture touch`,
-    };
-  }
+  // OWNER-INTENT: first-touch OUTREACH of the owner's existing enriched CRM
+  // leads is prioritized ABOVE trial nurture — the owner explicitly sourced +
+  // enriched these leads and wants Harvey working them. (Also avoids a single
+  // un-draftable/suppressed nurture straggler starving CRM outreach forever.)
   if (counts.leads_researched_needing_draft > 0) {
-    // OWNER-INTENT: first-touch OUTREACH of the owner's existing workable leads
-    // now outranks opportunistic research. Research is best-effort enrichment,
-    // not a gate — so drafting must not wait behind it.
     return {
       priority: 7,
       decision: "draft_outreach",
       reason:
-        `${counts.leads_researched_needing_draft} workable lead(s) needing a first-touch draft`,
+        `${counts.leads_researched_needing_draft} workable CRM lead(s) needing a first-touch draft`,
+    };
+  }
+  if (counts.nurture_candidates > 0) {
+    return {
+      priority: 8,
+      decision: "nurture_trials",
+      reason: `${counts.nurture_candidates} not-upgraded trial user(s) need a lifecycle nurture touch`,
     };
   }
   if (counts.qualified_leads_needing_messaging > 0) {
