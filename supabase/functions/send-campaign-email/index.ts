@@ -372,7 +372,34 @@ serve(async (req) => {
     return json({ ok: false, error: pickErr.message }, 500);
   }
 
-  const recipients = (due ?? []) as Recipient[];
+  let recipients = (due ?? []) as Recipient[];
+
+  // ─── Exclude INTERNAL agent campaigns (e.g. Harvey) ──────────────────────
+  // Harvey runs his OWN dispatch engine (harvey-email-dispatch /
+  // harvey-linkedin-dispatch) with his own identity, in-body signature, caps
+  // and suppression. This customer sender must NEVER also send his campaigns —
+  // that double-sends and stamps the wrong (mailbox owner's) signature. His
+  // contacts normally carry status='harvey_active' (already excluded by the
+  // pending/queued filter above), but a stray pending/queued row must not leak,
+  // so skip by the campaign's metrics.internal_agent tag as well.
+  if (recipients.length) {
+    const campIds = Array.from(new Set(recipients.map((r) => r.campaign_id)));
+    const { data: campRows } = await admin
+      .from("lit_campaigns")
+      .select("id, metrics")
+      .in("id", campIds);
+    const internal = new Set(
+      (campRows ?? [])
+        .filter((c: { metrics?: Record<string, unknown> | null }) =>
+          (c.metrics as Record<string, unknown> | null)?.internal_agent === "harvey")
+        .map((c: { id: string }) => c.id),
+    );
+    if (internal.size) {
+      recipients = recipients.filter((r) => !internal.has(r.campaign_id));
+      log.info("skipped_internal_campaigns", { campaigns: internal.size });
+    }
+  }
+
   summary.picked = recipients.length;
   if (recipients.length === 0) {
     return json({ ok: true, summary, ms: Date.now() - startedAt });
