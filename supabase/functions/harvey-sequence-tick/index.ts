@@ -120,9 +120,14 @@ function splitName(full: string | null): { first: string | null; last: string | 
 }
 
 function render(text: string | null, firstName: string | null, company: string | null): string {
+  // company fallback is "yours" — the templates only use {{company}} in the
+  // "<Brokerages/Forwarders/3PLs> like {{company}}" opener, which reads
+  // naturally both ways ("like MODE Transportation" / "like yours"). Subjects
+  // and possessives never use the token, so a missing company never leaves a
+  // blank or an awkward phrase.
   return (text ?? "")
     .replace(/\{\{\s*first_name\s*\}\}/g, firstName && firstName.trim() ? firstName.trim() : "there")
-    .replace(/\{\{\s*company\s*\}\}/g, company && company.trim() ? company.trim() : "your team");
+    .replace(/\{\{\s*company\s*\}\}/g, company && company.trim() ? company.trim() : "yours");
 }
 
 // ─── handler ─────────────────────────────────────────────────────────────────
