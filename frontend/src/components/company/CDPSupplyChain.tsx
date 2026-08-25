@@ -542,8 +542,18 @@ function SummaryView({
   const { data: mxRows } = useMxImportActivity(companyName || null);
   const { data: domesticRows } = useDomesticInlandLeg(companyName || null);
   const donutCounts = useMemo(() => {
+    // Ocean is the SINGLE source of truth shared with the Trade-lanes map: the
+    // scoped real monthly-volume total (parsed_summary.monthly_volumes via
+    // realScopeTotal — "All" = cumulative), so the donut's ocean count and the
+    // map header always reconcile to the same number instead of the donut using
+    // an all-time container profile while the map used a trailing-12 window.
+    // Falls back to the container profile only when there is no monthly series.
+    // (owner reconciliation 2026-08-25)
+    const oceanScoped = realScopeTotal(monthlySeries, selectedYear ?? null, null)?.shipments;
     const counts = {
-      ocean: containerProfile.fcl + containerProfile.lcl,
+      ocean: Number.isFinite(oceanScoped as number)
+        ? (oceanScoped as number)
+        : containerProfile.fcl + containerProfile.lcl,
       air: 0,
       truck: 0,
       rail: 0,
@@ -555,7 +565,9 @@ function SummaryView({
       const m = String(r.transport_type || "").toLowerCase();
       if (m.includes("air")) counts.air += 1;
       else if (m.includes("rail") || m.includes("ferrocarril")) counts.rail += 1;
-      else if (m.includes("sea") || m.includes("ocean")) counts.ocean += 1;
+      // Ocean is authoritative from monthlySeries above — do NOT add MX sea
+      // rows here or they'd double-count against the map's ocean total.
+      else if (m.includes("sea") || m.includes("ocean")) { /* counted via monthlySeries */ }
       else counts.truck += 1;
       if ((r.customs_broker_name || "").trim()) counts.broker += 1;
     }
@@ -565,7 +577,7 @@ function SummaryView({
       else counts.domestic += (d.shipment_count || 0);
     }
     return counts;
-  }, [containerProfile.fcl, containerProfile.lcl, mxRows, domesticRows]);
+  }, [containerProfile.fcl, containerProfile.lcl, mxRows, domesticRows, monthlySeries, selectedYear]);
 
   // Per-lane TEU totals — used by LaneMixStackedBar's right rail. Derived
   // from recentBols + canonicalLanes country-pair match.
@@ -605,6 +617,7 @@ function SummaryView({
         onSelectYear={onSelectYear}
         hqCity={hqCity}
         hqState={hqState}
+        domesticCount={donutCounts.domestic + donutCounts.drayage}
       />
       <CadenceAndModalMix
         cadence={cadence}
@@ -3387,6 +3400,7 @@ function TopLanesCard({
   onSelectYear,
   hqCity = null,
   hqState = null,
+  domesticCount = 0,
 }: {
   /** Granular per-route rows (city-level) from the snapshot. */
   canonicalLanes: any[];
@@ -3404,6 +3418,10 @@ function TopLanesCard({
    *  missing US destination state when the dest city IS the HQ city. */
   hqCity?: string | null;
   hqState?: string | null;
+  /** Modeled domestic (inland US truckload) shipment estimate. Added to the
+   *  expanded-map header total so its headline reconciles with the Cadence
+   *  donut (ocean + domestic). Same modeled value the donut uses. */
+  domesticCount?: number;
   /** Page-level Year selector state — wired into the in-map scope so the
    *  existing dropdown is no longer decorative for this card. */
   selectedYear?: number;
@@ -4500,6 +4518,7 @@ function TopLanesCard({
           onToggleYoy={() => setYoyMode((v) => !v)}
           overallYoy={overallYoy}
           perLaneYoy={perLaneYoy}
+          domesticCount={domesticCount}
           scope={{
             yearFilter,
             monthFilter,
@@ -4584,9 +4603,13 @@ function TradeLanesMapDialog({
   onToggleYoy,
   overallYoy = null,
   perLaneYoy = null,
+  domesticCount = 0,
   scope,
 }: {
   pairs: any[];
+  /** Modeled domestic (inland) estimate added to the header total so the
+   *  expanded map's headline reconciles with the Cadence donut. */
+  domesticCount?: number;
   /** ImportYeti slug (source_company_key) — drives the lane intelligence RPC. */
   companyId?: string | null;
   /** Company HQ city/state — recovers a missing US dest state for the
@@ -5318,7 +5341,14 @@ function TradeLanesMapDialog({
           <div className="font-mono text-[10.5px] text-slate-500">
             {filtered.length.toLocaleString()} of {ranked.length.toLocaleString()}{" "}
             country {ranked.length === 1 ? "pair" : "pairs"} ·{" "}
-            {totalShipments.toLocaleString()} shipments
+            {(totalShipments + (domesticCount || 0)).toLocaleString()} shipments
+            {domesticCount > 0 ? (
+              <span className="text-slate-400">
+                {" "}
+                ({totalShipments.toLocaleString()} ocean ·{" "}
+                {domesticCount.toLocaleString()} domestic est.)
+              </span>
+            ) : null}
           </div>
         </div>
         <button
@@ -6987,12 +7017,19 @@ type ScopeTotal = { shipments: number; teu: number; months: number };
 
 /**
  * Real scope total from the monthly series (source of truth):
- *  - no year → trailing 12 months (matches the Cadence card window)
+ *  - no year → last 5 calendar years, cumulative. Owner decision 2026-08-25:
+ *    the Trade-lanes map header and the Cadence totals both flow through this
+ *    fn, so "All" must mean the same thing in both — and it's scoped to the
+ *    most recent 5 years (recent activity) rather than reaching back to 2015.
+ *    This is what fixes the 161-vs-182 mismatch (map used a trailing-12 window
+ *    while the Cadence donut used an all-time count).
  *  - year set → Jan–Dec of that year
  *  - month set → that single month (within the year if one is set)
  * Returns null when the series is empty (unknown → callers fall back to raw
  * sample counts rather than fabricating a total).
  */
+const SCOPE_ALL_YEARS = 5; // "All" window = most recent N calendar years
+
 function realScopeTotal(
   series: MonthlyVolumePoint[],
   yearFilter: number | null,
@@ -7001,7 +7038,13 @@ function realScopeTotal(
   if (!series.length) return null;
   let keys: string[];
   if (yearFilter == null && monthFilter == null) {
-    keys = series.slice(-12).map((p) => p.month);
+    // "All" = the last 5 calendar years, cumulative (series is sorted ascending
+    // by month, so the final entry is the most recent).
+    const latestYear = Number(series[series.length - 1].month.slice(0, 4)) || 0;
+    const minYear = latestYear - (SCOPE_ALL_YEARS - 1);
+    keys = series
+      .map((p) => p.month)
+      .filter((mk) => Number(mk.slice(0, 4)) >= minYear);
   } else {
     keys = series
       .map((p) => p.month)
