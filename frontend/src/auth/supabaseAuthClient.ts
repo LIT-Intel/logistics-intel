@@ -12,7 +12,25 @@ try {
     console.warn('[LIT Auth] Supabase credentials not found. Auth will be disabled.');
     authError = new Error('Supabase credentials not configured');
   } else {
-    authClient = createClient(supabaseUrl, supabaseAnonKey);
+    authClient = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        // ── iOS Web-Locks workaround (2026-08-25) ─────────────────────────
+        // On iOS/WebKit (Chrome Mobile iOS, iPhone Safari) the Web Locks API
+        // that @supabase/auth-js uses to serialize token refresh misbehaves:
+        //   1. Constructing NavigatorLockAcquireTimeoutError throws
+        //      "TypeError: Cannot add property isAcquireTimeout, object is not
+        //      extensible" (auth-js locks.js sets `this.isAcquireTimeout = true`
+        //      on an Error instance WebKit reports as non-extensible), and
+        //   2. under lock contention the _acquireLock ⇄ _useSession retry path
+        //      recurses into "RangeError: Maximum call stack size exceeded".
+        // Both surfaced in prod Sentry on /signup (signUp) and /app/search
+        // (getSession/refresh). This SPA has a single client and does not need
+        // cross-tab lock coordination, so replace the Web-Locks lock with a
+        // pass-through that just runs the operation. persistSession +
+        // autoRefreshToken + detectSessionInUrl keep their defaults.
+        lock: <R>(_name: string, _acquireTimeout: number, fn: () => Promise<R>): Promise<R> => fn(),
+      },
+    });
     console.info('[LIT Auth] Supabase auth client initialized successfully');
   }
 } catch (error) {
