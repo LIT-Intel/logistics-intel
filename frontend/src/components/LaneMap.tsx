@@ -527,6 +527,19 @@ export default function LaneMap({
     });
     baseTiles.addTo(map);
 
+    // Satellite imagery ("dark" variant = Esri World Imagery) carries NO place
+    // labels, so cities/states/countries are unreadable. Overlay Esri's
+    // transparent reference layer (boundaries + place names) on top of the
+    // imagery. It sits in the default tilePane — above the imagery, below the
+    // SVG lane arcs/markers (overlayPane) — so labels are legible without
+    // hiding the lanes. The light basemaps already include their own labels.
+    if (variant === "dark") {
+      L.tileLayer(
+        "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+        { maxZoom: 8, opacity: 0.9 },
+      ).addTo(map);
+    }
+
     // Slow-tile telemetry — flag the loader if no tile arrives in 800 ms.
     let firstTileLanded = false;
     const slowTimer = window.setTimeout(() => {
