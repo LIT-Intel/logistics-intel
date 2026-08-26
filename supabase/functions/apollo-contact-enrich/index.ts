@@ -519,16 +519,36 @@ Deno.serve(async (req: Request) => {
     // enriching it), so saving it makes the workflow work end-to-end.
     if (resolvedCompanyId && user?.id) {
       try {
-        await supabase
-          .from("lit_saved_companies")
-          .upsert(
-            {
-              user_id: user.id,
-              company_id: resolvedCompanyId,
-              last_activity_at: new Date().toISOString(),
-            },
-            { onConflict: "user_id,company_id" },
+        // Do NOT auto-save companies that are internal Lead-CRM leads. The Lead
+        // CRM (lit_admin_leads) is a separate, membership-gated surface; its
+        // broker/forwarder leads must never leak into the customer-facing
+        // Command Center "Accounts" list (which reads lit_saved_companies). The
+        // Lead CRM reads its enriched contacts through the lit_leadcrm_* RPCs,
+        // not the user's saved-company RLS, so the auto-save below is unnecessary
+        // for those leads — skip it when this company is a lead. (2026-08-26)
+        const { data: leadHits } = await supabase
+          .from("lit_admin_leads")
+          .select("id")
+          .eq("company_id", resolvedCompanyId)
+          .limit(1);
+        const isLeadCrmLead = Array.isArray(leadHits) && leadHits.length > 0;
+        if (isLeadCrmLead) {
+          console.log(
+            "[apollo-contact-enrich] skip auto-save — company is a Lead-CRM lead",
+            resolvedCompanyId,
           );
+        } else {
+          await supabase
+            .from("lit_saved_companies")
+            .upsert(
+              {
+                user_id: user.id,
+                company_id: resolvedCompanyId,
+                last_activity_at: new Date().toISOString(),
+              },
+              { onConflict: "user_id,company_id" },
+            );
+        }
       } catch (err) {
         // Non-fatal — the contact still got enriched even if the
         // saved-company upsert hits a missing constraint or RLS.

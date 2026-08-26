@@ -2595,7 +2595,25 @@ function resolveUsDestCityState(
     if (d.state) return d; // (1) explicit state wins immediately
     if (!cityOnly) cityOnly = d.city;
   }
-  if (!cityOnly) return null;
+  if (!cityOnly) {
+    // No US destination city in the route rows — ocean BOLs frequently name
+    // only the entry port / country ("United States"), never the inland
+    // delivery point. Fall back to the company HQ as the final destination
+    // so the US dot lands on the real HQ (e.g. Norcross, GA → -84.21/33.94)
+    // instead of the mid-continent country centroid that reads as "middle of
+    // Oklahoma". Both the `city|state` key and the country-constrained
+    // `city|united states of america` key the caller derives from this are
+    // covered by lit_geo_place_centroids, so the dot resolves precisely.
+    const hqCityRaw = String(hqCity ?? "").trim();
+    if (hqCityRaw) {
+      const hqStateCode = String(hqState ?? "").trim().toLowerCase();
+      return {
+        city: hqCityRaw,
+        state: /^[a-z]{2}$/.test(hqStateCode) ? hqStateCode : null,
+      };
+    }
+    return null;
+  }
   // (2) HQ match — dest city equals the company's own city.
   const hqc = String(hqCity ?? "").trim().toLowerCase();
   const hqs = String(hqState ?? "").trim().toLowerCase();
@@ -4267,7 +4285,7 @@ function TopLanesCard({
           selectedLane={selectedPair}
           onSelectLane={handleSelectFromMap}
           height="fill"
-          variant="light"
+          variant="dark"
           volumeScale
           zoomControlPosition="bottomleft"
           fitPadding={fitPadding}
@@ -5399,7 +5417,7 @@ function TradeLanesMapDialog({
             selectedLane={selected}
             onSelectLane={handleSelect}
             height="fill"
-            variant="light"
+            variant="dark"
             volumeScale
             zoomControlPosition="bottomleft"
             fitPadding={fitPadding}
