@@ -2623,6 +2623,24 @@ function resolveUsDestCityState(
   // (3) unique static-dataset match.
   const unique = uniqueStateForCity(cityOnly);
   if (unique) return { city: cityOnly, state: unique.toLowerCase() };
+  // (4) Sibling-lane disambiguation — when the top dest city is ambiguous
+  //     across states (e.g. "Old Forge" exists in both NY and PA, so (3)
+  //     returns null and the bare-name geocode lands on the wrong one), borrow
+  //     the state from the pair's OTHER US dest cities IF they unambiguously
+  //     agree on exactly ONE state. A company's US delivery points almost
+  //     always cluster in one DC region — here the sibling NE-Pennsylvania
+  //     lane (Wilkes-Barre) pins the ambiguous "Old Forge" to PA. Only fires
+  //     when every resolvable sibling state matches, so it never guesses.
+  const siblingStates = new Set<string>();
+  for (const r of routes || []) {
+    const d = routeDestCityState(r);
+    if (!d) continue;
+    const st = (d.state || uniqueStateForCity(d.city) || "").toLowerCase();
+    if (/^[a-z]{2}$/.test(st)) siblingStates.add(st);
+  }
+  if (siblingStates.size === 1) {
+    return { city: cityOnly, state: [...siblingStates][0] };
+  }
   return { city: cityOnly, state: null };
 }
 

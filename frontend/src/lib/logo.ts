@@ -68,6 +68,13 @@ export function extractDomain(value?: string | null): string | null {
 function buildLogoDevUrl(domain: string): string {
   const params = new URLSearchParams();
   params.set("size", "160");
+  // CRITICAL for the fallback cascade: without this, logo.dev returns a
+  // generated monogram image at HTTP 200 for domains it has no real logo for,
+  // so the <img> "loads" successfully and CompanyAvatar's onError chain NEVER
+  // advances to Google favicons / Unavatar — the row shows a blank/generic mark
+  // instead of a real logo. `fallback=404` makes logo.dev 404 on a miss so the
+  // onError handler falls through to the next candidate. (2026-08-26)
+  params.set("fallback", "404");
   if (LOGO_DEV_TOKEN) params.set("token", LOGO_DEV_TOKEN);
   return `${LOGO_DEV_BASE}/${domain}?${params.toString()}`;
 }

@@ -207,7 +207,17 @@ export function PulseCoachProvider({
             }
             return r;
           });
-          writeCacheFor(userId, r);
+          // Never persist an EMPTY-lanes result. A transient zero-lane
+          // response (or a fetch that lands before the workspace's saves have
+          // lane history) would otherwise be cached for the full 30-min TTL and
+          // the dashboard shows "No trade lanes yet" on the next mount even
+          // though the backend now returns real lanes. Cache only when lanes
+          // are present, so the last-known-good set persists and empties always
+          // re-fetch. (2026-08-26)
+          const laneCount = Array.isArray(r.workspace_lanes)
+            ? r.workspace_lanes.length
+            : 0;
+          if (laneCount > 0) writeCacheFor(userId, r);
           if (!r.ok && r.error) setError(r.error);
         } catch (err: any) {
           setError(err?.message || "Coach fetch failed");
