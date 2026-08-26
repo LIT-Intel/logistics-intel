@@ -400,7 +400,7 @@ export default function WorkspaceLanesGlobe() {
                 }}
                 height={Math.min(Math.max(globeSize, 320), 440)}
                 className="w-full overflow-hidden rounded-lg"
-                variant="light"
+                variant="dark"
                 volumeScale
                 zoomControlPosition="bottomleft"
                 laneColors={laneColors}
