@@ -9,7 +9,7 @@ import { formatLaneShort, resolveEndpoint } from "@/lib/laneGlobe";
 import { laneRegionColor } from "@/lib/laneRegions";
 import LitFlag from "@/components/ui/LitFlag";
 import { usePulseCoach, useWorkspaceLanes } from "./PulseCoachWidget";
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useWorkspaceLaneIntel } from "@/api/laneIntel";
 import LaneIntelligenceCard from "@/components/maps/LaneIntelligenceCard";
 
@@ -114,6 +114,24 @@ export default function WorkspaceLanesGlobe() {
     const average = values.reduce((sum, value) => sum + value, 0) / values.length;
     return average > 0 ? Math.max(...values) / average : null;
   }, [workspaceMonths12]);
+  // 3-year seasonal overlay of the workspace monthly totals — mirrors the
+  // expanded map's per-lane seasonal view so the dashboard "Monthly trend"
+  // panel can show recurring seasonality across years, not just trailing-12.
+  const [monthlySeasonal, setMonthlySeasonal] = useState(false);
+  const workspaceSeasonal = useMemo(() => {
+    const LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const years = Array.from(new Set(months.map((m: any) => String(m.month).slice(0, 4)))).sort().slice(-3);
+    const byKey = new Map(months.map((m: any) => [String(m.month), Number(m.shipments) || 0]));
+    const rows = LABELS.map((label, i) => {
+      const mm = String(i + 1).padStart(2, "0");
+      const row: any = { month: label };
+      for (const y of years) row[y] = byKey.get(`${y}-${mm}`) || 0;
+      return row;
+    });
+    return { rows, years };
+  }, [months]);
+  const seasonalAvailable = workspaceSeasonal.years.length >= 2;
+  const SEASONAL_YEAR_COLORS = ["#CBD5E1", "#60A5FA", "#2563EB"];
 
   const sorted = useMemo(() => {
     const copy = [...lanes];
@@ -290,8 +308,45 @@ export default function WorkspaceLanesGlobe() {
 
       {monthlyOpen && (
         <div className="border-b border-slate-100 bg-slate-50/60 px-4 py-3">
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2"><div><div className="font-display text-[11px] font-bold text-slate-900">Workspace shipment seasonality</div><div className="font-body text-[10px] text-slate-500">All saved companies · actual trailing-12-month shipment totals</div></div><span className="rounded-full bg-blue-50 px-2 py-1 text-[10px] font-semibold text-blue-700">{workspacePeakRatio == null ? "History building" : `Peak month is ${workspacePeakRatio.toFixed(2)}× average`}</span></div>
-          <div className="h-36"><ResponsiveContainer width="100%" height="100%"><BarChart data={workspaceMonths12}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="month" fontSize={9} /><YAxis fontSize={9} width={36} /><Tooltip /><Bar dataKey="shipments" fill="#2563EB" radius={[3,3,0,0]} /></BarChart></ResponsiveContainer></div>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div className="font-display text-[11px] font-bold text-slate-900">Workspace shipment seasonality</div>
+              <div className="font-body text-[10px] text-slate-500">All saved companies · {monthlySeasonal ? "monthly totals by year (last 3)" : "actual trailing-12-month shipment totals"}</div>
+            </div>
+            <div className="flex items-center gap-2">
+              {seasonalAvailable && (
+                <div className="inline-flex gap-1">
+                  <button type="button" onClick={() => setMonthlySeasonal(false)} className={["font-display rounded-md border px-2 py-0.5 text-[9.5px] font-semibold", !monthlySeasonal ? "border-blue-600 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-600"].join(" ")}>12-month</button>
+                  <button type="button" onClick={() => setMonthlySeasonal(true)} className={["font-display rounded-md border px-2 py-0.5 text-[9.5px] font-semibold", monthlySeasonal ? "border-blue-600 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-600"].join(" ")}>3-yr seasonal</button>
+                </div>
+              )}
+              <span className="rounded-full bg-blue-50 px-2 py-1 text-[10px] font-semibold text-blue-700">{workspacePeakRatio == null ? "History building" : `Peak month is ${workspacePeakRatio.toFixed(2)}× average`}</span>
+            </div>
+          </div>
+          <div className="h-36">
+            <ResponsiveContainer width="100%" height="100%">
+              {monthlySeasonal && seasonalAvailable ? (
+                <BarChart data={workspaceSeasonal.rows}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="month" fontSize={9} />
+                  <YAxis fontSize={9} width={36} />
+                  <Tooltip />
+                  <Legend wrapperStyle={{ fontSize: 9 }} />
+                  {workspaceSeasonal.years.map((y, i) => (
+                    <Bar key={y} dataKey={y} name={y} fill={SEASONAL_YEAR_COLORS[i] ?? "#2563EB"} radius={[3, 3, 0, 0]} />
+                  ))}
+                </BarChart>
+              ) : (
+                <BarChart data={workspaceMonths12}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="month" fontSize={9} />
+                  <YAxis fontSize={9} width={36} />
+                  <Tooltip />
+                  <Bar dataKey="shipments" fill="#2563EB" radius={[3, 3, 0, 0]} />
+                </BarChart>
+              )}
+            </ResponsiveContainer>
+          </div>
         </div>
       )}
 

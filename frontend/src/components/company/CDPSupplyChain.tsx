@@ -23,6 +23,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Legend,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -5180,6 +5181,54 @@ function TradeLanesMapDialog({
     const keys = monthWindow?.length ? monthWindow : Object.keys(values).sort();
     return keys.map((month) => ({ month: month.slice(5), shipments: Number(values[month] || 0) }));
   }, [selPair, laneMonthsByPair, monthWindow]);
+  // Selected-lane chart view — the toolbar toggle inside the expanded map:
+  // trailing monthly cadence, year-over-year (current vs prior year), or a
+  // 3-year seasonal overlay. All three read the SAME real per-lane monthly
+  // series (laneMonthsByPair) — never fabricated. (2026-08-26)
+  const [laneChartView, setLaneChartView] =
+    useState<"monthly" | "yoy" | "seasonal">("monthly");
+  const LANE_MONTH_LABELS = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+  ];
+  // Year-over-year: current calendar year vs the prior one, month-by-month.
+  const laneYoyData = useMemo(() => {
+    if (!selPair) return { rows: [] as any[], curYear: null as string | null, priorYear: null as string | null };
+    const values = laneMonthsByPair?.get(selPair.pairKey) || {};
+    const years = Array.from(
+      new Set(Object.keys(values).map((m) => m.slice(0, 4))),
+    ).sort();
+    if (!years.length) return { rows: [], curYear: null, priorYear: null };
+    const curYear = years[years.length - 1];
+    const priorYear = years.length > 1 ? years[years.length - 2] : null;
+    const rows = LANE_MONTH_LABELS.map((label, i) => {
+      const mm = String(i + 1).padStart(2, "0");
+      const row: any = { month: label, [curYear]: Number(values[`${curYear}-${mm}`] || 0) };
+      if (priorYear) row[priorYear] = Number(values[`${priorYear}-${mm}`] || 0);
+      return row;
+    });
+    return { rows, curYear, priorYear };
+  }, [selPair, laneMonthsByPair]);
+  // Seasonal overlay: the last (up to) 3 calendar years, grouped by month so
+  // the recurring peak/trough shape is visible across years.
+  const laneSeasonalData = useMemo(() => {
+    if (!selPair) return { rows: [] as any[], years: [] as string[] };
+    const values = laneMonthsByPair?.get(selPair.pairKey) || {};
+    const years = Array.from(
+      new Set(Object.keys(values).map((m) => m.slice(0, 4))),
+    ).sort().slice(-3);
+    const rows = LANE_MONTH_LABELS.map((label, i) => {
+      const mm = String(i + 1).padStart(2, "0");
+      const row: any = { month: label };
+      for (const y of years) row[y] = Number(values[`${y}-${mm}`] || 0);
+      return row;
+    });
+    return { rows, years };
+  }, [selPair, laneMonthsByPair]);
+  const laneYoyAvailable = laneYoyData.priorYear != null;
+  const laneSeasonalAvailable = laneSeasonalData.years.length >= 2;
+  // Palette for the seasonal per-year bars (oldest → newest).
+  const LANE_YEAR_COLORS = ["#CBD5E1", "#60A5FA", "#2563EB"];
   // Only render the bar chart when this lane has a real monthly series with at
   // least one non-zero month — otherwise hide it (no empty axes).
   const hasMonthlyChart =
@@ -5298,15 +5347,16 @@ function TradeLanesMapDialog({
           </button>
         )}
 
-        {/* Monthly shipment pattern — relocated here from the old toolbar
-            "Monthly chart" strip so it appears automatically with the lane.
-            Rendered only when this lane actually has a monthly rollup series
-            (no empty axes). Keeps the Data-score / YoY badge alongside it. */}
+        {/* Selected-lane shipment trend — trailing monthly cadence, a
+            year-over-year comparison, or a 3-year seasonal overlay, toggled
+            inline. All three read the SAME real per-lane monthly series
+            (laneMonthsByPair) — no fabricated data. Rendered only when this
+            lane has a monthly rollup series. */}
         {hasMonthlyChart && (
           <div className="mt-3 border-t border-slate-100 pt-3">
-            <div className="mb-1.5 flex items-center justify-between gap-2">
+            <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
               <div className="font-display text-[10px] font-bold uppercase tracking-wide text-slate-500">
-                Monthly shipments
+                Shipment trend
               </div>
               {selMetric && (
                 <span
@@ -5320,15 +5370,64 @@ function TradeLanesMapDialog({
                 </span>
               )}
             </div>
-            <div className="h-28">
+            {/* View toggle — YoY / seasonal disable until enough history. */}
+            <div className="mb-2 inline-flex flex-wrap gap-1">
+              {([
+                { id: "monthly", label: "Monthly", enabled: true },
+                { id: "yoy", label: "YoY", enabled: laneYoyAvailable },
+                { id: "seasonal", label: "3-yr seasonal", enabled: laneSeasonalAvailable },
+              ] as const).map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  disabled={!t.enabled}
+                  onClick={() => setLaneChartView(t.id)}
+                  title={t.enabled ? undefined : "Needs more shipment history"}
+                  className={[
+                    "font-display rounded-md border px-2 py-0.5 text-[9.5px] font-semibold transition-colors",
+                    !t.enabled
+                      ? "cursor-not-allowed border-slate-100 bg-slate-50 text-slate-300"
+                      : laneChartView === t.id
+                        ? "border-blue-600 bg-blue-600 text-white"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-slate-300",
+                  ].join(" ")}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            <div className="h-32">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={monthlyChartData}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="month" fontSize={9} />
-                  <YAxis fontSize={9} width={28} />
-                  <Tooltip />
-                  <Bar dataKey="shipments" fill="#2563EB" radius={[3, 3, 0, 0]} />
-                </BarChart>
+                {laneChartView === "yoy" && laneYoyAvailable ? (
+                  <BarChart data={laneYoyData.rows}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="month" fontSize={9} />
+                    <YAxis fontSize={9} width={28} />
+                    <Tooltip />
+                    <Legend wrapperStyle={{ fontSize: 9 }} />
+                    <Bar dataKey={laneYoyData.priorYear as string} name={laneYoyData.priorYear as string} fill="#CBD5E1" radius={[3, 3, 0, 0]} />
+                    <Bar dataKey={laneYoyData.curYear as string} name={laneYoyData.curYear as string} fill="#2563EB" radius={[3, 3, 0, 0]} />
+                  </BarChart>
+                ) : laneChartView === "seasonal" && laneSeasonalAvailable ? (
+                  <BarChart data={laneSeasonalData.rows}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="month" fontSize={9} />
+                    <YAxis fontSize={9} width={28} />
+                    <Tooltip />
+                    <Legend wrapperStyle={{ fontSize: 9 }} />
+                    {laneSeasonalData.years.map((y, i) => (
+                      <Bar key={y} dataKey={y} name={y} fill={LANE_YEAR_COLORS[i] ?? "#2563EB"} radius={[3, 3, 0, 0]} />
+                    ))}
+                  </BarChart>
+                ) : (
+                  <BarChart data={monthlyChartData}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="month" fontSize={9} />
+                    <YAxis fontSize={9} width={28} />
+                    <Tooltip />
+                    <Bar dataKey="shipments" fill="#2563EB" radius={[3, 3, 0, 0]} />
+                  </BarChart>
+                )}
               </ResponsiveContainer>
             </div>
           </div>
