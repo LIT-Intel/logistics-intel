@@ -288,6 +288,17 @@ export async function getPulseCoachNudges(
     workspace_lanes: Array.isArray(data?.workspace_lanes)
       ? data.workspace_lanes
       : [],
+    // The edge fn also returns per-lane + workspace monthly series (added in
+    // a3249eb1) that drive the dashboard "Monthly trend" chart and the ranked
+    // lanes' YoY. These were never mapped out of the response, so laneMonths /
+    // months arrived empty and the chart + YoY read "history building". Map
+    // them through. (2026-08-26)
+    workspace_months: Array.isArray(data?.workspace_months)
+      ? data.workspace_months
+      : [],
+    workspace_lane_months: Array.isArray(data?.workspace_lane_months)
+      ? data.workspace_lane_months
+      : [],
     source: data?.source,
   };
 }
