@@ -239,10 +239,17 @@ const STADIA_KEY = import.meta.env.VITE_STADIA_API_KEY ?? "";
 const TILES_LIGHT_STADIA = `https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}.png?api_key=${STADIA_KEY}`;
 const TILES_LIGHT_STADIA_ATTR =
   '&copy; <a href="https://stadiamaps.com/">Stadia Maps</a> &copy; <a href="https://openmaptiles.org/">OpenMapTiles</a> &copy; <a href="https://www.openstreetmap.org/about">OpenStreetMap</a>';
+// Keyless light-basemap fallback. CARTO's basemap CDN
+// (basemaps.cartocdn.com) now stamps "API KEY REQUIRED" across its tiles —
+// they enforced keys in 2025 — so the keyless fallback uses Esri's World Light
+// Gray Canvas: a clean, muted light style that needs NO account or key. Set
+// VITE_STADIA_API_KEY (Stadia has a free tier) to switch back to the intended
+// "Alidade Smooth" style — tilesFor() prefers Stadia whenever the key exists.
+// Note: Esri tiles use {z}/{y}/{x} order and carry no {s} subdomain.
 const TILES_LIGHT_FALLBACK =
-  "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png";
+  "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}";
 const TILES_LIGHT_FALLBACK_ATTR =
-  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
+  'Tiles &copy; <a href="https://www.esri.com/">Esri</a> — Esri, HERE, Garmin, &copy; OpenStreetMap contributors';
 
 function tilesFor(variant: LaneMapVariant): { url: string; attr: string } {
   if (variant === "light") {
