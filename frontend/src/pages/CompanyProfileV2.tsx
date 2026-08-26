@@ -53,6 +53,7 @@ import AddToListPicker from "@/features/pulse/AddToListPicker";
 import CreateDealModal, { type CreateDealPrefill } from "@/features/crm/CreateDealModal";
 import DealDetailDrawer from "@/features/crm/DealDetailDrawer";
 import CompanyCrmPanel from "@/components/company/CompanyCrmPanel";
+import HarveyCopilotPanel from "@/components/company/HarveyCopilotPanel";
 import { listStages, type DealStage, type DealCard } from "@/api/crm";
 import { PulseLIVETab } from "@/features/pulse/PulseLIVETab";
 import {
@@ -2246,6 +2247,19 @@ function ProfilePanel({ rawId }: { rawId: string }) {
       <OrgSaveCollisionCard
         companyUuid={bundle?.identity?.id ?? null}
         companyName={companyName}
+      />
+
+      <HarveyCopilotPanel
+        companyId={bundle?.identity?.id ?? null}
+        sourceCompanyKey={
+          bundle?.identity?.key ??
+          (activeProfile as any)?.source_company_key ??
+          (activeProfile as any)?.sourceCompanyKey ??
+          companyId ??
+          null
+        }
+        companyName={companyName}
+        domain={companyDomain ?? null}
       />
 
       {/* CRM Phase 1 — Add to pipeline. Creates a deal prefilled with this

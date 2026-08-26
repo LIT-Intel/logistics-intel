@@ -14,7 +14,8 @@
 //
 // Response shape mirrors frontend/src/lib/companyProfile.types.ts.
 
-import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
+import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { requireUser } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -321,7 +322,7 @@ async function loadContacts(client: SupabaseClient, companyId: string | null) {
   if (!companyId) return null;
   const { data, count } = await client
     .from("lit_contacts")
-    .select("id, full_name, first_name, last_name, name, title, department, email, phone, linkedin_url, source, source_provider, enriched_at, is_verified, email_verified, verified_by_provider, email_verification_status", { count: "exact" })
+    .select("id, full_name, first_name, last_name, title, department, email, phone, linkedin_url, source, source_provider, enriched_at, email_verified, verified_by_provider, email_verification_status", { count: "exact" })
     .eq("company_id", companyId)
     .order("enriched_at", { ascending: false, nullsFirst: false })
     .limit(50);
@@ -332,7 +333,6 @@ async function loadContacts(client: SupabaseClient, companyId: string | null) {
     id: row.id,
     full_name:
       row.full_name ||
-      row.name ||
       [row.first_name, row.last_name].filter(Boolean).join(" ").trim() ||
       null,
     title: row.title ?? null,
@@ -411,17 +411,13 @@ Deno.serve(async (req: Request) => {
 
   const requestId = crypto.randomUUID();
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const client = createClient(supabaseUrl, supabaseKey);
-
-    const authHeader = req.headers.get("Authorization");
-    let userId: string | null = null;
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      const token = authHeader.replace("Bearer ", "");
-      const { data: { user } } = await client.auth.getUser(token);
-      userId = user?.id ?? null;
-    }
+    const auth = await requireUser(req);
+    if (auth instanceof Response) return auth;
+    // All profile reads use the caller-scoped client. This is critical for
+    // contacts, saved state, activity and Pulse: the previous service-role
+    // client could return cross-tenant rows for any requested company id.
+    const client = auth.userClient;
+    const userId = auth.user.id;
 
     const body: RequestBody = await req.json();
     const include: Include[] = body.include ?? ["identity", "shipments", "contacts", "activity"];

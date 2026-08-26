@@ -1,0 +1,55 @@
+import { supabase } from "@/lib/supabase";
+
+export type HarveyCopilotRequest = {
+  action?: "context" | "handoff";
+  company_id?: string | null;
+  source_company_key?: string | null;
+  company_name?: string | null;
+  domain?: string | null;
+};
+
+export type HarveyCopilotData = {
+  summary: string;
+  claims: Array<{
+    id: string;
+    kind: "FACT" | "INFERENCE";
+    statement: string;
+    confidence: number;
+    provenance: Array<{ source: string; field: string }>;
+    method?: string;
+  }>;
+  opportunity: { score: number; confidence: number; label: "low" | "medium" | "high" };
+  recommended_contacts: Array<{
+    id: string | null;
+    full_name: string;
+    title: string | null;
+    email: string | null;
+    linkedin_url: string | null;
+    score: number;
+    reason: string;
+  }>;
+  meeting_brief: {
+    objective: string;
+    call_opener: string;
+    talking_points: string[];
+    discovery_questions: string[];
+    risk_flags: string[];
+  };
+  drafts: {
+    email: { subject: string; body: string; facts_used: string[] };
+    linkedin: { body: string; facts_used: string[] };
+  };
+  actions: Array<{ type: string; label: string; rationale: string; available: boolean }>;
+};
+
+export async function loadHarveyCopilot(req: HarveyCopilotRequest): Promise<HarveyCopilotData | null> {
+  const { data, error } = await supabase.functions.invoke("harvey-copilot", { body: { ...req, action: "context" } });
+  if (error || !data?.ok) return null;
+  return data.data as HarveyCopilotData;
+}
+
+export async function handoffToHarvey(req: HarveyCopilotRequest): Promise<{ lead_id?: string; created?: boolean; merged?: boolean }> {
+  const { data, error } = await supabase.functions.invoke("harvey-copilot", { body: { ...req, action: "handoff" } });
+  if (error || !data?.ok) throw new Error(data?.error || error?.message || "Harvey handoff failed");
+  return data.handoff ?? {};
+}
