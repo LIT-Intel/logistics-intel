@@ -17,6 +17,18 @@ Internal Lead CRM member only
 Existing harvey-controller remains internal-only and independently gated.
 ```
 
+## Conversational replacement for Pulse Coach
+
+The bottom-right assistant is Harvey across the application. Existing Pulse workspace aggregation still supplies proactive nudges, but user questions now call `harvey-copilot` with action `ask`; the old Pulse Coach answer endpoint is no longer used by the composer.
+
+- On Company Profile, the request includes the active company identity and the server rebuilds `HarveyContext` under the caller's RLS session.
+- On other pages, Harvey receives only the caller's tenant-scoped workspace summary and current route.
+- The client includes at most eight recent user/assistant turns for follow-up questions.
+- Structured output contains answer, classification, confidence, validated grounded claim IDs, inference notes, and an optional allow-listed LIT route.
+- The question path is read-only. Sending outreach, changing CRM state, and internal autonomous work require their existing explicit endpoints and permission checks.
+- Contact email addresses and phone numbers are deliberately omitted from model input; Harvey receives reachability booleans instead.
+- Questions and retrieved data are treated as untrusted content and cannot override grounding, tenant, or secret-handling rules.
+
 ## Contracts
 
 - `HarveyContext`: identity, tenant/caller, observed freight, modeled domestic opportunity, contacts, relationship/CRM state, source timestamps.

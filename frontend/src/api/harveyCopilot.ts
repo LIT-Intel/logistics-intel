@@ -11,11 +11,23 @@ export type HarveyCompanyContext = {
 };
 
 export type HarveyCopilotRequest = {
-  action?: "context" | "handoff";
+  action?: "context" | "handoff" | "ask";
   company_id?: string | null;
   source_company_key?: string | null;
   company_name?: string | null;
   domain?: string | null;
+};
+
+export type HarveyChatTurn = { role: "user" | "assistant"; content: string };
+
+export type HarveyAnswer = {
+  answer_md: string;
+  classification: string;
+  confidence: number;
+  evidence: HarveyCopilotData["claims"];
+  inference_notes: string[];
+  cta: { label: string; url: string } | null;
+  model?: string;
 };
 
 export type HarveyCopilotData = {
@@ -56,6 +68,25 @@ export async function loadHarveyCopilot(req: HarveyCopilotRequest): Promise<Harv
   const { data, error } = await supabase.functions.invoke("harvey-copilot", { body: { ...req, action: "context" } });
   if (error || !data?.ok) return null;
   return data.data as HarveyCopilotData;
+}
+
+export async function askHarveyCopilot(
+  req: HarveyCopilotRequest,
+  question: string,
+  history: HarveyChatTurn[] = [],
+  pageContext?: string,
+): Promise<HarveyAnswer> {
+  const { data, error } = await supabase.functions.invoke("harvey-copilot", {
+    body: {
+      ...req,
+      action: "ask",
+      question,
+      history: history.slice(-8),
+      page_context: pageContext ?? null,
+    },
+  });
+  if (error || !data?.ok) throw new Error(data?.error || error?.message || "Harvey couldn't answer right now.");
+  return data.data as HarveyAnswer;
 }
 
 export async function handoffToHarvey(req: HarveyCopilotRequest): Promise<{ lead_id?: string; created?: boolean; merged?: boolean }> {

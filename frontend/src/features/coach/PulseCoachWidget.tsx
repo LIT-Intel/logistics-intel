@@ -21,12 +21,10 @@ import {
 import { useNavigate } from "react-router-dom";
 import {
   getPulseCoachNudges,
-  askPulseCoach,
   type CoachNudge,
   type PulseCoachResult,
   type WorkspaceLane,
 } from "@/lib/api";
-import type { CoachCompanyHit } from "@/api/pulse";
 import {
   PIPELINE_PROMPTS,
   isPipelineQuestion,
@@ -51,6 +49,9 @@ import HarveyCopilotPanel from "@/components/company/HarveyCopilotPanel";
 import {
   HARVEY_COMPANY_CONTEXT_EVENT,
   HARVEY_COMPANY_CONTEXT_STORAGE_KEY,
+  askHarveyCopilot,
+  type HarveyAnswer,
+  type HarveyChatTurn,
   type HarveyCompanyContext,
 } from "@/api/harveyCopilot";
 
@@ -788,7 +789,10 @@ export function PulseCoachFloating() {
           video are showing — it resurfaces on later opens. */}
       {!firstRun && !companyContext ? <TutorialCard /> : null}
       {!firstRun && !companyContext ? <CoachVideoGuide /> : null}
-      <CoachComposer extraPrompts={firstRun ? FIRST_RUN_PROMPTS : undefined} />
+      <CoachComposer
+        extraPrompts={firstRun ? FIRST_RUN_PROMPTS : undefined}
+        companyContext={companyContext}
+      />
     </div>
   );
 }
@@ -950,20 +954,19 @@ function CoachVideoGuide({
 
 function CoachComposer({
   extraPrompts,
+  companyContext,
 }: {
   /** Prompts prepended ahead of the page-aware set. Used by the
    *  coach-first onboarding to lead with follow-up-oriented asks. */
   extraPrompts?: string[];
+  companyContext?: HarveyCompanyContext | null;
 }) {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [q, setQ] = useState("");
   const [asking, setAsking] = useState(false);
-  const [answer, setAnswer] = useState<{
-    md: string;
-    cta: { label: string; url: string } | null;
-    companies?: CoachCompanyHit[];
-  } | null>(null);
+  const [answer, setAnswer] = useState<HarveyAnswer | null>(null);
+  const [history, setHistory] = useState<HarveyChatTurn[]>([]);
   const [err, setErr] = useState<string | null>(null);
 
   // Resolve page-aware prompts. We always look at the full tutorial
@@ -975,11 +978,25 @@ function CoachComposer({
   // lit_pipeline_summary() RPC (no LLM edge-fn change) — see submit() below.
   const onCrmSurface = pathname.startsWith("/app/command-center");
   const quickPrompts = useMemo(() => {
+    const companyPrompts = companyContext ? [
+      "Why is this account worth pursuing?",
+      "Who should I contact and why?",
+      "What should I say on the call?",
+      "Draft a concise first email",
+    ] : [];
     const pageAware = tutorial?.quick_prompts ?? [];
     const crm = onCrmSurface ? [...PIPELINE_PROMPTS] : [];
     // Prepend + dedupe so the CRM / coach-first prompts lead the chip row.
-    return [...new Set([...(extraPrompts ?? []), ...crm, ...pageAware])];
-  }, [tutorial, extraPrompts, onCrmSurface]);
+    return [...new Set([...companyPrompts, ...(extraPrompts ?? []), ...crm, ...pageAware])];
+  }, [tutorial, extraPrompts, onCrmSurface, companyContext]);
+
+  const companyIdentity = `${companyContext?.companyId ?? ""}|${companyContext?.sourceCompanyKey ?? ""}|${companyContext?.companyName ?? ""}`;
+  useEffect(() => {
+    setAnswer(null);
+    setHistory([]);
+    setQ("");
+    setErr(null);
+  }, [companyIdentity]);
 
   const submit = useCallback(async (e?: React.FormEvent, override?: string) => {
     e?.preventDefault();
@@ -993,25 +1010,41 @@ function CoachComposer({
       // Pipeline questions are answered locally from the org-scoped
       // lit_pipeline_summary() RPC — real deal data, no LLM, no edge-fn
       // change. Falls through to the normal coach path if the RPC fails.
-      if (isPipelineQuestion(trimmed)) {
+      if (!companyContext && isPipelineQuestion(trimmed)) {
         const pipe = await answerPipelineQuestion(trimmed);
         if (pipe) {
-          setAnswer({ md: pipe.md, cta: pipe.cta, companies: undefined });
+          const localAnswer: HarveyAnswer = {
+            answer_md: pipe.md,
+            classification: "pipeline_question",
+            confidence: 1,
+            evidence: [],
+            inference_notes: [],
+            cta: pipe.cta,
+          };
+          setAnswer(localAnswer);
+          setHistory((turns) => [...turns, { role: "user", content: trimmed }, { role: "assistant", content: pipe.md }].slice(-8));
           return;
         }
       }
-      const resp = await askPulseCoach(trimmed);
-      if (!resp.ok) {
-        setErr(resp.error || resp.answer_md || "Harvey couldn't answer that.");
-        return;
-      }
-      setAnswer({ md: resp.answer_md, cta: resp.cta, companies: resp.companies });
+      const request = companyContext ? {
+        company_id: companyContext.companyId,
+        source_company_key: companyContext.sourceCompanyKey,
+        company_name: companyContext.companyName,
+        domain: companyContext.domain,
+      } : {};
+      const resp = await askHarveyCopilot(request, trimmed, history, pathname);
+      setAnswer(resp);
+      setHistory((turns) => [
+        ...turns,
+        { role: "user" as const, content: trimmed },
+        { role: "assistant" as const, content: resp.answer_md },
+      ].slice(-8));
     } catch (err: any) {
       setErr(err?.message || "Harvey couldn't answer right now.");
     } finally {
       setAsking(false);
     }
-  }, [q, asking]);
+  }, [q, asking, companyContext, history, pathname]);
 
   return (
     <div className="border-t border-white/5 px-3.5 py-3">
@@ -1039,41 +1072,20 @@ function CoachComposer({
       {answer ? (
         <div className="mb-2">
           <div className="font-body text-[12px] leading-relaxed text-slate-200" style={{ whiteSpace: "pre-wrap" }}>
-            {answer.md}
+            {answer.answer_md}
           </div>
-          {/* Inline search results — the Coach detected a data query
-              (geography / industry / lane / etc.) and ran it through
-              the Pulse search pipeline. Each row navigates straight
-              to the company profile. Hidden for meta / help answers. */}
-          {answer.companies && answer.companies.length > 0 ? (
-            <ul className="mt-2 flex flex-col gap-1.5">
-              {answer.companies.slice(0, 8).map((c) => {
-                const loc = [c.city, c.state, c.country].filter(Boolean).join(", ");
-                const target = c.id ? `/app/company/${c.id}` : "/app/prospecting";
-                return (
-                  <li key={c.id || c.name}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigate(target);
-                        setAnswer(null);
-                        setQ("");
-                      }}
-                      className="w-full rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-left transition hover:border-cyan-400/40 hover:bg-cyan-400/[0.06]"
-                    >
-                      <div className="font-display text-[11.5px] font-semibold text-slate-100">
-                        {c.name}
-                      </div>
-                      {(loc || c.industry) ? (
-                        <div className="font-body text-[10.5px] text-slate-400">
-                          {[loc, c.industry].filter(Boolean).join(" · ")}
-                        </div>
-                      ) : null}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
+          {answer.evidence.length > 0 ? (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {answer.evidence.map((claim) => (
+                <span
+                  key={claim.id}
+                  title={claim.statement}
+                  className={`rounded-full border px-2 py-0.5 text-[9.5px] font-semibold ${claim.kind === "FACT" ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-200" : "border-amber-400/30 bg-amber-400/10 text-amber-200"}`}
+                >
+                  {claim.kind} · {Math.round(claim.confidence * 100)}%
+                </span>
+              ))}
+            </div>
           ) : null}
           {answer.cta ? (
             <button
@@ -1102,10 +1114,10 @@ function CoachComposer({
           type="text"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Ask anything about LIT, your plan, replies, or how to..."
+          placeholder={companyContext ? `Ask Harvey about ${companyContext.companyName}...` : "Ask Harvey about LIT, freight, sales, or your workspace..."}
           className="flex-1 rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5 text-[12px] text-slate-100 placeholder:text-slate-500 focus:border-cyan-400/40 focus:outline-none"
           disabled={asking}
-          maxLength={500}
+          maxLength={1200}
         />
         <button
           type="submit"
