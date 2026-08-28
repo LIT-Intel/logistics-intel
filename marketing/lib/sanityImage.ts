@@ -14,6 +14,45 @@ export function imgUrl(
 }
 
 /**
+ * Resolve the cover art used by blog index cards.
+ *
+ * Priority:
+ * 1. Sanity hero image
+ * 2. Explicit heroImageUrl
+ * 3. LIT's own 1200x630 OG renderer
+ *
+ * The final fallback keeps every published article visually complete on
+ * listing pages instead of rendering an empty navy placeholder when a post
+ * was published without a dedicated hero image.
+ */
+export function blogCoverUrl(
+  post:
+    | {
+        title?: string | null;
+        heroImage?: any;
+        heroImageUrl?: string | null;
+        categories?: Array<{ title?: string | null } | null> | null;
+      }
+    | null
+    | undefined,
+  width = 1200,
+) {
+  if (!post) return null;
+
+  const sanityImage = imgUrl(post.heroImage, { width });
+  if (sanityImage) return sanityImage;
+
+  const explicitUrl = post.heroImageUrl?.trim();
+  if (explicitUrl) return explicitUrl;
+
+  const title = post.title?.trim();
+  if (!title) return null;
+
+  const eyebrow = post.categories?.[0]?.title?.trim() || "Logistics Intel";
+  return `/api/og?title=${encodeURIComponent(title)}&eyebrow=${encodeURIComponent(eyebrow)}`;
+}
+
+/**
  * logo.dev fallback URL — resolves a company logo by domain.
  *
  * Uses the canonical logo.dev URL format `https://img.logo.dev/{domain}?token={key}`
