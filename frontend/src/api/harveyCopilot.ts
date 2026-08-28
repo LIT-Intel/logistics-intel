@@ -1,5 +1,15 @@
 import { supabase } from "@/lib/supabase";
 
+export const HARVEY_COMPANY_CONTEXT_EVENT = "lit:harvey-company-context";
+export const HARVEY_COMPANY_CONTEXT_STORAGE_KEY = "lit.harvey.company-context.v1";
+
+export type HarveyCompanyContext = {
+  companyId: string | null;
+  sourceCompanyKey: string | null;
+  companyName: string;
+  domain: string | null;
+};
+
 export type HarveyCopilotRequest = {
   action?: "context" | "handoff";
   company_id?: string | null;

@@ -53,7 +53,11 @@ import AddToListPicker from "@/features/pulse/AddToListPicker";
 import CreateDealModal, { type CreateDealPrefill } from "@/features/crm/CreateDealModal";
 import DealDetailDrawer from "@/features/crm/DealDetailDrawer";
 import CompanyCrmPanel from "@/components/company/CompanyCrmPanel";
-import HarveyCopilotPanel from "@/components/company/HarveyCopilotPanel";
+import {
+  HARVEY_COMPANY_CONTEXT_EVENT,
+  HARVEY_COMPANY_CONTEXT_STORAGE_KEY,
+  type HarveyCompanyContext,
+} from "@/api/harveyCopilot";
 import { listStages, type DealStage, type DealCard } from "@/api/crm";
 import { PulseLIVETab } from "@/features/pulse/PulseLIVETab";
 import {
@@ -1100,6 +1104,48 @@ function ProfilePanel({ rawId }: { rawId: string }) {
     shellCompany?.domain ||
     bundle?.identity?.display?.domain ||
     null;
+
+  const harveyCompanyId = bundle?.identity?.id ?? null;
+  const harveySourceCompanyKey =
+    bundle?.identity?.key ??
+    (activeProfile as any)?.source_company_key ??
+    (activeProfile as any)?.sourceCompanyKey ??
+    companyId ??
+    null;
+
+  // The global bottom-right assistant owns Harvey's UI. Publish only the
+  // canonical account identity here so the profile itself stays focused on
+  // freight intelligence instead of rendering a second, oversized surface.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const detail: HarveyCompanyContext = {
+      companyId: harveyCompanyId,
+      sourceCompanyKey: harveySourceCompanyKey,
+      companyName,
+      domain: companyDomain,
+    };
+    try {
+      window.sessionStorage.setItem(
+        HARVEY_COMPANY_CONTEXT_STORAGE_KEY,
+        JSON.stringify(detail),
+      );
+    } catch {
+      // The live event below still updates Harvey when storage is unavailable.
+    }
+    window.dispatchEvent(
+      new CustomEvent(HARVEY_COMPANY_CONTEXT_EVENT, { detail }),
+    );
+    return () => {
+      try {
+        window.sessionStorage.removeItem(HARVEY_COMPANY_CONTEXT_STORAGE_KEY);
+      } catch {
+        // Ignore private-mode/storage restrictions.
+      }
+      window.dispatchEvent(
+        new CustomEvent(HARVEY_COMPANY_CONTEXT_EVENT, { detail: null }),
+      );
+    };
+  }, [harveyCompanyId, harveySourceCompanyKey, companyName, companyDomain]);
 
   const companyWebsite =
     canonicalDomain ||
@@ -2247,19 +2293,6 @@ function ProfilePanel({ rawId }: { rawId: string }) {
       <OrgSaveCollisionCard
         companyUuid={bundle?.identity?.id ?? null}
         companyName={companyName}
-      />
-
-      <HarveyCopilotPanel
-        companyId={bundle?.identity?.id ?? null}
-        sourceCompanyKey={
-          bundle?.identity?.key ??
-          (activeProfile as any)?.source_company_key ??
-          (activeProfile as any)?.sourceCompanyKey ??
-          companyId ??
-          null
-        }
-        companyName={companyName}
-        domain={companyDomain ?? null}
       />
 
       {/* CRM Phase 1 — Add to pipeline. Creates a deal prefilled with this

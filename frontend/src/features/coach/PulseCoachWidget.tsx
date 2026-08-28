@@ -9,6 +9,7 @@ import React, {
 } from "react";
 import {
   ArrowRight,
+  Bot,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -46,6 +47,12 @@ import {
   shouldShowTutorial,
   type OnboardingMap,
 } from "@/lib/onboardingState";
+import HarveyCopilotPanel from "@/components/company/HarveyCopilotPanel";
+import {
+  HARVEY_COMPANY_CONTEXT_EVENT,
+  HARVEY_COMPANY_CONTEXT_STORAGE_KEY,
+  type HarveyCompanyContext,
+} from "@/api/harveyCopilot";
 
 /**
  * Pulse Coach widget — proactive AI nudges grounded in the user's
@@ -507,6 +514,7 @@ export function PulseCoachFloating() {
   const tut = useTutorialActive();
   const { user } = useAuth();
   const { pathname } = useLocation();
+  const [companyContext, setCompanyContext] = useState<HarveyCompanyContext | null>(null);
   // Default collapsed so the widget greets the user as a quiet pill
   // rather than a popped-open card every page load.
   const [open, setOpen] = useState(() => {
@@ -519,6 +527,26 @@ export function PulseCoachFloating() {
   // auto-open for a brand-new user's first session on /app/search.
   const [firstRun, setFirstRun] = useState(false);
   const firstRunEvaluated = useRef(false);
+
+  useEffect(() => {
+    const onCompanyProfile = /^\/app\/companies\/[^/]+/.test(pathname);
+    const readStoredContext = () => {
+      if (!onCompanyProfile) return null;
+      try {
+        const raw = window.sessionStorage.getItem(HARVEY_COMPANY_CONTEXT_STORAGE_KEY);
+        return raw ? JSON.parse(raw) as HarveyCompanyContext : null;
+      } catch {
+        return null;
+      }
+    };
+    setCompanyContext(readStoredContext());
+    const handleContext = (event: Event) => {
+      const detail = (event as CustomEvent<HarveyCompanyContext | null>).detail;
+      setCompanyContext(detail ?? null);
+    };
+    window.addEventListener(HARVEY_COMPANY_CONTEXT_EVENT, handleContext);
+    return () => window.removeEventListener(HARVEY_COMPANY_CONTEXT_EVENT, handleContext);
+  }, [pathname]);
 
   useEffect(() => {
     const openCoach = () => {
@@ -603,12 +631,13 @@ export function PulseCoachFloating() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="fixed bottom-6 right-6 z-[1100] flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-700 shadow-[0_12px_32px_rgba(15,23,42,0.25)] transition hover:scale-105"
+        className="fixed bottom-6 right-6 z-[1100] flex h-11 items-center justify-center gap-2 rounded-full border border-slate-700 px-3.5 shadow-[0_12px_32px_rgba(15,23,42,0.25)] transition hover:scale-[1.03]"
         style={{ background: "linear-gradient(135deg,#0F172A,#1E293B)" }}
-        aria-label="Open Pulse Coach"
+        aria-label="Open Harvey freight sales copilot"
       >
-        <Sparkles style={{ width: 20, height: 20, color: "#00F0FF" }} />
-        {nudges.length > 0 && (
+        <Bot style={{ width: 18, height: 18, color: "#A5B4FC" }} />
+        <span className="font-display text-[12px] font-bold text-white">Harvey</span>
+        {!companyContext && nudges.length > 0 && (
           <span
             className="font-mono absolute -right-1 -top-1 flex h-5 min-w-[20px] items-center justify-center rounded-full px-1 text-[9px] font-bold text-white"
             style={{ background: "#00F0FF", color: "#0F172A" }}
@@ -624,7 +653,7 @@ export function PulseCoachFloating() {
     <div
       onMouseEnter={() => setHovering(true)}
       onMouseLeave={() => setHovering(false)}
-      className="fixed bottom-6 right-6 z-[1100] w-[340px] max-w-[calc(100vw-32px)] overflow-hidden rounded-2xl border shadow-[0_24px_60px_rgba(15,23,42,0.35)]"
+      className="fixed bottom-6 right-6 z-[1100] max-h-[calc(100vh-48px)] w-[380px] max-w-[calc(100vw-32px)] overflow-y-auto rounded-2xl border shadow-[0_24px_60px_rgba(15,23,42,0.35)]"
       style={{
         background: "linear-gradient(160deg,#0F172A 0%,#1E293B 100%)",
         borderColor: "rgba(255,255,255,0.08)",
@@ -647,12 +676,13 @@ export function PulseCoachFloating() {
             borderColor: "rgba(0,240,255,0.3)",
           }}
         >
-          <Sparkles style={{ width: 12, height: 12, color: "#00F0FF" }} />
+          <Bot style={{ width: 12, height: 12, color: "#A5B4FC" }} />
         </div>
-        <div className="font-display text-[11px] font-bold uppercase tracking-[0.08em] text-slate-200">
-          Pulse Coach
+        <div>
+          <div className="font-display text-[11px] font-bold uppercase tracking-[0.08em] text-slate-100">Harvey</div>
+          <div className="font-body text-[9px] text-slate-500">Freight Sales Copilot</div>
         </div>
-        {nudges.length > 0 && (
+        {!companyContext && nudges.length > 0 && (
           <span className="font-mono text-[10px] text-slate-500">
             {safeIdx + 1}/{nudges.length}
           </span>
@@ -708,7 +738,7 @@ export function PulseCoachFloating() {
         </div>
       </div>
 
-      <UsageBanner usage={usage} />
+      {!companyContext ? <UsageBanner usage={usage} /> : null}
 
       {firstRun ? (
         <>
@@ -732,7 +762,11 @@ export function PulseCoachFloating() {
         </>
       ) : null}
 
-      {!tut.visible && !firstRun ? (
+      {companyContext && !firstRun ? (
+        <HarveyCopilotPanel {...companyContext} />
+      ) : null}
+
+      {!companyContext && !tut.visible && !firstRun ? (
         <div className="relative p-4">
           {!t ? (
             <div className="font-body text-[11px] text-slate-400">
@@ -752,8 +786,8 @@ export function PulseCoachFloating() {
 
       {/* Tutorial card is redundant while the coach-first welcome +
           video are showing — it resurfaces on later opens. */}
-      {!firstRun ? <TutorialCard /> : null}
-      {!firstRun ? <CoachVideoGuide /> : null}
+      {!firstRun && !companyContext ? <TutorialCard /> : null}
+      {!firstRun && !companyContext ? <CoachVideoGuide /> : null}
       <CoachComposer extraPrompts={firstRun ? FIRST_RUN_PROMPTS : undefined} />
     </div>
   );
@@ -968,12 +1002,12 @@ function CoachComposer({
       }
       const resp = await askPulseCoach(trimmed);
       if (!resp.ok) {
-        setErr(resp.error || resp.answer_md || "Coach couldn't answer that.");
+        setErr(resp.error || resp.answer_md || "Harvey couldn't answer that.");
         return;
       }
       setAnswer({ md: resp.answer_md, cta: resp.cta, companies: resp.companies });
     } catch (err: any) {
-      setErr(err?.message || "Coach failed");
+      setErr(err?.message || "Harvey couldn't answer right now.");
     } finally {
       setAsking(false);
     }
@@ -994,7 +1028,7 @@ function CoachComposer({
                 background: "rgba(0,240,255,0.08)",
                 border: "1px solid rgba(0,240,255,0.25)",
               }}
-              title="Send this prompt to Pulse Coach"
+              title="Send this prompt to Harvey"
             >
               {p}
             </button>
