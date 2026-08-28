@@ -1,6 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
-import { imgUrl } from "@/lib/sanityImage";
+import { blogCoverUrl, imgUrl } from "@/lib/sanityImage";
 import { AuthorChip } from "./AuthorChip";
 
 type Post = {
@@ -21,12 +21,6 @@ function slugOf(s: Post["slug"]) {
   return typeof s === "string" ? s : s?.current;
 }
 
-/**
- * `BlogTrendingGrid` — 3-up "Trending" cards under the featured post on
- * the blog index. Each card carries a 16:10 image with a glassy
- * category overlay pill top-left, the headline, and a compact author
- * chip. Below the chevron section header pattern.
- */
 export function BlogTrendingGrid({
   heading = "Trending",
   posts,
@@ -56,28 +50,20 @@ export function BlogTrendingGrid({
         <div className="trending-grid">
           {posts.slice(0, 3).map((p) => {
             const slug = slugOf(p.slug);
-            const heroSrc =
-              imgUrl(p.heroImage, { width: 720 }) || p.heroImageUrl || null;
+            const heroSrc = blogCoverUrl(p, 900);
             const cat = p.categories?.[0];
             const avatarUrl = imgUrl(p.author?.avatar, { width: 64 });
             return (
               <Link key={p._id || slug} href={`/blog/${slug}`} className="trend-card">
-                <div className="tc-image">
-                  {heroSrc ? (
+                <div className="tc-image aspect-[40/21] overflow-hidden bg-[#0b1426]">
+                  {heroSrc && (
                     <Image
                       src={heroSrc}
                       alt={p.heroImageAlt || p.title}
                       fill
-                      sizes="(min-width: 1024px) 360px, 100vw"
+                      sizes="(min-width: 1024px) 420px, 100vw"
+                      className="object-cover"
                       loading="lazy"
-                    />
-                  ) : (
-                    <div
-                      className="absolute inset-0"
-                      style={{
-                        background:
-                          "linear-gradient(160deg,#0F172A 0%,#1E293B 100%)",
-                      }}
                     />
                   )}
                   {cat?.title && (
