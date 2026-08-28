@@ -6,20 +6,19 @@ export const SITE_SETTINGS_QUERY = groq`*[_type == "siteSettings"][0]{
   defaultOgImage, homepageHero, ctaCopy
 }`;
 
-/** All blog posts for the index, newest first. */
+/** All blog posts for the index, newest first. Internal drafting metadata is intentionally excluded. */
 export const BLOG_INDEX_QUERY = groq`*[_type == "blogPost" && defined(publishedAt)] | order(publishedAt desc){
   _id, title, slug, excerpt, heroImage, heroImageUrl, heroImageAlt, publishedAt, readingTime, featured,
-  "author": author->{name, slug, avatar, role, isAiAgent},
+  "author": author->{name, slug, avatar, role},
   "categories": categories[]->{title, slug, color},
-  "tags": tags[]->{title, slug},
-  agentMetadata{draftedBy}
+  "tags": tags[]->{title, slug}
 }`;
 
 /** Single blog post by slug. */
 export const BLOG_POST_QUERY = groq`*[_type == "blogPost" && slug.current == $slug][0]{
   _id, _updatedAt, title, slug, excerpt, heroImage, heroImageUrl, heroImageAlt, publishedAt, readingTime, body,
   cta, aliases,
-  "author": author->{name, slug, avatar, role, bio, expertise, socialLinks, isAiAgent},
+  "author": author->{name, slug, avatar, role, bio, expertise, socialLinks},
   "categories": categories[]->{title, slug, color},
   "tags": tags[]->{title, slug},
   "relatedPosts": relatedPosts[]->{title, slug, excerpt, heroImage, heroImageUrl, "author": author->{name}, "categories": categories[]->{title, color}},
@@ -61,7 +60,8 @@ export const TRADE_LANE_QUERY = groq`*[_type == "tradeLane" && slug.current == $
   ...,
   "relatedLanes": relatedLanes[]->{title, slug, kpis},
   "relatedIndustries": relatedIndustries[]->{name, slug},
-  "relatedPosts": relatedPosts[]->{title, slug, excerpt, "author": author->{name}}
+  "relatedPosts": relatedPosts[]->{title, slug, excerpt, "author": author->{name}},
+  "relatedCaseStudies": relatedCaseStudies[]->{customer, slug, headline, kpis, quote, logo}
 }`;
 
 export const ALL_TRADE_LANE_SLUGS = groq`*[_type == "tradeLane" && defined(slug.current)]{ "slug": slug.current }`;
