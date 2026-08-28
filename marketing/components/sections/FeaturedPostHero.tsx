@@ -1,6 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
-import { imgUrl } from "@/lib/sanityImage";
+import { blogCoverUrl, imgUrl } from "@/lib/sanityImage";
 import { formatDate } from "@/lib/format";
 import { CategoryChip } from "./CategoryChip";
 
@@ -14,9 +14,8 @@ type Post = {
   heroImageAlt?: string;
   publishedAt?: string;
   readingTime?: number | string;
-  author?: { name?: string; avatar?: any; isAiAgent?: boolean } | null;
+  author?: { name?: string; avatar?: any } | null;
   categories?: Array<{ title?: string; color?: string; slug?: any } | null> | null;
-  agentMetadata?: { draftedBy?: string } | null;
 };
 
 function slugOf(s: Post["slug"]) {
@@ -29,19 +28,11 @@ function initials(name?: string | null): string {
   return parts.map((p) => p[0]?.toUpperCase() || "").join("") || "?";
 }
 
-/**
- * Single split-layout featured post card. Editorial anchor of the new
- * `/blog` page — replaces the old `BlogHeroTrio` 1+2 layout. Image on
- * the right (~45%) at 3:2 ratio with square corners, content on the
- * left (~55%) with a bracketed `[category]` chip, large Space Grotesk
- * H1, two-line excerpt, and a byline row (author face + name + date ·
- * read-time).
- */
+/** Featured editorial anchor for /blog. */
 export function FeaturedPostHero({ post }: { post: Post }) {
   if (!post) return null;
   const slug = slugOf(post.slug);
-  const heroSrc =
-    imgUrl(post.heroImage, { width: 1400 }) || post.heroImageUrl || null;
+  const heroSrc = blogCoverUrl(post, 1400);
   const cat = post.categories?.[0];
   const date = post.publishedAt ? formatDate(post.publishedAt) : null;
   const avatarUrl = imgUrl(post.author?.avatar, { width: 96 });
@@ -50,10 +41,9 @@ export function FeaturedPostHero({ post }: { post: Post }) {
   return (
     <Link
       href={`/blog/${slug}`}
-      className="group block overflow-hidden rounded-b-2xl border border-ink-100 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:border-brand-blue/30 hover:shadow-[0_5px_15px_rgba(22,35,184,0.12)]"
+      className="group block overflow-hidden rounded-2xl border border-ink-100 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:border-brand-blue/30 hover:shadow-[0_5px_15px_rgba(22,35,184,0.12)]"
     >
-      <div className="grid grid-cols-1 lg:grid-cols-[1.1fr_0.9fr] lg:gap-0">
-        {/* Left — content column */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1.08fr_0.92fr] lg:items-stretch">
         <div className="order-2 flex flex-col justify-center gap-5 p-7 sm:p-10 lg:order-1 lg:p-12">
           {cat?.title && (
             <div>
@@ -63,8 +53,10 @@ export function FeaturedPostHero({ post }: { post: Post }) {
               />
             </div>
           )}
-          <h1 className="font-display font-semibold leading-[1.05] tracking-[-0.02em] text-ink-900 group-hover:text-brand-blue-700"
-              style={{ fontSize: "clamp(32px, 4.5vw, 52px)" }}>
+          <h1
+            className="font-display font-semibold leading-[1.05] tracking-[-0.02em] text-ink-900 group-hover:text-brand-blue-700"
+            style={{ fontSize: "clamp(32px, 4.5vw, 52px)" }}
+          >
             {post.title}
           </h1>
           {post.excerpt && (
@@ -103,9 +95,6 @@ export function FeaturedPostHero({ post }: { post: Post }) {
                     {authorName}
                   </span>
                 )}
-                {post.author?.isAiAgent && (
-                  <CategoryChip label="AI Drafted" color="#7C3AED" />
-                )}
                 {date && (
                   <>
                     <span aria-hidden className="text-ink-200">·</span>
@@ -118,39 +107,21 @@ export function FeaturedPostHero({ post }: { post: Post }) {
                     <span>{post.readingTime} min read</span>
                   </>
                 )}
-                {post.agentMetadata?.draftedBy && (
-                  <>
-                    <span aria-hidden className="text-ink-200">·</span>
-                    <span className="font-mono text-[11.5px] uppercase tracking-[0.04em] text-ink-500">
-                      drafted by {post.agentMetadata.draftedBy}
-                    </span>
-                  </>
-                )}
               </div>
             </div>
           )}
         </div>
 
-        {/* Right — image column (3:2). Square top corners on mobile and
-            desktop alike. */}
-        <div className="order-1 lg:order-2">
-          <div className="relative aspect-[3/2] w-full bg-ink-25">
-            {heroSrc ? (
+        <div className="order-1 min-h-[250px] bg-[#0b1426] lg:order-2 lg:min-h-[390px]">
+          <div className="relative h-full min-h-[250px] w-full lg:min-h-[390px]">
+            {heroSrc && (
               <Image
                 src={heroSrc}
                 alt={post.heroImageAlt || post.title}
                 fill
                 sizes="(min-width: 1024px) 560px, 100vw"
-                className="object-cover"
+                className="object-contain"
                 priority
-              />
-            ) : (
-              <div
-                className="absolute inset-0"
-                style={{
-                  background:
-                    "linear-gradient(160deg,#0F172A 0%,#1E293B 100%)",
-                }}
               />
             )}
           </div>
