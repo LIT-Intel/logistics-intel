@@ -1,6 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
-import { imgUrl } from "@/lib/sanityImage";
+import { blogCoverUrl, imgUrl } from "@/lib/sanityImage";
 import { formatDate } from "@/lib/format";
 import { CategoryChip } from "./CategoryChip";
 
@@ -14,10 +14,9 @@ type Post = {
   heroImageAlt?: string;
   publishedAt?: string;
   readingTime?: number | string;
-  author?: { name?: string; avatar?: any; isAiAgent?: boolean } | null;
+  author?: { name?: string; avatar?: any } | null;
   categories?: Array<{ title?: string; color?: string; slug?: any } | null> | null;
   tags?: Array<{ title?: string; slug?: any } | null> | null;
-  agentMetadata?: { draftedBy?: string } | null;
 };
 
 type Variant = "default" | "trending";
@@ -36,10 +35,6 @@ function initials(name?: string | null): string {
   return parts.map((p) => p[0]?.toUpperCase() || "").join("") || "?";
 }
 
-/**
- * Renders an author face — either the Sanity avatar (24px circle) or a
- * brand-blue initials fallback. Used in the card footer byline.
- */
 function AuthorFace({
   avatarUrl,
   name,
@@ -77,12 +72,6 @@ function AuthorFace({
   );
 }
 
-/**
- * Blog card — image-top with square top corners + rounded bottom on the
- * surrounding card. Bracketed `[category]` chip overlays the image. The
- * `trending` variant compresses the card (smaller image, no excerpt) for
- * the rows below the first one on the index page.
- */
 export function BlogCard({
   post,
   variant = "default",
@@ -90,15 +79,11 @@ export function BlogCard({
 }: {
   post: Post;
   variant?: Variant;
-  /** @deprecated kept for back-compat — `variant` should be used. */
   featured?: boolean;
 }) {
   const slug = slugOf(post.slug);
   const trending = variant === "trending";
-  const heroSrc =
-    imgUrl(post.heroImage, { width: featured ? 1280 : 720 }) ||
-    post.heroImageUrl ||
-    null;
+  const heroSrc = blogCoverUrl(post, featured ? 1280 : 900);
   const date = safeFormat(post.publishedAt);
   const cat = post.categories?.[0];
   const avatarUrl = imgUrl(post.author?.avatar, { width: 64 });
@@ -106,30 +91,20 @@ export function BlogCard({
   return (
     <Link
       href={`/blog/${slug}`}
-      className="group flex flex-col overflow-hidden rounded-b-2xl border border-ink-100 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:border-brand-blue/30 hover:shadow-[0_5px_15px_rgba(22,35,184,0.12)]"
+      className="group flex flex-col overflow-hidden rounded-2xl border border-ink-100 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:border-brand-blue/30 hover:shadow-[0_5px_15px_rgba(22,35,184,0.12)]"
     >
-      <div
-        className={`relative w-full bg-ink-25 ${
-          trending ? "aspect-[3/2]" : "aspect-[3/2]"
-        }`}
-        style={{ borderTopLeftRadius: 0, borderTopRightRadius: 0 }}
-      >
-        {heroSrc ? (
+      <div className="relative aspect-[40/21] w-full overflow-hidden bg-[#0b1426]">
+        {heroSrc && (
           <Image
             src={heroSrc}
             alt={post.heroImageAlt || post.title}
             fill
             sizes={
               trending
-                ? "(min-width: 1024px) 300px, 100vw"
-                : "(min-width: 1024px) 380px, 100vw"
+                ? "(min-width: 1024px) 360px, 100vw"
+                : "(min-width: 1024px) 420px, 100vw"
             }
             className="object-cover"
-          />
-        ) : (
-          <div
-            className="absolute inset-0"
-            style={{ background: "linear-gradient(160deg,#0F172A 0%,#1E293B 100%)" }}
           />
         )}
         {cat?.title && (
@@ -162,7 +137,6 @@ export function BlogCard({
           </p>
         )}
 
-        {/* Tag row — small ink-50 chips. Only the first 2 to avoid overflow. */}
         {!trending && Array.isArray(post.tags) && post.tags.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5">
             {post.tags.slice(0, 2).map((t, i) => {
@@ -182,7 +156,6 @@ export function BlogCard({
           </div>
         )}
 
-        {/* Footer byline — author face + name + date · read-time */}
         <div className="font-body mt-auto flex items-center gap-2 pt-2 text-[12px] text-ink-500">
           <AuthorFace avatarUrl={avatarUrl} name={post.author?.name} size={24} />
           <div className="flex min-w-0 flex-1 items-center gap-1.5">
@@ -190,9 +163,6 @@ export function BlogCard({
               <span className="font-display truncate text-[12.5px] font-semibold text-ink-700">
                 {post.author.name}
               </span>
-            )}
-            {post.author?.isAiAgent && (
-              <CategoryChip label="AI Drafted" color="#7C3AED" />
             )}
             {(date || post.readingTime) && (
               <span aria-hidden className="text-ink-200">·</span>
@@ -208,12 +178,6 @@ export function BlogCard({
             )}
           </div>
         </div>
-
-        {post.agentMetadata?.draftedBy && (
-          <div className="font-mono -mt-1 text-[10px] uppercase tracking-[0.05em] text-ink-200">
-            drafted by {post.agentMetadata.draftedBy}
-          </div>
-        )}
       </div>
     </Link>
   );
