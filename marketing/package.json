@@ -5,7 +5,8 @@
   "description": "LIT marketing site — Next.js 14 App Router, Sanity CMS, Vercel hosting",
   "scripts": {
     "dev": "next dev -p 3001",
-    "build": "node scripts/publish-typhon-china-supply-chain-2026.mjs && next build",
+    "build": "next build",
+    "postinstall": "node scripts/publish-typhon-china-supply-chain-2026.mjs",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
