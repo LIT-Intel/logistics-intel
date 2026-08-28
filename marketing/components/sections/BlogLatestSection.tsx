@@ -1,6 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
-import { imgUrl } from "@/lib/sanityImage";
+import { blogCoverUrl, imgUrl } from "@/lib/sanityImage";
 import { AuthorChip } from "./AuthorChip";
 
 type Post = {
@@ -20,12 +20,6 @@ function slugOf(s: Post["slug"]) {
   return typeof s === "string" ? s : s?.current;
 }
 
-/**
- * `BlogLatestSection` — "Latest" section: 2-up large cards on top
- * followed by a hairline divider and a 4-up dense grid below. Single
- * component handles both bands so the divider can render cleanly only
- * when both populations exist.
- */
 export function BlogLatestSection({
   heading = "Latest",
   posts,
@@ -59,28 +53,20 @@ export function BlogLatestSection({
           <div className="latest-2up">
             {large.map((p) => {
               const slug = slugOf(p.slug);
-              const heroSrc =
-                imgUrl(p.heroImage, { width: 1080 }) || p.heroImageUrl || null;
+              const heroSrc = blogCoverUrl(p, 1200);
               const cat = p.categories?.[0];
               const avatarUrl = imgUrl(p.author?.avatar, { width: 64 });
               return (
                 <Link key={p._id || slug} href={`/blog/${slug}`} className="post-large">
-                  <div className="pl-image">
-                    {heroSrc ? (
+                  <div className="pl-image aspect-[40/21] overflow-hidden bg-[#0b1426]">
+                    {heroSrc && (
                       <Image
                         src={heroSrc}
                         alt={p.heroImageAlt || p.title}
                         fill
                         sizes="(min-width: 900px) 50vw, 100vw"
+                        className="object-cover"
                         loading="lazy"
-                      />
-                    ) : (
-                      <div
-                        className="absolute inset-0"
-                        style={{
-                          background:
-                            "linear-gradient(160deg,#0F172A 0%,#1E293B 100%)",
-                        }}
                       />
                     )}
                     {cat?.title && <span className="pl-overlay-pill">{cat.title}</span>}
@@ -106,27 +92,19 @@ export function BlogLatestSection({
           <div className="latest-dense-grid">
             {dense.map((p) => {
               const slug = slugOf(p.slug);
-              const heroSrc =
-                imgUrl(p.heroImage, { width: 480 }) || p.heroImageUrl || null;
+              const heroSrc = blogCoverUrl(p, 720);
               const avatarUrl = imgUrl(p.author?.avatar, { width: 48 });
               return (
                 <Link key={p._id || slug} href={`/blog/${slug}`} className="post-dense">
-                  <div className="pd-image">
-                    {heroSrc ? (
+                  <div className="pd-image aspect-[40/21] overflow-hidden bg-[#0b1426]">
+                    {heroSrc && (
                       <Image
                         src={heroSrc}
                         alt={p.heroImageAlt || p.title}
                         fill
                         sizes="(min-width: 1024px) 25vw, (min-width: 540px) 50vw, 100vw"
+                        className="object-cover"
                         loading="lazy"
-                      />
-                    ) : (
-                      <div
-                        className="absolute inset-0"
-                        style={{
-                          background:
-                            "linear-gradient(160deg,#0F172A 0%,#1E293B 100%)",
-                        }}
                       />
                     )}
                   </div>
