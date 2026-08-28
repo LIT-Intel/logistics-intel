@@ -19,6 +19,10 @@ import type { NextRequest } from "next/server";
  *      click-id / off-site referrer; a bare untagged page-load does NOT
  *      clobber it (that would silently delete real attribution).
  *
+ * Search/campaign attribution from model-assistant referral sources is not
+ * retained in public URLs or cookies. Those requests are redirected to the
+ * same clean canonical path before attribution capture runs.
+ *
  * Not httpOnly on purpose (the app reads from document.cookie); no secrets.
  * 90-day lifetime.
  */
@@ -28,10 +32,42 @@ const LAST_COOKIE = "lit_last_touch";
 const MAX_AGE_SECONDS = 90 * 24 * 3600;
 const UTM_KEYS = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"] as const;
 
+const NON_PUBLIC_REFERRAL_SOURCES = new Set([
+  "chatgpt",
+  "chatgpt.com",
+  "openai",
+  "openai.com",
+  "claude",
+  "claude.ai",
+  "anthropic",
+  "anthropic.com",
+  "gemini",
+  "gemini.google.com",
+  "copilot",
+  "copilot.microsoft.com",
+  "perplexity",
+  "perplexity.ai",
+  "llm",
+]);
+
+function normalizedHostOrSource(value: string): string {
+  return value.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/$/, "");
+}
+
+function isNonPublicReferralSource(value: string | null | undefined): boolean {
+  if (!value) return false;
+  const normalized = normalizedHostOrSource(value);
+  return NON_PUBLIC_REFERRAL_SOURCES.has(normalized);
+}
+
 function offsiteReferrerHost(referrer: string): string | null {
   try {
     const refHost = referrer ? new URL(referrer).hostname : "";
-    if (refHost && !refHost.endsWith("logisticintel.com")) {
+    if (
+      refHost &&
+      !refHost.endsWith("logisticintel.com") &&
+      !isNonPublicReferralSource(refHost)
+    ) {
       return refHost.slice(0, 120);
     }
   } catch {
@@ -41,8 +77,18 @@ function offsiteReferrerHost(referrer: string): string | null {
 }
 
 export function middleware(req: NextRequest) {
-  const res = NextResponse.next();
   const url = req.nextUrl;
+
+  // Keep model-assistant attribution out of indexable URLs and persisted
+  // attribution. Preserve unrelated query parameters, but remove the full UTM
+  // bundle when its source is a non-public referral source.
+  if (isNonPublicReferralSource(url.searchParams.get("utm_source"))) {
+    const cleanUrl = url.clone();
+    for (const key of UTM_KEYS) cleanUrl.searchParams.delete(key);
+    return NextResponse.redirect(cleanUrl, 308);
+  }
+
+  const res = NextResponse.next();
   const host = req.headers.get("host") || "";
   const isProdHost = host.endsWith("logisticintel.com");
   const domainOpt = isProdHost ? { domain: ".logisticintel.com" as const } : {};
