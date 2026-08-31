@@ -14,6 +14,15 @@ import { routeMiles, normalizeCityKey, haversineMiles as haversineMilesFromCoord
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const BATCH_CAP = 150;
+// Per-company on-demand runs (the CDP "Compute now" button) can process more
+// than the global daily slice — a single company's US BOL count is bounded.
+const COMPANY_CAP = 600;
+
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-internal-cron",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
 
 // Minimal port → lat/lon map for v1. Extend as needed.
 const PORT_COORDS: Record<string, { lat: number; lon: number }> = {
@@ -96,9 +105,96 @@ function inferPodFromState(destState: string | null, destCountryCode: string | n
   return US_STATE_TO_POD[destState.toUpperCase()] || 'USLAX';
 }
 
+// Resolve dest_city + state to real coordinates so drayage miles reflect the
+// ACTUAL inland destination instead of the state centroid (which overstates
+// distance — e.g. Savannah→Grovetown read 190mi via the GA centroid vs 126mi
+// real, a ~40% cost inflation). Uses lit_geo_place_centroids as a
+// self-populating US-city cache; on a miss it geocodes via Nominatim (OSM,
+// free) and caches the result. Returns null on any failure so the caller
+// falls back to the state centroid — graceful, never throws.
+async function geocodeCity(
+  supabase: any,
+  city: string | null,
+  state: string | null,
+): Promise<{ lat: number; lon: number } | null> {
+  const c = (city || "").trim();
+  const st = (state || "").trim().toUpperCase();
+  if (!c || !st) return null;
+  // 1) cache (self-populated US city centroids)
+  try {
+    const { data } = await supabase
+      .from("lit_geo_place_centroids")
+      .select("lat, lng")
+      .eq("country", "US")
+      .eq("region", st)
+      .ilike("city", c)
+      .limit(1);
+    const hit = Array.isArray(data) ? data[0] : null;
+    if (hit && Number.isFinite(Number(hit.lat)) && Number.isFinite(Number(hit.lng))) {
+      return { lat: Number(hit.lat), lon: Number(hit.lng) };
+    }
+  } catch { /* fall through to Nominatim */ }
+  // 2) Nominatim (OpenStreetMap) — free geocoder. Descriptive User-Agent +
+  //    4s timeout are required/polite. Cache the hit for next time.
+  try {
+    const q = `https://nominatim.openstreetmap.org/search?format=json&limit=1&city=${encodeURIComponent(c)}&state=${encodeURIComponent(st)}&country=USA`;
+    const ctrl = new AbortController();
+    const tid = setTimeout(() => ctrl.abort(), 4000);
+    const resp = await fetch(q, {
+      headers: { "User-Agent": "LIT-drayage/1.0 (ops@logisticintel.com)" },
+      signal: ctrl.signal,
+    });
+    clearTimeout(tid);
+    if (!resp.ok) return null;
+    const arr = await resp.json();
+    const first = Array.isArray(arr) ? arr[0] : null;
+    const lat = Number(first?.lat);
+    const lon = Number(first?.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    try {
+      await supabase.from("lit_geo_place_centroids").insert({
+        place_key: `us:${st}:${c.toLowerCase()}`,
+        city: c, region: st, country: "US",
+        lat, lng: lon, precision: "city", source: "nominatim",
+      });
+    } catch { /* dup/insert race — ignore, we already have the coords */ }
+    return { lat, lon };
+  } catch {
+    return null;
+  }
+}
+
 serve(async (req) => {
-  const auth = verifyCronAuth(req);
-  if (!auth.ok) return auth.response;
+  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+
+  // Optional per-company target. Present on the CDP "Compute now" button
+  // (authenticated user) and on any internal call that wants a single company.
+  let body: Record<string, unknown> = {};
+  try { body = await req.json(); } catch { /* empty body is fine */ }
+  const companyKey =
+    typeof body?.source_company_key === "string" && String(body.source_company_key).trim()
+      ? String(body.source_company_key).trim()
+      : null;
+
+  // Dual auth: internal cron secret (global daily batch) OR an authenticated
+  // app user (on-demand, single company only — the button can't and shouldn't
+  // hold the cron secret).
+  if (req.headers.get("X-Internal-Cron")) {
+    const auth = verifyCronAuth(req);
+    if (!auth.ok) return auth.response;
+  } else {
+    const authHeader = req.headers.get("Authorization") || "";
+    if (!authHeader.startsWith("Bearer ")) return json({ ok: false, error: "unauthorized" }, 401);
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
+    const userClient = createClient(SUPABASE_URL, anonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: u, error: uErr } = await userClient.auth.getUser();
+    if (uErr || !u?.user) return json({ ok: false, error: "unauthorized" }, 401);
+    // An authenticated user may only recompute a specific company.
+    if (!companyKey) return json({ ok: false, error: "source_company_key required" }, 400);
+  }
+
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
   // ?fast=1 → skip OSRM, use haversine only (fast initial cache warm)
@@ -111,10 +207,11 @@ serve(async (req) => {
   // structurally unreachable (capped coverage at ~13.5%). The RPC does a
   // proper NOT EXISTS join against lit_drayage_estimates and ORDER BY s.id,
   // so each invocation naturally moves the cursor forward.
-  const { data: rows, error } = await supabase.rpc("get_unestimated_us_bols", {
-    p_limit: BATCH_CAP * 8,
-  });
+  const { data: rows, error } = companyKey
+    ? await supabase.rpc("get_unestimated_us_bols_for_company", { p_company_id: companyKey, p_limit: COMPANY_CAP })
+    : await supabase.rpc("get_unestimated_us_bols", { p_limit: BATCH_CAP * 8 });
   if (error) return json({ ok: false, error: error.message }, 500);
+  const cap = companyKey ? COMPANY_CAP : BATCH_CAP;
 
   // Latest EIA weekly diesel price ($/gal) from lit_fuel_index — drives the
   // diesel-indexed fuel surcharge (formula v2). Null → estimator falls back
@@ -123,7 +220,7 @@ serve(async (req) => {
 
   let computed = 0, skipped = 0, missing_coords = 0, inferred_pod_count = 0, already_done = 0;
   for (const r of (rows as any[]) || []) {
-    if (computed >= BATCH_CAP) break;
+    if (computed >= cap) break;
     let pod = r.destination_port?.toUpperCase();
     if (!pod || !PORT_COORDS[pod]) {
       pod = inferPodFromState(r.dest_state, r.destination_country_code);
@@ -131,7 +228,9 @@ serve(async (req) => {
       inferred_pod_count++;
     }
     const ckey = cityKey(r.dest_city || "", r.dest_state);
-    let cityCoord = CITY_COORDS[ckey];
+    let cityCoord: { lat: number; lon: number } | null | undefined = CITY_COORDS[ckey];
+    // Real city geocode (cached) before the coarse state-centroid fallback.
+    if (!cityCoord) cityCoord = await geocodeCity(supabase, r.dest_city, r.dest_state);
     if (!cityCoord && r.dest_state) {
       cityCoord = STATE_CENTROIDS[r.dest_state.toUpperCase()];
     }
@@ -216,9 +315,9 @@ serve(async (req) => {
     computed++;
   }
 
-  return json({ ok: true, computed, missing_coords, skipped, already_done, inferred_pod_count, examined: rows?.length || 0 });
+  return json({ ok: true, company_key: companyKey, computed, missing_coords, skipped, already_done, inferred_pod_count, examined: rows?.length || 0 });
 });
 
 function json(body: any, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", ...CORS } });
 }
