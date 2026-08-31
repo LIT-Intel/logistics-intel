@@ -636,7 +636,7 @@ export function PulseCoachFloating() {
         style={{ background: "linear-gradient(135deg,#0F172A,#1E293B)" }}
         aria-label="Open Harvey freight sales copilot"
       >
-        <Bot style={{ width: 18, height: 18, color: "#A5B4FC" }} />
+        <Sparkles style={{ width: 20, height: 20, color: "#00F0FF" }} />
         <span className="font-display text-[12px] font-bold text-white">Harvey</span>
         {!companyContext && nudges.length > 0 && (
           <span
@@ -677,7 +677,7 @@ export function PulseCoachFloating() {
             borderColor: "rgba(0,240,255,0.3)",
           }}
         >
-          <Bot style={{ width: 12, height: 12, color: "#A5B4FC" }} />
+          <Sparkles style={{ width: 12, height: 12, color: "#00F0FF" }} />
         </div>
         <div>
           <div className="font-display text-[11px] font-bold uppercase tracking-[0.08em] text-slate-100">Harvey</div>
@@ -968,6 +968,10 @@ function CoachComposer({
   const [answer, setAnswer] = useState<HarveyAnswer | null>(null);
   const [history, setHistory] = useState<HarveyChatTurn[]>([]);
   const [err, setErr] = useState<string | null>(null);
+  const [showDemo, setShowDemo] = useState(false);
+  const { plan } = useAuth();
+  // In-chat demo scheduler is surfaced to new / trial users only.
+  const isTrialUser = !plan || String(plan) === "free_trial";
 
   // Resolve page-aware prompts. We always look at the full tutorial
   // map (active or not) so quick prompts surface even when the
@@ -1066,6 +1070,46 @@ function CoachComposer({
               {p}
             </button>
           ))}
+        </div>
+      ) : null}
+
+      {isTrialUser && !answer ? (
+        <button
+          type="button"
+          onClick={() => setShowDemo(true)}
+          className="mb-2 flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-[11.5px] font-bold"
+          style={{ background: "linear-gradient(135deg,#00C2CE,#00F0FF)", color: "#0F172A" }}
+        >
+          📅 Request a demo — pick a time
+        </button>
+      ) : null}
+
+      {showDemo ? (
+        <div
+          className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/60 p-4"
+          onClick={() => setShowDemo(false)}
+        >
+          <div
+            className="relative w-full max-w-[460px] overflow-hidden rounded-2xl bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+              <div className="text-sm font-bold text-slate-900">Book a 30-minute demo</div>
+              <button
+                type="button"
+                onClick={() => setShowDemo(false)}
+                className="text-slate-400 hover:text-slate-700"
+                aria-label="Close scheduler"
+              >
+                ✕
+              </button>
+            </div>
+            <iframe
+              title="Schedule a Logistic Intel demo"
+              src="https://cal.com/logisticintel/30min"
+              className="h-[560px] w-full border-0"
+            />
+          </div>
         </div>
       ) : null}
 

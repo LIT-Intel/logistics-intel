@@ -411,7 +411,9 @@ export default function WorkspaceLanesGlobe() {
             )}
           </div>
           <div className="max-h-[360px] overflow-y-auto md:max-h-[460px] 2xl:max-h-[520px]">
-            {sorted.map((l, i) => {
+            {(() => {
+            const maxLaneShip = sorted.reduce((mx: number, x: any) => Math.max(mx, laneMetrics.get(x.key)?.current || Number(x.shipments_total) || 0), 1);
+            return sorted.map((l, i) => {
               const fromMeta =
                 resolveEndpoint(l.from_label) || resolveEndpoint(`Port ${l.from_label}`);
               const toMeta =
@@ -430,20 +432,16 @@ export default function WorkspaceLanesGlobe() {
                     highlightLane({ from: l.from_label, to: l.to_label });
                   }}
                   className={[
-                    // Single-line grid: index | from | arrow | to | metric.
-                    // Fixed slots for index, arrow, and metric column keep
-                    // every row's geometry identical regardless of label
-                    // length, so lanes line up edge-to-edge.
-                    "grid w-full items-center gap-2 border-b border-slate-100 px-3 py-2 text-left last:border-b-0 md:px-4 md:py-2.5",
+                    "block w-full border-b border-slate-100 px-3 py-2 text-left last:border-b-0 md:px-4 md:py-2.5",
                     isActive
                       ? "border-l-2 border-l-blue-500 bg-blue-50/60"
                       : "border-l-2 border-l-transparent hover:bg-slate-50/60",
                   ].join(" ")}
-                  style={{
-                    gridTemplateColumns:
-                      "24px minmax(0,1fr) 14px minmax(0,1fr) 70px",
-                  }}
                 >
+                  <div
+                    className="grid w-full items-center gap-2"
+                    style={{ gridTemplateColumns: "24px minmax(0,1fr) 14px minmax(0,1fr) 70px" }}
+                  >
                   {/* Rank chip rides the lane's origin-region color so the
                       list ↔ map-line mapping is instant. */}
                   <span
@@ -526,9 +524,20 @@ export default function WorkspaceLanesGlobe() {
                         : `YoY ${laneMetrics.get(l.key)!.yoy! >= 0 ? "+" : ""}${laneMetrics.get(l.key)!.yoy!.toFixed(1)}%`}
                     </div>
                   </div>
+                  </div>
+                  {(() => {
+                    const shipVal = laneMetrics.get(l.key)?.current || Number(l.shipments_total) || 0;
+                    const pct = Math.max(4, Math.round((shipVal / maxLaneShip) * 100));
+                    return (
+                      <div className="ml-[30px] mr-[74px] mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-100 md:ml-[38px]">
+                        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: laneColors[l.key]?.base ?? "#94A3B8" }} />
+                      </div>
+                    );
+                  })()}
                 </button>
               );
-            })}
+            });
+            })()}
           </div>
         </div>
 
