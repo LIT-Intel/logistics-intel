@@ -18,6 +18,7 @@ import {
   ChevronLeft,
   Menu,
   Send,
+  Contact,
 } from "lucide-react";
 import { useAuth } from "@/auth/AuthProvider";
 import { useEntitlements } from "@/hooks/useEntitlements";
@@ -214,15 +215,41 @@ export default function AppShell({ currentPageName, children }) {
             )}
           </div>
 
-          <SectionLabel collapsed={collapsed}>Menu</SectionLabel>
-          <nav className="mb-4">
+          {/* Home */}
+          <nav className="mb-3 mt-1">
             <SideLink to="/app/dashboard" icon={BarChart3} label={collapsed ? "" : "Dashboard"} />
+          </nav>
+
+          {/* Prospect — discover companies & shippers */}
+          <SectionLabel collapsed={collapsed}>Prospect</SectionLabel>
+          <nav className="mb-3">
             <SideLink to="/app/search" icon={Search} label={collapsed ? "" : "Search"} />
             <SideLink
               to="/app/command-center"
               icon={Building2}
               label={collapsed ? "" : "Command Center"}
             />
+            {showPulse && (
+              <SideLink
+                to="/app/prospecting"
+                icon={TrendingUp}
+                label={collapsed ? "" : "Pulse"}
+              />
+            )}
+          </nav>
+
+          {/* Plan — organize accounts & pipeline */}
+          <SectionLabel collapsed={collapsed}>Plan</SectionLabel>
+          <nav className="mb-3">
+            <SideLink to="/app/lists" icon={Database} label={collapsed ? "" : "Lists"} />
+            {isLeadCrmMember && (
+              <SideLink to="/app/leads" icon={Contact} label={collapsed ? "" : "Lead CRM"} />
+            )}
+          </nav>
+
+          {/* Engage — outreach & close */}
+          <SectionLabel collapsed={collapsed}>Engage</SectionLabel>
+          <nav className="mb-3">
             {showCampaigns ? (
               <SideLink
                 to="/app/campaigns"
@@ -245,18 +272,6 @@ export default function AppShell({ currentPageName, children }) {
               icon={FileText}
               label={collapsed ? "" : "Quoting"}
               lockHint={!collapsed && quotingLocked}
-            />
-            {showPulse && (
-              <SideLink
-                to="/app/prospecting"
-                icon={TrendingUp}
-                label={collapsed ? "" : "Pulse"}
-              />
-            )}
-            <SideLink
-              to="/app/lists"
-              icon={Database}
-              label={collapsed ? "" : "Lists"}
             />
           </nav>
 
@@ -420,28 +435,39 @@ export default function AppShell({ currentPageName, children }) {
 
             <nav className="space-y-1">
               <SideLink to="/app/dashboard" icon={BarChart3} label="Dashboard" />
+
+              <SectionLabel collapsed={false}>Prospect</SectionLabel>
               <SideLink to="/app/search" icon={Search} label="Search" />
               <SideLink to="/app/command-center" icon={Building2} label="Command Center" />
+              {showPulse && (
+                <SideLink to="/app/prospecting" icon={TrendingUp} label="Pulse" />
+              )}
+
+              <SectionLabel collapsed={false}>Plan</SectionLabel>
+              <SideLink to="/app/lists" icon={Database} label="Lists" />
+              {isLeadCrmMember && (
+                <SideLink to="/app/leads" icon={Contact} label="Lead CRM" />
+              )}
+
+              <SectionLabel collapsed={false}>Engage</SectionLabel>
               {showCampaigns ? (
                 <SideLink to="/app/campaigns" icon={Mail} label="Campaigns" />
               ) : (
                 <SideLink to="#" icon={Mail} label="Campaigns" locked onClick={lockedClick} />
               )}
               <SideLink to="/app/quoting" icon={FileText} label="Quoting" lockHint={quotingLocked} />
-              {showPulse && (
-                <SideLink to="/app/prospecting" icon={TrendingUp} label="Pulse" />
-              )}
-              {isLeadCrmMember && (
-                <SideLink to="/app/leads" icon={Users2} label="Lead CRM" />
-              )}
-              {/* Lists — desktop sidebar parity (was missing from the mobile drawer). */}
-              <SideLink to="/app/lists" icon={Database} label="Lists" />
+
+              <SectionLabel collapsed={false}>Tools</SectionLabel>
               <SideLink to="/app/widgets" icon={Box} label="Widgets" />
+
+              <SectionLabel collapsed={false}>Account</SectionLabel>
               <SideLink to="/app/settings" icon={Settings} label="Settings" />
               <SideLink to="/app/billing" icon={CreditCard} label="Billing" />
               <SideLink to="/app/affiliate" icon={Users2} label="Affiliate" />
+
               {showAdminSection && (
                 <>
+                  <SectionLabel collapsed={false}>Admin</SectionLabel>
                   <SideLink to="/app/admin" icon={Shield} label="Admin Dashboard" />
                   {isSuperAdmin && (
                     <SideLink to="/app/admin/partner-program" icon={Users2} label="Partner program" />
