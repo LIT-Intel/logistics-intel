@@ -272,6 +272,12 @@ serve(async (req) => {
       }, { onConflict: "pod_unloc,dest_city_norm,dest_state" });
     }
 
+    // Drayage is short-haul port→inland dray. Beyond ~500mi the freight moves
+    // by rail/intermodal, not truck drayage — skip so we never surface a bogus
+    // long-haul "dray" cost (e.g. an inland Midwest dest defaulting to a far
+    // port). Those lanes belong to the domestic/rail model, not drayage.
+    if (miles > 500) { skipped++; continue; }
+
     const container_type = r.lcl ? "LCL" : normalizeContainerType(r.load_type);
     const out = estimateDrayageCost({
       pod_unloc: pod,
