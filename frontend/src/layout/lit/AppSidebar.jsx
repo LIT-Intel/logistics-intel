@@ -60,10 +60,17 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
     currentPath.startsWith("/app/contacts");
 
   const sections = [
+    // Home — ungrouped top entry (no section header).
     {
-      title: "Menu",
+      title: null,
       items: [
         { label: "Dashboard", href: "/app/dashboard", icon: LayoutDashboard },
+      ],
+    },
+    // PROSPECT — discover companies & shippers.
+    {
+      title: "Prospect",
+      items: [
         // Day-5 PRD pivot: "Search" and "Pulse" collapsed into a
         // single "Intelligence Explorer" entry. Default view is
         // Company Search; users can switch to Pulse via the tab bar
@@ -71,6 +78,12 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
         // The Pulse tab still respects the per-feature plan gate
         // inside PulseExploreTab.
         { label: "Intelligence Explorer", href: "/app/search", icon: Search },
+      ],
+    },
+    // PLAN — organize your accounts & pipeline.
+    {
+      title: "Plan",
+      items: [
         {
           label: "Command Center",
           href: "/app/command-center",
@@ -90,6 +103,17 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
               ]
             : null,
         },
+        // Lead CRM — only rendered for lead-CRM members. Standalone route
+        // (/app/leads) with its own shell; reps who are members reach it here.
+        ...(isLeadCrmMember
+          ? [{ label: "Lead CRM", href: "/app/leads", icon: Users }]
+          : []),
+      ],
+    },
+    // ENGAGE — outreach & close.
+    {
+      title: "Engage",
+      items: [
         {
           label: "Campaigns",
           href: "/app/campaigns",
@@ -98,11 +122,6 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
         },
         { label: "Communication Center", href: "/app/inbox", icon: Inbox },
         { label: "Quoting", href: "/app/quoting", icon: FileText },
-        // Lead CRM — only rendered for lead-CRM members. Standalone route
-        // (/app/leads) with its own shell; reps who are members reach it here.
-        ...(isLeadCrmMember
-          ? [{ label: "Lead CRM", href: "/app/leads", icon: Users }]
-          : []),
       ],
     },
     // Account links (Settings / Billing / Affiliate) intentionally
@@ -199,9 +218,9 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
       </button>
 
       <div className="flex-1 overflow-y-auto px-3 py-5">
-        {sections.map((section) => (
-          <div key={section.title} className="mb-6">
-            {sidebarOpen && (
+        {sections.map((section, sIdx) => (
+          <div key={section.title ?? `section-${sIdx}`} className="mb-6">
+            {sidebarOpen && section.title && (
               <div className="mb-3 px-3 text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">
                 {section.title}
               </div>
