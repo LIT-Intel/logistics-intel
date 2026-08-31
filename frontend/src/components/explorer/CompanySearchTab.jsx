@@ -23,7 +23,7 @@
 //   • Mobile-first: the panel auto-collapses on small screens so the
 //     map stays the primary surface; user opens it via the same pill.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
 import {
   AlertTriangle,
   ArrowRight,
@@ -48,7 +48,9 @@ import {
   fetchSearchMetadataOverlay,
 } from '@/lib/api';
 import { CompanyAvatar } from '@/components/CompanyAvatar';
-import ExploreMap from '@/features/pulse/explore/ExploreMapMaplibre';
+// Lazy-loaded so maplibre-gl (~800KB) ships in its own chunk instead of the
+// first-load bundle for this default landing route.
+const ExploreMap = lazy(() => import('@/features/pulse/explore/ExploreMapMaplibre'));
 import { normalizeCompanySearchResults } from '@/lib/explorer/normalizeCompanySearch';
 import { countryFlag, compactLocation } from '@/lib/explorer/countryFlags';
 import { useExplorer } from './ExplorerContext';
@@ -439,18 +441,20 @@ export default function CompanySearchTab() {
             panelOpen && hasResults ? 'h-[55%] min-h-[160px] sm:h-[58%]' : 'flex-1 min-h-[200px]'
           }`}
         >
-          <ExploreMap
-            rows={mapRows}
-            colorMode="industry"
-            sizeMode="teu"
-            selection={[]}
-            onBubbleClick={onRowClick}
-            onBubbleHover={onBubbleHover}
-            onBubbleLeave={onBubbleLeave}
-            fitBoundsToPoints={hasResults}
-            mapMode="bubbles"
-            mapStyle="alidade_smooth"
-          />
+          <Suspense fallback={<div className="absolute inset-0 bg-slate-100 animate-pulse" />}>
+            <ExploreMap
+              rows={mapRows}
+              colorMode="industry"
+              sizeMode="teu"
+              selection={[]}
+              onBubbleClick={onRowClick}
+              onBubbleHover={onBubbleHover}
+              onBubbleLeave={onBubbleLeave}
+              fitBoundsToPoints={hasResults}
+              mapMode="bubbles"
+              mapStyle="alidade_smooth"
+            />
+          </Suspense>
 
           {/* Idle overlay — small floating hint card. The map renders
               underneath so the world is visible from second one. */}
