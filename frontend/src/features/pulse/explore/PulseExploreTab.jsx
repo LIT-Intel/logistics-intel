@@ -3,7 +3,7 @@
 // surface (full height by default); results drawer is collapsible from
 // the bottom so the user can re-claim map space at any time.
 
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef, lazy, Suspense } from 'react';
 import { toast } from 'sonner';
 import { Compass, Sparkles, ChevronDown, ChevronUp, Table2, Lasso, BoxSelect, Maximize2, Minimize2 } from 'lucide-react';
 import { useExploreState } from './useExploreState';
@@ -14,7 +14,8 @@ import ExploreSidebar from './ExploreSidebar';
 import FilterChipRow from './FilterChipRow';
 import IndustryLegendOverlay from './IndustryLegendOverlay';
 import ExploreMapTools from './ExploreMapTools';
-import ExploreMap from './ExploreMapMaplibre';
+// Lazy-loaded so maplibre-gl ships in its own chunk (see CompanySearchTab).
+const ExploreMap = lazy(() => import('./ExploreMapMaplibre'));
 import ExploreAccountTable from './ExploreAccountTable';
 import ResultsFilterBar, { applyResultsFilter } from './ResultsFilterBar';
 import { useEntitlements } from '@/hooks/useEntitlements';
@@ -480,19 +481,21 @@ export default function PulseExploreTab() {
                   : 'flex-1'
             }`}
           >
-            <ExploreMap
-              ref={mapRef}
-              rows={rows}
-              colorMode={state.color}
-              sizeMode={state.size}
-              selection={state.selection}
-              onBubbleClick={setActiveRow}
-              mapMode={mapMode}
-              onBboxChange={setMapBbox}
-              lassoActive={lassoActive}
-              onLassoSelect={onLassoSelect}
-              mapStyle={mapStyle}
-            />
+            <Suspense fallback={<div className="absolute inset-0 bg-slate-100 animate-pulse" />}>
+              <ExploreMap
+                ref={mapRef}
+                rows={rows}
+                colorMode={state.color}
+                sizeMode={state.size}
+                selection={state.selection}
+                onBubbleClick={setActiveRow}
+                mapMode={mapMode}
+                onBboxChange={setMapBbox}
+                lassoActive={lassoActive}
+                onLassoSelect={onLassoSelect}
+                mapStyle={mapStyle}
+              />
+            </Suspense>
             {/* Loading overlay — covers the map while the query is PARSED
                 (NL -> filters, ~10-15s) AND while accounts load, so the user
                 gets immediate feedback the moment they hit search. */}

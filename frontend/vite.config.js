@@ -70,12 +70,31 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       target: 'esnext',
-      // Emit source maps so the Sentry plugin can upload them. The plugin
-      // deletes the .map files from dist/ after upload
-      // (filesToDeleteAfterUpload above), so end users never download them.
-      sourcemap: true,
+      // Only emit source maps when the Sentry plugin is active to upload +
+      // delete them (SENTRY_AUTH_TOKEN present). 'hidden' keeps the
+      // //# sourceMappingURL comment out of the shipped JS. With no token,
+      // skip maps entirely — faster builds, nothing to leak.
+      sourcemap: sentryAuthToken ? 'hidden' : false,
+      chunkSizeWarningLimit: 900,
       commonjsOptions: {
         include: [/@supabase\/supabase-js/, /node_modules/],
+      },
+      rollupOptions: {
+        output: {
+          // Split heavy vendor libs into cache-stable side-chunks so they
+          // don't inflate the first-load bundle. id-based matching only
+          // groups libs that are actually present (unmatched libs fall back
+          // to Rollup's default splitting), so this stays safe as deps change.
+          // React is intentionally NOT chunked here to avoid load-order bugs.
+          manualChunks(id) {
+            if (!id.includes('node_modules')) return
+            if (id.includes('maplibre-gl') || id.includes('leaflet') || id.includes('supercluster')) return 'maps'
+            if (id.includes('recharts') || id.includes('chart.js') || id.includes('react-chartjs-2') || id.includes('d3-')) return 'charts'
+            if (id.includes('jspdf') || id.includes('html2canvas') || id.includes('xlsx')) return 'exports'
+            if (id.includes('quill')) return 'editor'
+            if (id.includes('framer-motion')) return 'motion'
+          },
+        },
       },
     },
     server: {
