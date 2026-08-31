@@ -5175,40 +5175,12 @@ function TradeLanesMapDialog({
     () => (portLayerOn ? [...inlandArcs, ...portArcs] : inlandArcs),
     [inlandArcs, portArcs, portLayerOn],
   );
-  // Real per-month totals (YYYY-MM → shipments) from monthly_volumes — the
-  // EXACT series the Cadence chart uses. Used to give the selected lane's
-  // trend true seasonality instead of the sparse ~50-BOL sample.
-  const monthlyTotalByKey = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const p of monthlySeries) {
-      if (/^\d{4}-\d{2}$/.test(p.month)) m.set(p.month, Number(p.shipments) || 0);
-    }
-    return m;
-  }, [monthlySeries]);
-  // The selected lane's share of the real scope total. Applying this share to
-  // the real monthly series yields the lane's true seasonal SHAPE scaled to
-  // its size (sums back to the lane's reconciled volume) — the same
-  // reconcile-to-Cadence approach already used for lane volume totals.
-  const laneShare = useMemo(() => {
-    const s = Number((selPair as any)?.shipments) || 0;
-    if (!scopeTotal || !(scopeTotal.shipments > 0) || s <= 0) return null;
-    return s / scopeTotal.shipments;
-  }, [selPair, scopeTotal]);
   const monthlyChartData = useMemo(() => {
     if (!selPair) return [];
-    // Preferred: real seasonality (Cadence source) scaled to this lane.
-    if (laneShare != null && monthlyTotalByKey.size > 0) {
-      const keys = monthWindow?.length ? monthWindow : Array.from(monthlyTotalByKey.keys()).sort();
-      return keys.map((month) => ({
-        month: month.slice(5),
-        shipments: Math.round(laneShare * (monthlyTotalByKey.get(month) || 0)),
-      }));
-    }
-    // Honest fallback: raw per-lane sample when no real series is available.
     const values = laneMonthsByPair?.get(selPair.pairKey) || {};
     const keys = monthWindow?.length ? monthWindow : Object.keys(values).sort();
     return keys.map((month) => ({ month: month.slice(5), shipments: Number(values[month] || 0) }));
-  }, [selPair, laneShare, monthlyTotalByKey, laneMonthsByPair, monthWindow]);
+  }, [selPair, laneMonthsByPair, monthWindow]);
   // Selected-lane chart view — the toolbar toggle inside the expanded map:
   // trailing monthly cadence, year-over-year (current vs prior year), or a
   // 3-year seasonal overlay. All three read the SAME real per-lane monthly
@@ -5222,45 +5194,37 @@ function TradeLanesMapDialog({
   // Year-over-year: current calendar year vs the prior one, month-by-month.
   const laneYoyData = useMemo(() => {
     if (!selPair) return { rows: [] as any[], curYear: null as string | null, priorYear: null as string | null };
-    const useReal = laneShare != null && monthlyTotalByKey.size > 0;
     const values = laneMonthsByPair?.get(selPair.pairKey) || {};
-    const keySource = useReal ? Array.from(monthlyTotalByKey.keys()) : Object.keys(values);
-    const years = Array.from(new Set(keySource.map((m) => m.slice(0, 4)))).sort();
+    const years = Array.from(
+      new Set(Object.keys(values).map((m) => m.slice(0, 4))),
+    ).sort();
     if (!years.length) return { rows: [], curYear: null, priorYear: null };
     const curYear = years[years.length - 1];
     const priorYear = years.length > 1 ? years[years.length - 2] : null;
-    const at = (y: string, mm: string) =>
-      useReal
-        ? Math.round((laneShare as number) * (monthlyTotalByKey.get(`${y}-${mm}`) || 0))
-        : Number(values[`${y}-${mm}`] || 0);
     const rows = LANE_MONTH_LABELS.map((label, i) => {
       const mm = String(i + 1).padStart(2, "0");
-      const row: any = { month: label, [curYear]: at(curYear, mm) };
-      if (priorYear) row[priorYear] = at(priorYear, mm);
+      const row: any = { month: label, [curYear]: Number(values[`${curYear}-${mm}`] || 0) };
+      if (priorYear) row[priorYear] = Number(values[`${priorYear}-${mm}`] || 0);
       return row;
     });
     return { rows, curYear, priorYear };
-  }, [selPair, laneShare, monthlyTotalByKey, laneMonthsByPair]);
+  }, [selPair, laneMonthsByPair]);
   // Seasonal overlay: the last (up to) 3 calendar years, grouped by month so
   // the recurring peak/trough shape is visible across years.
   const laneSeasonalData = useMemo(() => {
     if (!selPair) return { rows: [] as any[], years: [] as string[] };
-    const useReal = laneShare != null && monthlyTotalByKey.size > 0;
     const values = laneMonthsByPair?.get(selPair.pairKey) || {};
-    const keySource = useReal ? Array.from(monthlyTotalByKey.keys()) : Object.keys(values);
-    const years = Array.from(new Set(keySource.map((m) => m.slice(0, 4)))).sort().slice(-3);
-    const at = (y: string, mm: string) =>
-      useReal
-        ? Math.round((laneShare as number) * (monthlyTotalByKey.get(`${y}-${mm}`) || 0))
-        : Number(values[`${y}-${mm}`] || 0);
+    const years = Array.from(
+      new Set(Object.keys(values).map((m) => m.slice(0, 4))),
+    ).sort().slice(-3);
     const rows = LANE_MONTH_LABELS.map((label, i) => {
       const mm = String(i + 1).padStart(2, "0");
       const row: any = { month: label };
-      for (const y of years) row[y] = at(y, mm);
+      for (const y of years) row[y] = Number(values[`${y}-${mm}`] || 0);
       return row;
     });
     return { rows, years };
-  }, [selPair, laneShare, monthlyTotalByKey, laneMonthsByPair]);
+  }, [selPair, laneMonthsByPair]);
   const laneYoyAvailable = laneYoyData.priorYear != null;
   const laneSeasonalAvailable = laneSeasonalData.years.length >= 2;
   // Palette for the seasonal per-year bars (oldest → newest).
