@@ -451,6 +451,7 @@ export default function CompanySearchTab() {
               onBubbleHover={onBubbleHover}
               onBubbleLeave={onBubbleLeave}
               fitBoundsToPoints={hasResults}
+              labeledMarkers
               mapMode="bubbles"
               mapStyle="alidade_smooth"
             />
