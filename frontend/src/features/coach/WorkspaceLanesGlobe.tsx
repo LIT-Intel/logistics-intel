@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight, Globe2, Layers, Maximize2, Minimize2, Sparkles, X } from "lucide-react";
-import GlobeCanvas, { type GlobeLane } from "@/components/GlobeCanvas";
-import LaneMap, { type LaneMapLaneColor } from "@/components/LaneMap";
+import { type GlobeLane } from "@/components/GlobeCanvas";
+import { type LaneMapLaneColor } from "@/components/LaneMap";
 import LaneViewToggle from "@/components/LaneViewToggle";
 import { useLaneViewMode } from "@/hooks/useLaneViewMode";
 import { formatLaneShort, resolveEndpoint } from "@/lib/laneGlobe";
@@ -12,6 +12,11 @@ import { usePulseCoach, useWorkspaceLanes } from "./PulseCoachWidget";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useWorkspaceLaneIntel } from "@/api/laneIntel";
 import LaneIntelligenceCard from "@/components/maps/LaneIntelligenceCard";
+
+// Heavy map renderers (three.js globe + Leaflet) are code-split so the dashboard
+// shell paints without them; only the active view's library is fetched on demand.
+const GlobeCanvas = lazy(() => import("@/components/GlobeCanvas"));
+const LaneMap = lazy(() => import("@/components/LaneMap"));
 
 // Responsive globe sizing: clamp to a sensible band so it scales
 // down on tablet (where the panel is narrow) and scales up on
@@ -372,43 +377,54 @@ export default function WorkspaceLanesGlobe() {
               viewMode === "globe" ? "bg-slate-50" : "bg-white",
             ].join(" ")}
           >
-            {viewMode === "globe" ? (
-              <GlobeCanvas
-                lanes={globeLanes}
-                selectedLane={effectiveHighlightId}
-                size={globeSize}
-                theme="trade"
-                showFlagPins
-                onSelectLane={(laneId) => {
-                  const lane = sorted.find((l) => l.key === laneId);
-                  setStickyKey(lane ? lane.key : null);
-                  highlightLane(
-                    lane ? { from: lane.from_label, to: lane.to_label } : null,
-                  );
-                }}
-              />
-            ) : (
-              <LaneMap
-                lanes={globeLanes}
-                selectedLane={effectiveHighlightId}
-                onSelectLane={(laneId) => {
-                  const lane = sorted.find((l) => l.key === laneId);
-                  setStickyKey(lane ? lane.key : null);
-                  highlightLane(
-                    lane ? { from: lane.from_label, to: lane.to_label } : null,
-                  );
-                }}
-                height={Math.min(Math.max(globeSize, 320), 440)}
-                className="w-full overflow-hidden rounded-lg"
-                variant="dark"
-                volumeScale
-                zoomControlPosition="bottomleft"
-                laneColors={laneColors}
-                unselectedStyle="ghost"
-                flow
-                linesMode="always"
-              />
-            )}
+            <Suspense
+              fallback={
+                <div
+                  className="flex items-center justify-center text-[11px] text-slate-400"
+                  style={{ height: globeSize }}
+                >
+                  Loading map…
+                </div>
+              }
+            >
+              {viewMode === "globe" ? (
+                <GlobeCanvas
+                  lanes={globeLanes}
+                  selectedLane={effectiveHighlightId}
+                  size={globeSize}
+                  theme="trade"
+                  showFlagPins
+                  onSelectLane={(laneId) => {
+                    const lane = sorted.find((l) => l.key === laneId);
+                    setStickyKey(lane ? lane.key : null);
+                    highlightLane(
+                      lane ? { from: lane.from_label, to: lane.to_label } : null,
+                    );
+                  }}
+                />
+              ) : (
+                <LaneMap
+                  lanes={globeLanes}
+                  selectedLane={effectiveHighlightId}
+                  onSelectLane={(laneId) => {
+                    const lane = sorted.find((l) => l.key === laneId);
+                    setStickyKey(lane ? lane.key : null);
+                    highlightLane(
+                      lane ? { from: lane.from_label, to: lane.to_label } : null,
+                    );
+                  }}
+                  height={Math.min(Math.max(globeSize, 320), 440)}
+                  className="w-full overflow-hidden rounded-lg"
+                  variant="dark"
+                  volumeScale
+                  zoomControlPosition="bottomleft"
+                  laneColors={laneColors}
+                  unselectedStyle="ghost"
+                  flow
+                  linesMode="always"
+                />
+              )}
+            </Suspense>
           </div>
           <div className="max-h-[360px] overflow-y-auto md:max-h-[460px] 2xl:max-h-[520px]">
             {(() => {

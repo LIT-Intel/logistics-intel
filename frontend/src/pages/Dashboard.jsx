@@ -29,7 +29,7 @@
 // Honest data only: no synthetic activity %, no fabricated company
 // facts, no invented news. Empty states surface honestly.
 
-import { useEffect, useState, useMemo } from "react";
+import { lazy, Suspense, useEffect, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/auth/AuthProvider";
 import {
@@ -55,7 +55,8 @@ import { DashboardLoadingSkeleton } from "@/components/dashboard/LoadingSkeleton
 import { useDashboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import QuickActionsButton from "@/components/dashboard/QuickActionsButton";
 import { motion } from "framer-motion";
-import GlobeCanvas from "@/components/GlobeCanvas";
+// three.js globe is code-split so it stays out of the dashboard's first paint.
+const GlobeCanvas = lazy(() => import("@/components/GlobeCanvas"));
 import { laneStringToGlobeLane } from "@/lib/laneGlobe";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
 import { formatSafeShipmentDate } from "@/lib/dateUtils";
@@ -440,7 +441,18 @@ function GlobePanel({ lanes }) {
           </div>
         ) : (
           <>
-            <GlobeCanvas lanes={globeLanes} size={220} />
+            <Suspense
+              fallback={
+                <div
+                  className="flex items-center justify-center text-[11px] text-slate-400"
+                  style={{ height: 220, width: 220 }}
+                >
+                  Loading globe…
+                </div>
+              }
+            >
+              <GlobeCanvas lanes={globeLanes} size={220} />
+            </Suspense>
             <div
               className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-indigo-100 bg-white/80 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-indigo-600 backdrop-blur"
               style={{ fontFamily: "'Space Grotesk', sans-serif" }}

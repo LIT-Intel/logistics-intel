@@ -1,11 +1,14 @@
-import React, { useEffect, useRef } from "react";
+import React, { lazy, Suspense, useEffect, useRef } from "react";
 import { ArrowRight } from "lucide-react";
-import GlobeCanvas from "@/components/GlobeCanvas";
-import LaneMap from "@/components/LaneMap";
 import LaneViewToggle from "@/components/LaneViewToggle";
 import LitSectionCard from "@/components/ui/LitSectionCard";
 import LitFlag from "@/components/ui/LitFlag";
 import { useLaneViewMode } from "@/hooks/useLaneViewMode";
+
+// three.js globe + Leaflet map are code-split; only the active view's library
+// is fetched, keeping them out of the dashboard's initial synchronous bundle.
+const GlobeCanvas = lazy(() => import("@/components/GlobeCanvas"));
+const LaneMap = lazy(() => import("@/components/LaneMap"));
 
 /**
  * Phase 2 — Dashboard "Top Active Trade Lanes" card.
@@ -119,29 +122,37 @@ export default function GlobeCard({
             {mode === "globe" ? "Globe View" : "Map View"}
           </span>
           {hasLanes ? (
-            mode === "globe" ? (
-              <div className="py-4">
-                <GlobeCanvas
-                  size={globeSize}
-                  lanes={globeLanes}
-                  selectedLane={globeSelectedId}
-                  theme="trade"
-                  showFlagPins
-                />
-              </div>
-            ) : (
-              <div className="w-full">
-                <LaneMap
-                  lanes={globeLanes || []}
-                  selectedLane={globeSelectedId}
-                  onSelectLane={(id) => {
-                    lastSelectionSourceRef.current = "map";
-                    onSelectLane(resolveDisplayLabelFromGlobeId(id));
-                  }}
-                  height={340}
-                />
-              </div>
-            )
+            <Suspense
+              fallback={
+                <div className="flex h-[340px] items-center justify-center text-[11px] text-slate-400">
+                  Loading view…
+                </div>
+              }
+            >
+              {mode === "globe" ? (
+                <div className="py-4">
+                  <GlobeCanvas
+                    size={globeSize}
+                    lanes={globeLanes}
+                    selectedLane={globeSelectedId}
+                    theme="trade"
+                    showFlagPins
+                  />
+                </div>
+              ) : (
+                <div className="w-full">
+                  <LaneMap
+                    lanes={globeLanes || []}
+                    selectedLane={globeSelectedId}
+                    onSelectLane={(id) => {
+                      lastSelectionSourceRef.current = "map";
+                      onSelectLane(resolveDisplayLabelFromGlobeId(id));
+                    }}
+                    height={340}
+                  />
+                </div>
+              )}
+            </Suspense>
           ) : (
             <div className="px-6 py-12 text-center">
               <p className="font-body text-[12px] text-slate-500">
