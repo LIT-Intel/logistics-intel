@@ -70,7 +70,7 @@ export default function PulseExploreTab() {
   const [mapBbox, setMapBbox] = useState(null); // [w,s,e,n] from MapLibre
   const [lassoActive, setLassoActive] = useState(false);
   const [toolPanel, setToolPanel] = useState(null); // 'analytics' | 'insights' | 'library' | 'layers' | null
-  const [mapStyle, setMapStyle] = useState('alidade_smooth');
+  const [mapStyle, setMapStyle] = useState('alidade_satellite');
   const mapRef = useRef(null);
 
   const [loadLimit, setLoadLimit] = useState(null); // "load more" cap; null = default 5k

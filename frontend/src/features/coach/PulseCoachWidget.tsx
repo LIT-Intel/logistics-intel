@@ -1011,6 +1011,32 @@ function CoachComposer({
     setErr(null);
     setAnswer(null);
     try {
+      // Demo / scheduling intent → open the in-chat cal.com scheduler right
+      // away instead of routing to the LLM (which used to answer with prose and
+      // no calendar). Works for every user, not just trial accounts.
+      const lc = trimmed.toLowerCase();
+      const wantsDemo =
+        /\bdemo\b/.test(lc) ||
+        (/\b(schedule|book|set ?up|arrange|set a)\b/.test(lc) &&
+          /\b(call|meeting|time|walkthrough|session|intro)\b/.test(lc));
+      if (wantsDemo) {
+        setShowDemo(true);
+        const md =
+          "Absolutely — let's set up a live walkthrough. Pick a time that works below and we'll tailor the demo to your lanes and workflow.";
+        const demoAnswer: HarveyAnswer = {
+          answer_md: md,
+          classification: "product_help",
+          confidence: 1,
+          evidence: [],
+          inference_notes: [],
+          cta: null,
+        };
+        setAnswer(demoAnswer);
+        setHistory((turns) =>
+          [...turns, { role: "user" as const, content: trimmed }, { role: "assistant" as const, content: md }].slice(-8),
+        );
+        return;
+      }
       // Pipeline questions are answered locally from the org-scoped
       // lit_pipeline_summary() RPC — real deal data, no LLM, no edge-fn
       // change. Falls through to the normal coach path if the RPC fails.
