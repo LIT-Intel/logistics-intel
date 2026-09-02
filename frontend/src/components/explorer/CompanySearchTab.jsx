@@ -453,7 +453,7 @@ export default function CompanySearchTab() {
               fitBoundsToPoints={hasResults}
               labeledMarkers
               mapMode="bubbles"
-              mapStyle="alidade_smooth"
+              mapStyle="alidade_satellite"
             />
           </Suspense>
 
