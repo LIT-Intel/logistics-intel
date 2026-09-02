@@ -181,6 +181,75 @@ function makeClusterEl(count, color = '#06B6D4') {
   return el;
 }
 
+// Two-letter monogram for a company (first letters of the first two words,
+// else the first two chars). Used by the labeled card marker below.
+function companyInitials(row) {
+  const n = String(row.company_name || row.name || '?').trim();
+  const parts = n.split(/\s+/).filter(Boolean);
+  const two = ((parts[0]?.[0] || '') + (parts[1]?.[0] || '')).toUpperCase();
+  return two || n.slice(0, 2).toUpperCase();
+}
+
+// Inject the hover-lift rule once. The transform lives on the INNER card, not
+// the marker element itself — MapLibre owns the marker element's transform
+// (translate), so animating that would fling the marker to the map origin.
+let cardStylesInjected = false;
+function ensureCardStyles() {
+  if (cardStylesInjected || typeof document === 'undefined') return;
+  cardStylesInjected = true;
+  const s = document.createElement('style');
+  s.textContent =
+    '.pulse-card-inner{transition:transform .12s ease, box-shadow .12s ease;}' +
+    '.pulse-card-marker:hover{z-index:10;}' +
+    '.pulse-card-marker:hover .pulse-card-inner{transform:translateY(-2px) scale(1.03);' +
+    'box-shadow:0 8px 20px rgba(15,23,42,0.22);}';
+  document.head.appendChild(s);
+}
+
+// Labeled "company card" marker — an avatar + company name pill with a little
+// downward pointer, so a searched company reads as an obviously-clickable card
+// on the map instead of an anonymous dot. Click still fires onBubbleClick.
+function makeCardEl(row, isSelected) {
+  ensureCardStyles();
+  const el = document.createElement('div');
+  el.className = 'pulse-card-marker';
+  const accent = isSelected ? '#06B6D4' : '#e2e8f0';
+  const card = document.createElement('div');
+  card.className = 'pulse-card-inner';
+  card.style.cssText = `
+    position:relative;display:flex;align-items:center;gap:6px;
+    padding:4px 10px 4px 4px;border-radius:9999px;background:#fff;
+    border:1px solid ${accent};cursor:pointer;max-width:180px;
+    box-shadow:${isSelected
+      ? '0 0 0 2px rgba(6,182,212,0.35),0 4px 12px rgba(15,23,42,0.14)'
+      : '0 4px 12px rgba(15,23,42,0.14)'};
+  `;
+  const avatar = document.createElement('div');
+  avatar.style.cssText = `
+    width:20px;height:20px;border-radius:9999px;flex:0 0 auto;
+    background:${colorFor(row, 'industry')};color:#fff;
+    display:flex;align-items:center;justify-content:center;
+    font-size:9px;font-weight:700;line-height:1;
+  `;
+  avatar.textContent = companyInitials(row);
+  const label = document.createElement('span');
+  label.style.cssText =
+    'font-size:11.5px;font-weight:600;color:#0f172a;white-space:nowrap;' +
+    'overflow:hidden;text-overflow:ellipsis;';
+  label.textContent = String(row.company_name || row.name || 'Company');
+  const tail = document.createElement('div');
+  tail.style.cssText = `
+    position:absolute;left:50%;bottom:-4px;width:8px;height:8px;background:#fff;
+    border-right:1px solid ${accent};border-bottom:1px solid ${accent};
+    transform:translateX(-50%) rotate(45deg);
+  `;
+  card.appendChild(avatar);
+  card.appendChild(label);
+  card.appendChild(tail);
+  el.appendChild(card);
+  return el;
+}
+
 const ExploreMapMaplibre = forwardRef(function ExploreMapMaplibre({
   rows, colorMode, sizeMode, selection, onBubbleClick, mapMode = 'bubbles',
   onBboxChange,
@@ -198,6 +267,11 @@ const ExploreMapMaplibre = forwardRef(function ExploreMapMaplibre({
   // a result set of 10 companies spread across CT/CO/KY zooms in to
   // show separate bubbles instead of one cluster at country-center.
   fitBoundsToPoints = false,
+  // When true, individual (un-clustered) points render as a labeled
+  // company-name card instead of a bare dot, so a searched company reads
+  // as an obviously-clickable card. Company Search opts in; Pulse Explorer
+  // (thousands of points) keeps dots.
+  labeledMarkers = false,
 }, ref) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -432,6 +506,9 @@ const ExploreMapMaplibre = forwardRef(function ExploreMapMaplibre({
     for (const it of items) {
       const [lng, lat] = it.geometry.coordinates;
       let el;
+      // Card markers anchor by their bottom (pill sits above the point with a
+      // pointer touching it); dots + clusters anchor at their center.
+      let markerAnchor = 'center';
       if (it.properties.cluster) {
         const color = clusterColor(it.properties, colorMode);
         el = makeClusterEl(it.properties.point_count, color);
@@ -441,7 +518,12 @@ const ExploreMapMaplibre = forwardRef(function ExploreMapMaplibre({
         });
       } else {
         const row = it.properties.row;
-        el = makeBubbleEl(row, colorMode, sizeMode, maxValue, selSet.has(row.id));
+        if (labeledMarkers) {
+          el = makeCardEl(row, selSet.has(row.id));
+          markerAnchor = 'bottom';
+        } else {
+          el = makeBubbleEl(row, colorMode, sizeMode, maxValue, selSet.has(row.id));
+        }
         el.addEventListener('click', (e) => { e.stopPropagation(); onBubbleClick?.(row); });
         // Hover-preview hooks (opt-in). The screen-coords payload lets
         // the parent position a floating card next to the bubble
@@ -474,12 +556,12 @@ const ExploreMapMaplibre = forwardRef(function ExploreMapMaplibre({
       // 'none' here covers freshly-created markers; the separate
       // effect below updates existing markers when lassoActive toggles.
       if (lassoActive) el.style.pointerEvents = 'none';
-      const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
+      const marker = new maplibregl.Marker({ element: el, anchor: markerAnchor })
         .setLngLat([lng, lat])
         .addTo(map);
       markersRef.current.push(marker);
     }
-  }, [ready, cluster, bbox, zoom, colorMode, sizeMode, maxValue, selSet, onBubbleClick, onBubbleHover, onBubbleLeave, mapMode, styleEpoch, lassoActive]);
+  }, [ready, cluster, bbox, zoom, colorMode, sizeMode, maxValue, selSet, onBubbleClick, onBubbleHover, onBubbleLeave, mapMode, styleEpoch, lassoActive, labeledMarkers]);
 
   // Toggle pointerEvents on all existing markers when lasso flips.
   useEffect(() => {
