@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Check, ChevronRight, Rocket } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { springs } from '@/lib/motion';
 
 interface ChecklistItem {
   id: string;
@@ -70,7 +71,7 @@ export default function GettingStartedChecklist({
     <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.3 }}
+      transition={springs.default}
       className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-200 shadow-sm overflow-hidden"
     >
       <div className="px-6 py-4 border-b border-blue-200 bg-white/50 backdrop-blur-sm">
@@ -115,7 +116,7 @@ export default function GettingStartedChecklist({
                 initial={{ opacity: 0, x: -10 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 10 }}
-                transition={{ duration: 0.2, delay: index * 0.05 }}
+                transition={{ ...springs.snappy, delay: index * 0.05 }}
               >
                 <Link
                   to={item.href}

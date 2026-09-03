@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, Search, Mail, FileText, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { springs } from '@/lib/motion';
 
 interface QuickAction {
   label: string;
@@ -37,7 +38,7 @@ export default function QuickActionsButton() {
             initial={{ opacity: 0, scale: 0.8, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.8, y: 20 }}
-            transition={{ duration: 0.2 }}
+            transition={springs.snappy}
             className="absolute bottom-20 right-0 space-y-3"
           >
             {QUICK_ACTIONS.map((action, index) => {
@@ -48,7 +49,7 @@ export default function QuickActionsButton() {
                   initial={{ opacity: 0, x: 20 }}
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: 20 }}
-                  transition={{ duration: 0.2, delay: index * 0.05 }}
+                  transition={{ ...springs.snappy, delay: index * 0.05 }}
                 >
                   <Link
                     to={action.href}
@@ -86,7 +87,7 @@ export default function QuickActionsButton() {
               initial={{ rotate: -90, opacity: 0 }}
               animate={{ rotate: 0, opacity: 1 }}
               exit={{ rotate: 90, opacity: 0 }}
-              transition={{ duration: 0.2 }}
+              transition={springs.snappy}
             >
               <X className="w-6 h-6" />
             </motion.div>
@@ -96,7 +97,7 @@ export default function QuickActionsButton() {
               initial={{ rotate: 90, opacity: 0 }}
               animate={{ rotate: 0, opacity: 1 }}
               exit={{ rotate: -90, opacity: 0 }}
-              transition={{ duration: 0.2 }}
+              transition={springs.snappy}
             >
               <Plus className="w-6 h-6" />
             </motion.div>

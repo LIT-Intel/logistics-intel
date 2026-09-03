@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Search, Building2, Users, ArrowRight } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { springs } from '@/lib/motion';
 import { createPageUrl } from '@/utils';
 import { useNavigate } from 'react-router-dom';
 
@@ -45,7 +46,7 @@ export default function DashboardHeroCards() {
             key={card.title}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: index * 0.1 }}
+            transition={{ ...springs.default, delay: index * 0.1 }}
           >
             <Card 
               className="relative overflow-hidden rounded-lg bg-white shadow-md border border-gray-200 transition-all duration-300 hover:shadow-lg hover:scale-[1.02] cursor-pointer group h-full"

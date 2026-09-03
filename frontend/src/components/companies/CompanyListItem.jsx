@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
+import { springs } from '@/lib/motion';
 // Removed Badge as it's no longer used in the updated design
 import { Button } from '@/components/ui/button';
 import {
@@ -74,7 +75,7 @@ export default function CompanyListItem({
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, delay: index * 0.05 }}
+      transition={{ ...springs.default, delay: index * 0.05 }}
       className="p-4 hover:bg-gray-50/80 transition-all duration-200"
     >
       <div className="flex items-center justify-between">

@@ -2,6 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { LucideIcon } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { springs } from '@/lib/motion';
 
 interface EnhancedKpiCardProps {
   icon: LucideIcon;
@@ -32,7 +33,7 @@ export default function EnhancedKpiCard({
     <motion.div
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35, delay }}
+      transition={{ ...springs.default, delay }}
     >
       <Link
         to={href}

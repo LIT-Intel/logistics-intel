@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { springs } from '@/lib/motion';
 import { Building2, Send, FileText } from 'lucide-react';
 
 interface DashboardHeaderProps {
@@ -18,7 +19,7 @@ export default function DashboardHeader({ userName }: DashboardHeaderProps) {
     <motion.div
       initial={{ opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3 }}
+      transition={springs.default}
       className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-1"
     >
       <div>

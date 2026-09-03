@@ -10,6 +10,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { motion } from "framer-motion";
+import { springs } from "@/lib/motion";
 import type { IyShipperHit } from "@/lib/api";
 import { getCompanyLogoUrl } from "@/lib/logo";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
@@ -83,7 +84,7 @@ export default function ShipperListItem({
     <motion.div
       initial={{ opacity: 0, x: -20 }}
       animate={{ opacity: 1, x: 0 }}
-      transition={{ duration: 0.3, delay: index * 0.03 }}
+      transition={{ ...springs.default, delay: index * 0.03 }}
       onHoverStart={() => setIsHovered(true)}
       onHoverEnd={() => setIsHovered(false)}
       className="flex items-center gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm hover:shadow-md hover:border-blue-300 hover:bg-blue-50/30 transition-all duration-200 group relative overflow-hidden"
@@ -219,7 +220,7 @@ export default function ShipperListItem({
           View details
           <motion.span
             animate={{ x: isHovered ? 2 : 0 }}
-            transition={{ duration: 0.2 }}
+            transition={springs.snappy}
           >
             →
           </motion.span>

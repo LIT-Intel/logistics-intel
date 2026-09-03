@@ -2,6 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { Building2, Mail, FileText, UserPlus, TrendingUp, Clock } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { springs } from '@/lib/motion';
 import { formatDistanceToNow } from 'date-fns';
 
 interface Activity {
@@ -100,7 +101,7 @@ export default function ActivityFeed({ activities = [], maxItems = 10 }: Activit
               key={activity.id}
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.3, delay: index * 0.05 }}
+              transition={{ ...springs.default, delay: index * 0.05 }}
             >
               {activity.link ? (
                 <Link

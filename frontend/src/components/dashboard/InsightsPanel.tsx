@@ -1,5 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
+import { springs } from '@/lib/motion';
 import { Building2, Mail, ArrowUpRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -43,7 +44,7 @@ export default function InsightsPanel({
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, delay: 0.35 }}
+      transition={{ ...springs.default, delay: 0.35 }}
       className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden"
     >
       <div className="px-6 py-4 border-b border-slate-100">

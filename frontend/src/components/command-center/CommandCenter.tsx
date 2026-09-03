@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
+import { springs } from "@/lib/motion";
 import { listSavedCompanies, enrichCompaniesFromKpis } from "@/lib/api";
 import { listOrgSharedCompanyRecords } from "@/api/orgSaves";
 import { formatSafeShipmentDate } from "@/lib/dateUtils";
@@ -1192,7 +1193,7 @@ function AccountsView() {
                     key={row.key}
                     initial={{ opacity: 0, y: 4 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.15, delay: index * 0.012 }}
+                    transition={{ ...springs.snappy, delay: index * 0.012 }}
                     onClick={() => handleOpenCompany(row)}
                     style={{ borderBottom: `1px solid ${theme.border}`, cursor: 'pointer', transition: 'background 120ms', background: theme.panel }}
                     onMouseEnter={(e) => (e.currentTarget.style.background = theme.hover)}

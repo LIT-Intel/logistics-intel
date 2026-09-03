@@ -1,5 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
+import { springs } from '@/lib/motion';
 import { Search, Sparkles, Command, Filter } from 'lucide-react';
 
 interface SearchPageHeaderProps {
@@ -28,7 +29,7 @@ export default function SearchPageHeader({
     <motion.div
       initial={{ opacity: 0, y: -10 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4 }}
+      transition={springs.default}
       className="mb-6"
     >
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">

@@ -3,6 +3,7 @@ import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, TooltipProps,
 } from 'recharts';
 import { motion } from 'framer-motion';
+import { springs } from '@/lib/motion';
 import { TrendingUp } from 'lucide-react';
 
 interface DataPoint {
@@ -56,7 +57,7 @@ export default function PerformanceChart({ data }: PerformanceChartProps) {
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, delay: 0.2 }}
+      transition={{ ...springs.default, delay: 0.2 }}
       className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden"
     >
       {/* Header */}

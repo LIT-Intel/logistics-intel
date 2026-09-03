@@ -1,6 +1,7 @@
 import React from 'react';
 import { Mail, Phone, LinkedinIcon, MapPin, Briefcase, Award, Database, Sparkles } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { springs } from '@/lib/motion';
 import ContactAvatar from '@/components/command-center/ContactAvatar';
 import AddToListPicker from '@/features/pulse/AddToListPicker';
 import type { ContactCore } from '@/types/contacts';
@@ -56,7 +57,7 @@ export default function ContactCard({ contact, onViewProfile, onEnrich, index = 
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, delay: index * 0.05 }}
+      transition={{ ...springs.default, delay: index * 0.05 }}
       onHoverStart={() => setIsHovered(true)}
       onHoverEnd={() => setIsHovered(false)}
       className="group relative rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-all duration-200 hover:border-blue-300 hover:shadow-lg"
@@ -115,7 +116,7 @@ export default function ContactCard({ contact, onViewProfile, onEnrich, index = 
           {onViewProfile && (
             <motion.button type="button" onClick={() => onViewProfile(contact)} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-slate-900 bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition-all hover:bg-slate-800">
               View Profile
-              <motion.span animate={{ x: isHovered ? 2 : 0 }} transition={{ duration: 0.2 }}>→</motion.span>
+              <motion.span animate={{ x: isHovered ? 2 : 0 }} transition={springs.snappy}>→</motion.span>
             </motion.button>
           )}
           {onEnrich && needsEnrichment && (

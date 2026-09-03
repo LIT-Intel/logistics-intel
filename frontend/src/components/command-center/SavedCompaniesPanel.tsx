@@ -52,7 +52,7 @@ export default function SavedCompaniesPanel({
     <motion.aside
       initial={{ opacity: 0, x: -20 }}
       animate={{ opacity: 1, x: 0 }}
-      transition={{ duration: 0.4 }}
+      transition={springs.default}
       className="rounded-2xl border border-slate-200 bg-white shadow-sm"
     >
       <div className="flex items-center justify-between border-b border-slate-200 bg-gradient-to-br from-slate-50 to-white px-4 py-3">
@@ -65,7 +65,7 @@ export default function SavedCompaniesPanel({
             key={companies.length}
             initial={{ scale: 1.2, color: "#3b82f6" }}
             animate={{ scale: 1, color: "#0f172a" }}
-            transition={{ duration: 0.3 }}
+            transition={springs.default}
             className="text-sm font-semibold"
           >
             {companies.length} {companies.length === 1 ? 'company' : 'companies'}

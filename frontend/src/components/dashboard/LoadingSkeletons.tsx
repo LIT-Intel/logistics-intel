@@ -1,5 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
+import { springs } from '@/lib/motion';
 
 export function DashboardLoadingSkeleton() {
   return (
@@ -25,7 +26,7 @@ export function DashboardLoadingSkeleton() {
             key={i}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: i * 0.1 }}
+            transition={{ ...springs.default, delay: i * 0.1 }}
             className="h-48 bg-white rounded-xl border border-slate-200 overflow-hidden"
           >
             <div className="p-6">
