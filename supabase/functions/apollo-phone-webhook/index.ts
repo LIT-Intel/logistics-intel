@@ -84,6 +84,34 @@ function extractPhone(payload: any): string | null {
   return null;
 }
 
+// Apollo may wrap the resolved person under people[]/contacts[]/matches[]/data/
+// result rather than at the top level, so collect every candidate object (top
+// level + one level of common wrappers) and read ids/phone from whichever has them.
+function candidateNodes(payload: any): any[] {
+  const nodes: any[] = [];
+  const push = (v: any) => { if (v && typeof v === "object") nodes.push(v); };
+  push(payload);
+  for (const key of ["person", "contact", "data", "result", "payload"]) push(payload?.[key]);
+  for (const key of ["people", "contacts", "matches", "results", "data", "phone_numbers"]) {
+    const arr = payload?.[key];
+    if (Array.isArray(arr)) arr.forEach(push);
+    else push(arr);
+  }
+  return nodes;
+}
+function firstStr(nodes: any[], keys: string[]): string | null {
+  for (const n of nodes) {
+    for (const k of keys) {
+      const v = n?.[k];
+      if (v != null && (typeof v === "string" || typeof v === "number")) {
+        const s = String(v).trim();
+        if (s) return s;
+      }
+    }
+  }
+  return null;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
@@ -96,6 +124,9 @@ Deno.serve(async (req: Request) => {
   }
 
   const rawBody = await req.text();
+  // Apollo's phone-callback shape isn't documented and has been the blocker —
+  // log the raw body (truncated) so we can see exactly what it sends.
+  console.log("[apollo-phone-webhook] raw", rawBody ? rawBody.slice(0, 4000) : "(empty body)");
   const signature = req.headers.get("X-Apollo-Signature");
   const verified = await verifySignature(rawBody, signature);
   if (!verified) {
@@ -126,19 +157,15 @@ Deno.serve(async (req: Request) => {
     );
   }
 
-  // Apollo's exact callback shape isn't fully documented; we accept the
-  // common candidates and pick whichever surfaces.
-  const requestId: string | null =
-    payload.request_id ||
-    payload.phone_numbers_request_id ||
-    payload.id ||
-    null;
-  const personId: string | null =
-    payload.person_id ||
-    payload.apollo_person_id ||
-    payload.person?.id ||
-    null;
-  const phone = extractPhone(payload);
+  // Apollo's exact callback shape isn't fully documented; search top-level AND
+  // nested wrappers (people[]/contacts[]/data) for whichever id + phone surfaces.
+  const nodes = candidateNodes(payload);
+  const requestId: string | null = firstStr(nodes, ["request_id", "phone_numbers_request_id"]);
+  // person id: Apollo person ids are 24-char hex; accept `id` too but only as a
+  // person-id candidate (never as request id, which is numeric).
+  const personId: string | null = firstStr(nodes, ["person_id", "apollo_person_id", "id"]);
+  const phone = firstStr(nodes.map((n) => ({ p: extractPhone(n) })), ["p"]);
+  console.log("[apollo-phone-webhook] parsed", { requestId, personId, hasPhone: !!phone, nodeCount: nodes.length });
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -157,13 +184,15 @@ Deno.serve(async (req: Request) => {
     if (data) row = data as any;
   }
   if (!row && personId) {
+    // Match the Apollo person id against source_contact_key regardless of
+    // `source` — unlocked contacts are often source='lit', so the old
+    // source='apollo' filter never matched.
     const { data } = await supabase
       .from("lit_contacts")
       .select("id, company_id")
-      .eq("source", "apollo")
       .eq("source_contact_key", String(personId))
-      .maybeSingle();
-    if (data) row = data as any;
+      .limit(1);
+    if (Array.isArray(data) && data[0]) row = data[0] as { id: string; company_id: string | null };
   }
 
   if (!row) {
