@@ -174,6 +174,27 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // Save-time domain enrichment. BOL search results usually have no domain, so
+    // companies were entering the system domain-less — which is exactly why
+    // their logos rendered as gradient initials. Kick normalize-company (Claude
+    // infers the canonical domain from shipment records and now writes it to the
+    // domain column) in the BACKGROUND so the save response stays fast. Fires
+    // only when we still have no domain, and self-limits: once the domain lands,
+    // future saves skip this. Service-role client satisfies normalize-company's
+    // auth.
+    const needsDomainEnrichment = !String(
+      (companyRecord as any).domain ?? (companyRecord as any).website ?? '',
+    ).trim();
+    if (needsDomainEnrichment && companyRecord.id) {
+      const enrichTask = supabase.functions
+        .invoke('normalize-company', { body: { company_id: companyRecord.id } })
+        .catch((e) => console.error('[save-company] background normalize-company failed', e));
+      const edgeRuntime = (globalThis as any).EdgeRuntime as
+        | { waitUntil?: (p: Promise<unknown>) => void }
+        | undefined;
+      if (edgeRuntime?.waitUntil) edgeRuntime.waitUntil(enrichTask);
+    }
+
     const now = new Date().toISOString();
 
     // ── Usage gate ─────────────────────────────────────────────────────

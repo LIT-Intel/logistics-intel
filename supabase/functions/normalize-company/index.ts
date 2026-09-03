@@ -124,15 +124,37 @@ Return JSON only (no prose, no code fences):
     }
 
     const firm = parsed?.firmographics ?? {};
-    await admin
-      .from("lit_companies")
-      .update({
-        enrichment_params: parsed,
-        industry: firm.industry ?? null,
-        revenue: firm.estimatedRevenue ?? null,
-        headcount: firm.estimatedHeadcount ?? null,
-      })
-      .eq("id", company_id);
+
+    // Promote the inferred canonical domain into the ACTUAL domain/website
+    // columns — not just enrichment_params. This was the root cause of blank
+    // logos: normalize-company inferred canonicalDomain but only wrote it to
+    // enrichment_params, while the UI (Command Center rows, CompanyAvatar)
+    // reads lit_companies.domain. Only fill when we don't already have a
+    // domain, the model is confident, and it's a real shipper (not a
+    // forwarder) — never overwrite an operator-set domain.
+    const inferredDomain = String(parsed?.canonicalDomain ?? "").trim().toLowerCase();
+    const domainValid = /^[a-z0-9.-]+\.[a-z]{2,}$/.test(inferredDomain);
+    const hasDomainAlready = Boolean(
+      String((company as any).domain ?? (company as any).website ?? "").trim(),
+    );
+    const shouldSetDomain =
+      domainValid &&
+      !hasDomainAlready &&
+      parsed?.isForwarder !== true &&
+      parsed?.confidence !== "low";
+
+    const updatePayload: Record<string, unknown> = {
+      enrichment_params: parsed,
+      industry: firm.industry ?? null,
+      revenue: firm.estimatedRevenue ?? null,
+      headcount: firm.estimatedHeadcount ?? null,
+    };
+    if (shouldSetDomain) {
+      updatePayload.domain = inferredDomain;
+      updatePayload.website = inferredDomain;
+    }
+
+    await admin.from("lit_companies").update(updatePayload).eq("id", company_id);
 
     return jsonResp({ ok: true, cached: false, ...parsed });
   } catch (err) {
