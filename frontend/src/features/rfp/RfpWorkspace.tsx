@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
@@ -9,6 +9,8 @@ import {
   Building2,
   CalendarDays,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   CircleDollarSign,
   FilePlus2,
   FileSpreadsheet,
@@ -25,6 +27,8 @@ import {
 } from "lucide-react";
 import {
   emptyLane,
+  computeLaneAllIn,
+  computeLaneAnnual,
   emptyPayload,
   rfp,
   type RfpCompany,
@@ -42,6 +46,7 @@ import LitSectionCard from "@/components/ui/LitSectionCard";
 import { FileDown, Ship, Plane, Truck, Container, Boxes } from "lucide-react";
 import QuoteCompanySelector, { type AttachedCompany } from "@/features/quoting/components/QuoteCompanySelector";
 import { RfpStatusPill } from "./components/RfpStatusPill";
+import LaneChargesEditor from "./components/LaneChargesEditor";
 
 type Tab = "overview" | "lanes" | "intelligence" | "documents" | "activity";
 
@@ -338,20 +343,34 @@ function OverviewTab({ company, title, status, dueDate, payload, onCompany, onTi
         <Field label="Service Requirements"><textarea rows={5} value={payload.summary.service_requirements} onChange={(event) => patchSummary({ service_requirements: event.target.value })} placeholder="Transit expectations, routing constraints, special handling, service KPIs, customs, warehousing, insurance…" className={textarea} /></Field>
       </div>
     </LitSectionCard>
+    <LitSectionCard title="Proposal Narrative" sub="These sections render in the exported proposal PDF. Leave any blank to omit it.">
+      <div className="space-y-3">
+        <Field label="Service Standards & KPIs"><textarea rows={3} value={payload.summary.service_standards ?? ""} onChange={(event) => patchSummary({ service_standards: event.target.value })} placeholder="On-time delivery target, transit commitments, tracking & visibility cadence, claims ratio, escalation & account management…" className={textarea} /></Field>
+        <Field label="Assumptions & Inclusions"><textarea rows={3} value={payload.summary.assumptions ?? ""} onChange={(event) => patchSummary({ assumptions: event.target.value })} placeholder="What the rates include/exclude: free time, customs, duties/taxes, insurance, peak-season/GRI treatment, currency, equipment availability…" className={textarea} /></Field>
+        <Field label="Commercial Terms"><textarea rows={3} value={payload.summary.terms ?? ""} onChange={(event) => patchSummary({ terms: event.target.value })} placeholder="Payment terms, rate validity, minimum volume commitments, liability & insurance, governing terms & conditions…" className={textarea} /></Field>
+        <Field label="Evaluation & Next Steps"><textarea rows={3} value={payload.summary.evaluation_next_steps ?? ""} onChange={(event) => patchSummary({ evaluation_next_steps: event.target.value })} placeholder="Award criteria, decision timeline, implementation/onboarding plan, points of contact, how to proceed…" className={textarea} /></Field>
+      </div>
+    </LitSectionCard>
   </>;
 }
 
 function LanesTab({ lanes, onChange }: { lanes: RfpLane[]; onChange: (lanes: RfpLane[]) => void }) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const update = (index: number, patch: Partial<RfpLane>) => onChange(lanes.map((lane, i) => i === index ? { ...lane, ...patch } : lane));
-  return <LitSectionCard title="Lane Workspace" sub="Price every customer lane in one working surface. Annual value and margin update as you type." padded={false}>
+  return <LitSectionCard title="Lane Workspace" sub="Price every customer lane in one surface. Expand a lane to build its rate breakdown (Base + surcharges → All-In). Annual value and margin update as you type." padded={false}>
     <div className="overflow-x-auto">
       <table className="min-w-[1580px] w-full border-collapse">
-        <thead><tr className="bg-[#FAFBFC]"><LaneTh>#</LaneTh><LaneTh>Origin</LaneTh><LaneTh>Destination</LaneTh><LaneTh>Mode</LaneTh><LaneTh>Service</LaneTh><LaneTh>Equipment</LaneTh><LaneTh>Annual Volume</LaneTh><LaneTh>Commodity</LaneTh><LaneTh>Transit</LaneTh><LaneTh>Buy Rate</LaneTh><LaneTh>Sell Rate</LaneTh><LaneTh>Margin</LaneTh><LaneTh>Valid To</LaneTh><LaneTh /></tr></thead>
+        <thead><tr className="bg-[#FAFBFC]"><LaneTh>#</LaneTh><LaneTh>Origin</LaneTh><LaneTh>Destination</LaneTh><LaneTh>Mode</LaneTh><LaneTh>Service</LaneTh><LaneTh>Equipment</LaneTh><LaneTh>Annual Volume</LaneTh><LaneTh>Commodity</LaneTh><LaneTh>Transit</LaneTh><LaneTh>Buy Rate</LaneTh><LaneTh>Sell / All-In</LaneTh><LaneTh>Margin</LaneTh><LaneTh>Valid To</LaneTh><LaneTh /></tr></thead>
         <tbody>{lanes.map((lane, index) => {
-          const margin = lane.sell_rate - lane.buy_rate;
-          const marginPct = lane.sell_rate > 0 ? (margin / lane.sell_rate) * 100 : 0;
-          return <tr key={lane.id} className="border-b border-slate-100 align-top">
-            <LaneTd><span className="grid h-7 w-7 place-items-center rounded-lg bg-slate-100 font-mono text-[11px] font-bold text-slate-600">{index + 1}</span></LaneTd>
+          const hasCharges = (lane.charges?.length ?? 0) > 0;
+          const allIn = computeLaneAllIn(lane);
+          const sell = hasCharges ? allIn : lane.sell_rate;
+          const margin = sell - lane.buy_rate;
+          const marginPct = sell > 0 ? (margin / sell) * 100 : 0;
+          const expanded = expandedId === lane.id;
+          return <Fragment key={lane.id}>
+          <tr className="border-b border-slate-100 align-top">
+            <LaneTd><button type="button" onClick={() => setExpandedId(expanded ? null : lane.id)} className="flex items-center gap-1 text-slate-500 hover:text-blue-600" title={expanded ? "Collapse rate breakdown" : "Expand rate breakdown"}>{expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}<span className="grid h-7 w-7 place-items-center rounded-lg bg-slate-100 font-mono text-[11px] font-bold text-slate-600">{index + 1}</span></button></LaneTd>
             <LaneTd><input value={lane.origin} onChange={(event) => update(index, { origin: event.target.value })} placeholder="Shanghai, CN" className={cellInput} /></LaneTd>
             <LaneTd><input value={lane.destination} onChange={(event) => update(index, { destination: event.target.value })} placeholder="Savannah, GA" className={cellInput} /></LaneTd>
             <LaneTd><div className="flex items-center gap-1.5">{(() => { const Icon = MODE_ICON[lane.mode] ?? Ship; return <Icon className="h-3.5 w-3.5 flex-shrink-0 text-slate-500" />; })()}<select value={lane.mode} onChange={(event) => update(index, { mode: event.target.value as QuoteMode })} className={cellInput}>{MODE_OPTIONS.map((mode) => <option key={mode} value={mode}>{mode.toUpperCase()}</option>)}</select></div></LaneTd>
@@ -361,16 +380,33 @@ function LanesTab({ lanes, onChange }: { lanes: RfpLane[]; onChange: (lanes: Rfp
             <LaneTd><input value={lane.commodity} onChange={(event) => update(index, { commodity: event.target.value })} placeholder="Consumer goods" className={cellInput} /></LaneTd>
             <LaneTd><input type="number" min="0" value={lane.transit_days || ""} onChange={(event) => update(index, { transit_days: toNumber(event.target.value) })} className={cellInput + " font-mono"} /></LaneTd>
             <LaneTd><input type="number" min="0" value={lane.buy_rate || ""} onChange={(event) => update(index, { buy_rate: toNumber(event.target.value) })} className={cellInput + " font-mono"} /></LaneTd>
-            <LaneTd><input type="number" min="0" value={lane.sell_rate || ""} onChange={(event) => update(index, { sell_rate: toNumber(event.target.value) })} className={cellInput + " font-mono"} /></LaneTd>
+            <LaneTd>{hasCharges
+              ? <button type="button" onClick={() => setExpandedId(expanded ? null : lane.id)} className="min-w-[120px] rounded-[8px] border border-blue-100 bg-blue-50 px-2.5 py-2 text-left font-mono text-[11.5px] font-bold text-blue-700" title="All-in from rate breakdown — click to edit charges">{money.format(allIn)}<span className="ml-1 text-[9px] font-semibold uppercase tracking-wide text-blue-400">all-in</span></button>
+              : <input type="number" min="0" value={lane.sell_rate || ""} onChange={(event) => update(index, { sell_rate: toNumber(event.target.value) })} className={cellInput + " font-mono"} />}</LaneTd>
             <LaneTd><div className={`min-w-[92px] rounded-[8px] px-2 py-2 font-mono text-[11px] font-bold ${margin >= 0 ? "bg-lime-50 text-lime-700" : "bg-rose-50 text-rose-700"}`}>{money.format(margin)}<br /><span className="text-[9.5px] opacity-70">{marginPct.toFixed(1)}%</span></div></LaneTd>
             <LaneTd><input type="date" value={lane.validity_end} onChange={(event) => update(index, { validity_end: event.target.value })} className={cellInput} /></LaneTd>
             <LaneTd><button type="button" disabled={lanes.length === 1} onClick={() => onChange(lanes.filter((_, i) => i !== index))} className="grid h-9 w-9 place-items-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-30"><Trash2 className="h-4 w-4" /></button></LaneTd>
-          </tr>;
+          </tr>
+          {expanded && <tr className="border-b border-slate-200 bg-slate-50/70"><td colSpan={14} className="px-4 py-4">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+              <Field label="Valid From"><input type="date" value={lane.validity_start} onChange={(event) => update(index, { validity_start: event.target.value })} className={cellInput} /></Field>
+              <Field label="Valid To"><input type="date" value={lane.validity_end} onChange={(event) => update(index, { validity_end: event.target.value })} className={cellInput} /></Field>
+              <Field label="Incoterm"><input value={lane.incoterm} onChange={(event) => update(index, { incoterm: event.target.value.toUpperCase() })} placeholder="FOB" className={cellInput} /></Field>
+              <Field label="Frequency"><input value={lane.frequency} onChange={(event) => update(index, { frequency: event.target.value })} placeholder="monthly" className={cellInput} /></Field>
+              <Field label="Weight (lbs)"><input type="number" min="0" value={lane.weight_lbs || ""} onChange={(event) => update(index, { weight_lbs: toNumber(event.target.value) })} className={cellInput + " font-mono"} /></Field>
+              <Field label="Target Rate"><input type="number" min="0" value={lane.target_rate || ""} onChange={(event) => update(index, { target_rate: toNumber(event.target.value) })} className={cellInput + " font-mono"} /></Field>
+            </div>
+            <div className="mt-3">
+              <Field label="Accessorials (comma-separated)"><input value={lane.accessorials.join(", ")} onChange={(event) => update(index, { accessorials: event.target.value.split(",").map((s) => s.trim()).filter(Boolean) })} placeholder="Chassis, Pre-pull, Detention, Fumigation" className={cellInput} /></Field>
+            </div>
+            <div className="mt-3"><LaneChargesEditor lane={lane} onPatch={(patch) => update(index, patch)} /></div>
+          </td></tr>}
+          </Fragment>;
         })}</tbody>
       </table>
     </div>
     <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4">
-      <p className="text-[11.5px] text-slate-500">Rates are per shipment/container. Annual totals use lane volume × rate.</p>
+      <p className="text-[11.5px] text-slate-500">Expand a lane (chevron) to enter its rate breakdown. Annual totals use lane volume × all-in rate.</p>
       <button type="button" onClick={() => onChange([...lanes, emptyLane()])} className="inline-flex h-9 items-center gap-2 rounded-[9px] border border-blue-200 bg-blue-50 px-3 text-[12px] font-semibold text-blue-700 hover:bg-blue-100"><Plus className="h-4 w-4" /> Add Lane</button>
     </div>
   </LitSectionCard>;
@@ -477,7 +513,7 @@ function normalizeClientPayload(value: unknown): RfpPayload {
   return { version: 2, summary: { ...base.summary, ...(raw.summary ?? {}) }, lanes: Array.isArray(raw.lanes) && raw.lanes.length ? raw.lanes.map((lane) => ({ ...emptyLane(), ...lane, id: lane.id || crypto.randomUUID() })) : base.lanes, output: raw.output ?? {} };
 }
 function toAttachedCompany(company: RfpCompany): AttachedCompany { return { company_id: company.id, company_name: company.name, domain: company.domain, shipments_12m: company.shipments_12m ?? null, top_routes: company.top_route_12m ? [company.top_route_12m] : null, address: [company.city, company.state, company.country_code].filter(Boolean).join(", ") }; }
-function computeRfpTotals(lanes: RfpLane[]) { const annualBuy = lanes.reduce((sum, lane) => sum + (lane.buy_rate || 0) * (lane.annual_volume || 0), 0); const annualSell = lanes.reduce((sum, lane) => sum + (lane.sell_rate || 0) * (lane.annual_volume || 0), 0); const grossProfit = annualSell - annualBuy; return { annualBuy, annualSell, grossProfit, marginPct: annualSell > 0 ? (grossProfit / annualSell) * 100 : 0 }; }
+function computeRfpTotals(lanes: RfpLane[]) { const annualBuy = lanes.reduce((sum, lane) => sum + (lane.buy_rate || 0) * (lane.annual_volume || 0), 0); const annualSell = lanes.reduce((sum, lane) => sum + computeLaneAnnual(lane), 0); const grossProfit = annualSell - annualBuy; return { annualBuy, annualSell, grossProfit, marginPct: annualSell > 0 ? (grossProfit / annualSell) * 100 : 0 }; }
 
 // Which pipeline stage the RFP is in, derived from workspace completeness.
 // Forward-only + preserves manual terminal states, so filling the workspace
@@ -487,7 +523,7 @@ function computeAutoPhase(current: RfpStatus, company: AttachedCompany | null, d
   if (["submitted", "won", "lost", "archived"].includes(current)) return current;
   const hasCompany = Boolean(company?.company_id);
   const locatedLanes = payload.lanes.filter((l) => l.origin && l.destination).length;
-  const priced = (l: RfpLane) => (l.sell_rate || 0) > 0 || (l.target_rate || 0) > 0;
+  const priced = (l: RfpLane) => (l.sell_rate || 0) > 0 || (l.target_rate || 0) > 0 || (l.charges?.length ?? 0) > 0;
   const anyPriced = payload.lanes.some(priced);
   const allPriced = payload.lanes.length > 0 && payload.lanes.every(priced);
   let phase: RfpStatus = "draft";

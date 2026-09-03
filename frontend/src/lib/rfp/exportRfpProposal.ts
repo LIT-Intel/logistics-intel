@@ -16,8 +16,8 @@ import jsPDF from "jspdf";
 import autoTable, { type RowInput } from "jspdf-autotable";
 
 import type { QuoteMode, QuoteSettings } from "@/api/quoting";
-import type { RfpLane, RfpPayload } from "@/api/rfp";
-import { serviceTypeLabel } from "@/api/rfp";
+import type { RfpLane, RfpPayload, RfpCharge } from "@/api/rfp";
+import { serviceTypeLabel, computeLaneAllIn, computeLaneAnnual, CHARGE_BASIS_LABELS } from "@/api/rfp";
 import { getCompanyLogoUrl } from "@/lib/logo";
 import { BRAND, PDF_PAGE } from "@/lib/pulse/reportBrand";
 
@@ -35,12 +35,19 @@ const INK_100: [number, number, number] = [241, 245, 249];
 const INK_50: [number, number, number] = [248, 250, 252];
 
 const LIT_NAVY: [number, number, number] = [2, 6, 23]; // #020617
-const LIT_CYAN: [number, number, number] = [0, 224, 255]; // #00E0FF
+// Brand accent = #2563EB (matches the rest of the app). The old cyan #00E0FF
+// ("cayenne") was off-brand. LIT_ACCENT is used on white; on the dark navy
+// surfaces (mode chips, footer, intelligence panel) a #2563EB reads too dark,
+// so a lighter blue-400 is used there for contrast.
+const LIT_ACCENT: [number, number, number] = [37, 99, 235]; // #2563EB — on white
+const LIT_ACCENT_ON_NAVY: [number, number, number] = [96, 165, 250]; // #60A5FA — on navy
 const BLUE_700: [number, number, number] = [29, 78, 216];
 
-// ─── Page geometry (Letter portrait) ──────────────────────────────────────
-const PAGE_W = PDF_PAGE.width;
-const PAGE_H = PDF_PAGE.height;
+// ─── Page geometry (Letter LANDSCAPE) ──────────────────────────────────────
+// 11in × 8.5in at 72pt/in. Overridden locally (do NOT mutate the shared
+// PDF_PAGE, which the portrait Pulse/quote reports rely on).
+const PAGE_W = 792;
+const PAGE_H = 612;
 const MARGIN = PDF_PAGE.marginX;
 const CONTENT_W = PAGE_W - MARGIN * 2;
 const HEADER_H = 56;
@@ -236,7 +243,7 @@ function drawBrandMark(doc: jsPDF, x: number, y: number, size: number): void {
   doc.roundedRect(x, y, size, size, size * 0.22, size * 0.22, "F");
   doc.setFont("helvetica", "bold");
   doc.setFontSize(size * 0.62);
-  doc.setTextColor(...LIT_CYAN);
+  doc.setTextColor(...LIT_ACCENT_ON_NAVY);
   const mark = BRAND.mark || "L";
   const mw = doc.getTextWidth(mark);
   doc.text(mark, x + (size - mw) / 2, y + size * 0.72);
@@ -285,7 +292,7 @@ function drawFooter(doc: jsPDF, pageNum: number, pageCount: number): void {
   const barY = PAGE_H - barH;
   doc.setFillColor(...LIT_NAVY);
   doc.rect(0, barY, PAGE_W, barH, "F");
-  doc.setDrawColor(...LIT_CYAN);
+  doc.setDrawColor(...LIT_ACCENT);
   doc.setLineWidth(0.8);
   doc.line(0, barY - 0.4, PAGE_W, barY - 0.4);
 
@@ -295,7 +302,7 @@ function drawFooter(doc: jsPDF, pageNum: number, pageCount: number): void {
   doc.text(`${BRAND.wordmark} · ${BRAND.footerCity}`, MARGIN, barY + 11);
   const right = `Page ${pageNum} of ${pageCount}`;
   const rw = doc.getTextWidth(right);
-  doc.setTextColor(...LIT_CYAN);
+  doc.setTextColor(...LIT_ACCENT_ON_NAVY);
   doc.text(right, PAGE_W - MARGIN - rw, barY + 11);
 }
 
@@ -316,7 +323,7 @@ function drawSectionHeader(doc: jsPDF, label: string, y: number): number {
   const labelText = label.toUpperCase();
   doc.text(labelText, MARGIN, y);
   const labelW = doc.getTextWidth(labelText);
-  doc.setDrawColor(...LIT_CYAN);
+  doc.setDrawColor(...LIT_ACCENT);
   doc.setLineWidth(1.4);
   doc.line(MARGIN, y + 3, MARGIN + labelW + 12, y + 3);
   doc.setDrawColor(...INK_200);
@@ -348,8 +355,8 @@ function drawModeChip(doc: jsPDF, x: number, y: number, mode?: QuoteMode | strin
   // Glyph zone (top), label zone (bottom).
   const gx = x + chipW / 2;
   const gy = y + 13;
-  doc.setDrawColor(...LIT_CYAN);
-  doc.setFillColor(...LIT_CYAN);
+  doc.setDrawColor(...LIT_ACCENT_ON_NAVY);
+  doc.setFillColor(...LIT_ACCENT_ON_NAVY);
   doc.setLineWidth(1.1);
 
   switch (mode) {
@@ -392,7 +399,7 @@ function drawModeChip(doc: jsPDF, x: number, y: number, mode?: QuoteMode | strin
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(7);
-  doc.setTextColor(...LIT_CYAN);
+  doc.setTextColor(...LIT_ACCENT_ON_NAVY);
   const label = modeShort(mode);
   const lw = doc.getTextWidth(label);
   doc.text(label, gx - lw / 2, y + chipH - 8);
@@ -442,7 +449,7 @@ function drawCoverBand(
   doc.roundedRect(MARGIN, y, labelPillW, labelPillH, 4, 4, "F");
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8);
-  doc.setTextColor(...LIT_CYAN);
+  doc.setTextColor(...LIT_ACCENT_ON_NAVY);
   doc.text("TRANSPORTATION PROPOSAL", MARGIN + 10, y + 12.5);
 
   // Meta card top-right: RFP #, Date, Proposal Due.
@@ -479,7 +486,7 @@ function drawCoverBand(
   }
 
   // Cyan underline rule under the title.
-  doc.setDrawColor(...LIT_CYAN);
+  doc.setDrawColor(...LIT_ACCENT);
   doc.setLineWidth(2);
   doc.line(MARGIN, y - 12, MARGIN + 120, y - 12);
 
@@ -511,7 +518,7 @@ function drawPreparedBlocks(
   doc.setTextColor(...INK_500);
   doc.text("PREPARED FOR", leftX, headerY);
   doc.text("PREPARED BY", rightX, headerY);
-  doc.setDrawColor(...LIT_CYAN);
+  doc.setDrawColor(...LIT_ACCENT);
   doc.setLineWidth(1.2);
   doc.line(leftX, headerY + 3, leftX + doc.getTextWidth("PREPARED FOR") + 10, headerY + 3);
   doc.line(rightX, headerY + 3, rightX + doc.getTextWidth("PREPARED BY") + 10, headerY + 3);
@@ -605,33 +612,25 @@ function drawParagraphSection(doc: jsPDF, label: string, body: string, startY: n
   return y + 8;
 }
 
-// ─── Lanes of service — presentation cards, one per lane ───────────────────
-function drawLane(doc: jsPDF, lane: RfpLane, currency: string, startY: number): number {
-  const cardH = 96;
-  let y = ensureRoom(doc, startY, cardH + 8);
+// ─── Lanes & rate sheet — per-lane header + charge breakdown → ALL-IN ──────
+// Per-unit multiplier a charge applies against (mirrors api/rfp.ts chargeQty).
+function laneChargeQty(basis: RfpCharge["basis"], lane: RfpLane): number {
+  if (basis === "per_kg") return Math.max(0, (Number(lane.weight_lbs) || 0) / 2.2046226218);
+  return 1;
+}
 
-  // Card background.
-  doc.setFillColor(...INK_50);
-  doc.setDrawColor(...INK_200);
-  doc.setLineWidth(0.6);
-  doc.roundedRect(MARGIN, y, CONTENT_W, cardH, 6, 6, "FD");
-
-  const pad = 12;
-  const chipX = MARGIN + pad;
-  const chipY = y + pad;
-  const chipW = drawModeChip(doc, chipX, chipY, lane.mode);
-
-  const textX = chipX + chipW + 16;
-  const textW = CONTENT_W - (textX - MARGIN) - pad - 130; // reserve right column for rate
-
-  // Origin -> Destination (bold).
-  let ty = y + pad + 12;
+function drawLaneRateSheet(doc: jsPDF, lane: RfpLane, currency: string, startY: number): number {
+  // Header band: mode chip + route + meta.
+  let y = ensureRoom(doc, startY, 130);
+  const chipW = drawModeChip(doc, MARGIN, y, lane.mode);
+  const textX = MARGIN + chipW + 14;
+  const headW = CONTENT_W - (textX - MARGIN) - 8;
+  let ty = y + 12;
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
+  doc.setFontSize(13);
   doc.setTextColor(...INK_900);
-  ty = drawRoute(doc, clean(lane.origin) || "Origin", clean(lane.destination) || "Destination", textX, ty, textW);
+  ty = drawRoute(doc, clean(lane.origin) || "Origin", clean(lane.destination) || "Destination", textX, ty, headW);
 
-  // Metadata line(s).
   const meta: string[] = [];
   meta.push(`Service: ${serviceTypeLabel(lane.service_type)}`);
   if (clean(lane.equipment)) {
@@ -646,42 +645,86 @@ function drawLane(doc: jsPDF, lane: RfpLane, currency: string, startY: number): 
   if (Number(lane.transit_days) > 0) meta.push(`Transit: ${fmtNumber(lane.transit_days)} days`);
   if (clean(lane.commodity)) meta.push(`Commodity: ${clean(lane.commodity)}`);
   if (clean(lane.incoterm)) meta.push(`Incoterm: ${clean(lane.incoterm)}`);
-
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.5);
   doc.setTextColor(...INK_600);
-  const metaText = meta.join("   ·   ");
-  for (const line of doc.splitTextToSize(metaText, textW).slice(0, 3)) {
+  for (const line of doc.splitTextToSize(meta.join("   ·   "), headW).slice(0, 2)) {
     doc.text(line, textX, ty);
     ty += 11.5;
   }
 
-  // Right column: INDICATIVE rate.
-  const rate = Number(lane.target_rate) || Number(lane.sell_rate);
-  const rateBoxW = 118;
-  const rateBoxX = MARGIN + CONTENT_W - pad - rateBoxW;
-  const rateBoxY = y + pad;
-  if (Number.isFinite(rate) && rate > 0) {
-    doc.setFillColor(...WHITE);
-    doc.setDrawColor(...INK_200);
-    doc.setLineWidth(0.5);
-    doc.roundedRect(rateBoxX, rateBoxY, rateBoxW, cardH - pad * 2, 5, 5, "FD");
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(6.5);
-    doc.setTextColor(...INK_500);
-    doc.text("INDICATIVE", rateBoxX + 10, rateBoxY + 14);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(15);
-    doc.setTextColor(...BLUE_700);
-    doc.text(usd(rate, currency), rateBoxX + 10, rateBoxY + 34);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.5);
-    doc.setTextColor(...INK_500);
-    const unit = clean(lane.equipment) || "unit";
-    doc.text(`per ${unit}`, rateBoxX + 10, rateBoxY + 48);
+  const unit = clean(lane.equipment) || "shipment";
+  const allIn = computeLaneAllIn(lane);
+
+  // Charge breakdown table. Empty charges → a single indicative all-in row.
+  const body: RowInput[] = [];
+  if (lane.charges && lane.charges.length) {
+    for (const c of lane.charges) {
+      const qty = laneChargeQty(c.basis, lane);
+      const ext = (Number(c.amount) || 0) * qty;
+      body.push([
+        `${clean(c.code) ? clean(c.code) + "  —  " : ""}${clean(c.name) || "Charge"}`,
+        CHARGE_BASIS_LABELS[c.basis] ?? c.basis,
+        usd(c.amount, c.currency || currency),
+        c.basis === "per_kg" ? fmtNumber(qty) : "1",
+        usd(ext, c.currency || currency),
+      ]);
+    }
+  } else {
+    body.push(["Indicative all-in rate", `per ${unit}`, usd(allIn, currency), "1", usd(allIn, currency)]);
   }
 
-  return y + cardH + 10;
+  autoTable(doc, {
+    startY: ty + 2,
+    margin: { left: MARGIN, right: MARGIN },
+    head: [["Charge", "Basis", "Rate", "Qty", "Amount"]],
+    body,
+    foot: [[{ content: `ALL-IN per ${unit}`, colSpan: 4, styles: { halign: "right" } }, usd(allIn, currency)]],
+    theme: "grid",
+    styles: {
+      font: "helvetica",
+      fontSize: 8.5,
+      cellPadding: 4,
+      textColor: INK_700,
+      lineColor: INK_200,
+      lineWidth: 0.4,
+      overflow: "linebreak",
+    },
+    headStyles: { fillColor: LIT_NAVY, textColor: WHITE, fontStyle: "bold", fontSize: 8, halign: "left" },
+    footStyles: { fillColor: [235, 242, 255], textColor: BLUE_700, fontStyle: "bold", fontSize: 10.5 },
+    alternateRowStyles: { fillColor: INK_50 },
+    columnStyles: {
+      0: { cellWidth: CONTENT_W * 0.42 },
+      1: { cellWidth: CONTENT_W * 0.16 },
+      2: { halign: "right", cellWidth: CONTENT_W * 0.14 },
+      3: { halign: "right", cellWidth: CONTENT_W * 0.1 },
+      4: { halign: "right", cellWidth: CONTENT_W * 0.18 },
+    },
+  });
+
+  // jspdf-autotable records the last table's end Y on the doc instance.
+  y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 6;
+
+  // Validity + accessorials line under the table (previously never shown).
+  const bits: string[] = [];
+  const vStart = clean(lane.validity_start);
+  const vEnd = clean(lane.validity_end);
+  if (vStart || vEnd) bits.push(`Validity: ${vStart ? fmtDate(vStart) : "—"} to ${vEnd ? fmtDate(vEnd) : "—"}`);
+  if (lane.accessorials && lane.accessorials.length) {
+    bits.push(`Accessorials: ${lane.accessorials.map(clean).filter(Boolean).join(", ")}`);
+  }
+  if (bits.length) {
+    y = ensureRoom(doc, y, 16);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(...INK_500);
+    for (const line of doc.splitTextToSize(bits.join("        "), CONTENT_W)) {
+      doc.text(line, MARGIN, y);
+      y += 11;
+    }
+  }
+
+  return y + 14;
 }
 
 // Origin → Destination on one line with a small DRAWN arrow (no unicode glyph,
@@ -698,18 +741,18 @@ function drawRoute(doc: jsPDF, origin: string, dest: string, x: number, y: numbe
   doc.text(origin, x, y);
   const ax = x + ow + 5;
   const ay = y - size * 0.28;
-  doc.setDrawColor(...LIT_CYAN);
+  doc.setDrawColor(...LIT_ACCENT);
   doc.setLineWidth(1.1);
   doc.line(ax, ay, ax + 8, ay);
-  doc.setFillColor(...LIT_CYAN);
+  doc.setFillColor(...LIT_ACCENT);
   doc.triangle(ax + 7.5, ay - 2.4, ax + 7.5, ay + 2.4, ax + 12, ay, "F");
   doc.text(dest, ax + ARROW, y);
   return y + size + 3;
 }
 
 function drawLanes(doc: jsPDF, lanes: RfpLane[], currency: string, startY: number): number {
-  let y = ensureRoom(doc, startY, 60);
-  y = drawSectionHeader(doc, "Lanes of Service", y);
+  let y = ensureRoom(doc, startY, 80);
+  y = drawSectionHeader(doc, "Lanes & Rate Sheet", y);
   if (!lanes.length) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9.5);
@@ -718,17 +761,17 @@ function drawLanes(doc: jsPDF, lanes: RfpLane[], currency: string, startY: numbe
     return y + 16;
   }
   for (const lane of lanes) {
-    y = drawLane(doc, lane, currency, y);
+    y = drawLaneRateSheet(doc, lane, currency, y);
   }
-  // Honest note that rates are indicative, not firm.
   y = ensureRoom(doc, y, 24);
   doc.setFont("helvetica", "italic");
   doc.setFontSize(8);
   doc.setTextColor(...INK_500);
   doc.text(
-    "Indicative rates are directional and subject to a firm quotation upon award; not a binding offer.",
+    "Rates are firm through the stated validity window and subject to the commercial terms herein. Charges outside the listed scope (customs, duties, exams, demurrage/detention, etc.) are billed as incurred.",
     MARGIN,
     y,
+    { maxWidth: CONTENT_W },
   );
   return y + 12;
 }
@@ -748,10 +791,10 @@ function drawIntelligencePanel(doc: jsPDF, company: RfpProposalInput["company"],
   let y = ensureRoom(doc, startY, panelH + 20);
   y = drawSectionHeader(doc, "LIT Shipment Intelligence", y);
 
-  // Navy panel with cyan accent — visually distinct from the rest.
+  // Navy panel with a bright-blue accent — visually distinct from the rest.
   doc.setFillColor(...LIT_NAVY);
   doc.roundedRect(MARGIN, y, CONTENT_W, panelH, 6, 6, "F");
-  doc.setDrawColor(...LIT_CYAN);
+  doc.setDrawColor(...LIT_ACCENT_ON_NAVY);
   doc.setLineWidth(2);
   doc.line(MARGIN, y, MARGIN, y + panelH);
 
@@ -771,7 +814,7 @@ function drawIntelligencePanel(doc: jsPDF, company: RfpProposalInput["company"],
     // never spills into the neighbouring column (the old maxWidth wrapped DOWN
     // over the label, causing the overlap).
     doc.setFont("helvetica", "bold");
-    doc.setTextColor(...LIT_CYAN);
+    doc.setTextColor(...LIT_ACCENT_ON_NAVY);
     if (value.length > 11) {
       doc.setFontSize(9.5);
       doc.splitTextToSize(value, cellW - 10).slice(0, 3).forEach((ln: string, k: number) => doc.text(ln, cx, topY + 15 + k * 11));
@@ -802,9 +845,9 @@ function drawCommercialOverview(doc: jsPDF, lanes: RfpLane[], currency: string, 
   let annualValue = 0;
   let totalVolume = 0;
   for (const lane of lanes) {
-    const rate = Number(lane.target_rate) || Number(lane.sell_rate) || 0;
+    // All-in (charge breakdown when present, else sell/target fallback) × volume.
+    annualValue += computeLaneAnnual(lane);
     const vol = Number(lane.annual_volume) || 0;
-    if (Number.isFinite(rate) && Number.isFinite(vol)) annualValue += rate * vol;
     if (Number.isFinite(vol)) totalVolume += vol;
   }
 
@@ -840,7 +883,7 @@ function drawCommercialOverview(doc: jsPDF, lanes: RfpLane[], currency: string, 
   doc.setFontSize(8);
   doc.setTextColor(...INK_500);
   doc.text(
-    "Estimated annual value is directional, derived from indicative rates and stated volumes.",
+    "Estimated annual value is directional, derived from all-in lane rates and stated annual volumes.",
     MARGIN,
     y,
   );
@@ -853,7 +896,7 @@ function drawCommercialOverview(doc: jsPDF, lanes: RfpLane[], currency: string, 
  * (`data:application/pdf;base64,...`). Does NOT trigger a download.
  */
 export async function exportRfpProposal(input: RfpProposalInput): Promise<string> {
-  const doc = new jsPDF({ unit: "pt", format: "letter" });
+  const doc = new jsPDF({ unit: "pt", format: "letter", orientation: "landscape" });
   doc.setFillColor(...WHITE);
   doc.rect(0, 0, PAGE_W, PAGE_H, "F");
 
@@ -903,9 +946,18 @@ export async function exportRfpProposal(input: RfpProposalInput): Promise<string
     }
   }
 
+  // Service commitments (KPIs) precede the rates so the reader sees what they're
+  // paying for. drawParagraphSection no-ops when the field is empty (back-compat).
+  y = drawParagraphSection(doc, "Service Standards & KPIs", input.payload.summary.service_standards ?? "", y + 2);
+
   y = drawLanes(doc, input.payload.lanes, currency, y + 4);
-  y = drawIntelligencePanel(doc, input.company, y + 4);
   y = drawCommercialOverview(doc, input.payload.lanes, currency, y + 4);
+  y = drawIntelligencePanel(doc, input.company, y + 4);
+
+  // Closing narrative — each no-ops when its field is empty.
+  y = drawParagraphSection(doc, "Assumptions & Inclusions", input.payload.summary.assumptions ?? "", y + 2);
+  y = drawParagraphSection(doc, "Commercial Terms", input.payload.summary.terms ?? "", y + 2);
+  y = drawParagraphSection(doc, "Evaluation & Next Steps", input.payload.summary.evaluation_next_steps ?? "", y + 2);
 
   stampPageChrome(doc, orgName, orgLogo);
 

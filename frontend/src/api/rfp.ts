@@ -29,6 +29,44 @@ export function serviceTypeShort(v?: string | null): string {
   return SERVICE_TYPES.find((s) => s.value === v)?.short ?? "D2D";
 }
 
+// ─── Rate breakdown (freight rate-sheet line items) ────────────────────────
+// A lane's all-in price is built from named charges the way a forwarder quotes:
+// Base Ocean Freight + surcharges (BAF, CAF, THC, GRI, PSS, Doc, ISPS …) → All-In.
+// `basis` is how the charge multiplies against the shipment. Optional on a lane
+// for backward compatibility — a lane with no charges falls back to sell_rate.
+export type RfpChargeBasis =
+  | "per_container" // × container/unit count (annual_volume is a unit count)
+  | "per_kg" // × chargeable weight
+  | "per_cbm" // × volume (no cbm field yet → treated per-unit, qty 1)
+  | "per_shipment" // × 1 per booking
+  | "flat"; // × 1 one-time
+
+export const CHARGE_BASES: RfpChargeBasis[] = [
+  "per_container",
+  "per_kg",
+  "per_cbm",
+  "per_shipment",
+  "flat",
+];
+
+export const CHARGE_BASIS_LABELS: Record<RfpChargeBasis, string> = {
+  per_container: "per container",
+  per_kg: "per kg",
+  per_cbm: "per cbm",
+  per_shipment: "per shipment",
+  flat: "flat",
+};
+
+export interface RfpCharge {
+  id: string;
+  code: string; // "BASE", "BAF", "THC-O", "GRI", "PSS", "DOC", "ISPS" …
+  name: string; // human label
+  basis: RfpChargeBasis;
+  amount: number; // per-unit amount in the payload currency
+  currency?: string; // optional per-charge override
+  notes?: string;
+}
+
 export interface RfpLane {
   id: string;
   origin: string;
@@ -50,6 +88,8 @@ export interface RfpLane {
   validity_start: string;
   validity_end: string;
   accessorials: string[];
+  /** Rate-sheet line items → All-In. Optional (back-compat: falls back to sell_rate). */
+  charges?: RfpCharge[];
   sort_order?: number;
 }
 
@@ -63,6 +103,11 @@ export interface RfpPayload {
     service_requirements: string;
     currency: string;
     modes?: string[];
+    /** Proposal narrative sections (optional → back-compat). Rendered in the PDF. */
+    service_standards?: string; // KPIs / service commitments
+    assumptions?: string; // inclusions / exclusions / assumptions
+    terms?: string; // commercial terms & conditions
+    evaluation_next_steps?: string; // award criteria / next steps
   };
   lanes: RfpLane[];
   output: Record<string, unknown>;
@@ -247,4 +292,65 @@ export function emptyPayload(): RfpPayload {
     lanes: [emptyLane()],
     output: {},
   };
+}
+
+// ─── Rate breakdown factories + all-in math ────────────────────────────────
+export function emptyCharge(overrides: Partial<RfpCharge> = {}): RfpCharge {
+  return {
+    id: crypto.randomUUID(),
+    code: "",
+    name: "",
+    basis: "per_container",
+    amount: 0,
+    ...overrides,
+  };
+}
+
+/**
+ * Standard ocean FCL rate breakdown seed. Values mirror lib/rfp/templates.ts
+ * OCEAN_FCL and are a starting point the user edits per lane.
+ */
+export function defaultOceanCharges(): RfpCharge[] {
+  return [
+    emptyCharge({ code: "BASE", name: "Ocean Freight (Base)", basis: "per_container", amount: 2500 }),
+    emptyCharge({ code: "BAF", name: "Bunker Adjustment Factor", basis: "per_container", amount: 200 }),
+    emptyCharge({ code: "LSS", name: "Low Sulphur Surcharge", basis: "per_container", amount: 50 }),
+    emptyCharge({ code: "THC-O", name: "Terminal Handling (Origin)", basis: "per_container", amount: 150 }),
+    emptyCharge({ code: "THC-D", name: "Terminal Handling (Destination)", basis: "per_container", amount: 200 }),
+    emptyCharge({ code: "DOC", name: "Documentation", basis: "per_shipment", amount: 45 }),
+  ];
+}
+
+const LBS_PER_KG = 2.2046226218;
+
+/** Per-unit multiplier a charge applies against for a lane's all-in unit price. */
+function chargeQty(basis: RfpChargeBasis, lane: Pick<RfpLane, "weight_lbs">): number {
+  switch (basis) {
+    case "per_kg":
+      return Math.max(0, (Number(lane.weight_lbs) || 0) / LBS_PER_KG);
+    // per_cbm has no volume field yet → per-unit; per_container/per_shipment/flat
+    // already express a per-unit amount.
+    default:
+      return 1;
+  }
+}
+
+/**
+ * All-in unit price for a lane (per container / shipment). Sums the charge line
+ * items; if the lane has no charges, falls back to sell_rate (then target_rate)
+ * so legacy lanes keep working.
+ */
+export function computeLaneAllIn(lane: RfpLane): number {
+  if (lane.charges && lane.charges.length) {
+    return lane.charges.reduce(
+      (sum, c) => sum + (Number(c.amount) || 0) * chargeQty(c.basis, lane),
+      0,
+    );
+  }
+  return Number(lane.sell_rate) || Number(lane.target_rate) || 0;
+}
+
+/** Annualized all-in value for a lane (unit all-in × annual volume). */
+export function computeLaneAnnual(lane: RfpLane): number {
+  return computeLaneAllIn(lane) * (Number(lane.annual_volume) || 0);
 }

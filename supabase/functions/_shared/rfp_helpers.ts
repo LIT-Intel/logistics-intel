@@ -13,6 +13,16 @@ export const RFP_STATUSES = [
 
 export const RFP_MODES = ["ocean", "air", "drayage", "ftl", "ltl", "multimodal"] as const;
 
+export const RFP_CHARGE_BASES = [
+  "per_container",
+  "per_kg",
+  "per_cbm",
+  "per_shipment",
+  "flat",
+] as const;
+
+const LBS_PER_KG = 2.2046226218;
+
 export type RfpStatus = (typeof RFP_STATUSES)[number];
 
 export function isUuid(value: unknown): value is string {
@@ -43,6 +53,9 @@ export function normalizePayload(raw: unknown) {
           origin: cleanText(lane.origin, 160),
           destination: cleanText(lane.destination, 160),
           mode: RFP_MODES.includes(mode as typeof RFP_MODES[number]) ? mode : "ocean",
+          // service_type drives the PDF "Service: …" label; was previously dropped
+          // on save (always defaulted). Persist it. Default door_to_door.
+          service_type: cleanText(lane.service_type, 40) || "door_to_door",
           equipment: cleanText(lane.equipment, 80),
           frequency: cleanText(lane.frequency, 40),
           annual_volume: Math.max(0, finiteNumber(lane.annual_volume)),
@@ -59,6 +72,25 @@ export function normalizePayload(raw: unknown) {
           accessorials: Array.isArray(lane.accessorials)
             ? lane.accessorials.slice(0, 30).map((v) => cleanText(v, 120)).filter(Boolean)
             : [],
+          // Rate-sheet line items → All-In. Undefined when absent so legacy lanes
+          // stay clean (JSONB drops undefined keys).
+          charges: Array.isArray(lane.charges)
+            ? lane.charges.slice(0, 40).map((c) => {
+                const ch = c && typeof c === "object" ? c as Record<string, unknown> : {};
+                const basis = cleanText(ch.basis, 20);
+                return {
+                  id: cleanText(ch.id, 80) || crypto.randomUUID(),
+                  code: cleanText(ch.code, 24),
+                  name: cleanText(ch.name, 120),
+                  basis: RFP_CHARGE_BASES.includes(basis as typeof RFP_CHARGE_BASES[number])
+                    ? basis
+                    : "per_container",
+                  amount: Math.max(0, finiteNumber(ch.amount)),
+                  currency: cleanText(ch.currency, 3).toUpperCase() || undefined,
+                  notes: cleanText(ch.notes, 200) || undefined,
+                };
+              })
+            : undefined,
           sort_order: index,
         };
       })
@@ -75,6 +107,11 @@ export function normalizePayload(raw: unknown) {
       service_requirements: cleanText(rawSummary.service_requirements, 4000),
       currency: cleanText(rawSummary.currency, 3).toUpperCase() || "USD",
       modes,
+      // Proposal narrative sections (optional). cleanText → "" when absent.
+      service_standards: cleanText(rawSummary.service_standards, 4000),
+      assumptions: cleanText(rawSummary.assumptions, 4000),
+      terms: cleanText(rawSummary.terms, 4000),
+      evaluation_next_steps: cleanText(rawSummary.evaluation_next_steps, 4000),
     },
     lanes,
     output: source.output && typeof source.output === "object" ? source.output : {},
@@ -82,8 +119,18 @@ export function normalizePayload(raw: unknown) {
 }
 
 export function summarizePayload(payload: ReturnType<typeof normalizePayload>) {
+  const laneAllIn = (lane: (typeof payload.lanes)[number]): number => {
+    if (Array.isArray(lane.charges) && lane.charges.length) {
+      return lane.charges.reduce(
+        (s, c) =>
+          s + c.amount * (c.basis === "per_kg" ? Math.max(0, lane.weight_lbs / LBS_PER_KG) : 1),
+        0,
+      );
+    }
+    return lane.sell_rate || lane.target_rate || 0;
+  };
   const annualValue = payload.lanes.reduce(
-    (sum, lane) => sum + lane.sell_rate * lane.annual_volume,
+    (sum, lane) => sum + laneAllIn(lane) * lane.annual_volume,
     0,
   );
   const modeSet = [...new Set(payload.lanes.map((lane) => lane.mode).filter(Boolean))];
