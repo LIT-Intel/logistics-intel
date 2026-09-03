@@ -53,7 +53,8 @@ import useBreakpoint from '@/hooks/useBreakpoint';
 import { AnimatePresence } from 'framer-motion';
 import CompanyDetailPanel from './CompanyDetailPanel';
 import { enrichCompanyLive } from '@/api/ai';
-import { looksLikeCompanyName } from '@/api/pulse-explore-parse';
+import { looksLikeCompanyName, parseExploreQuery, localExtractFilters, parsedToFilters, hasAnyFilter } from '@/api/pulse-explore-parse';
+import { useExploreAccounts } from '@/features/pulse/explore/useExploreAccounts';
 // Lazy-loaded so maplibre-gl (~800KB) ships in its own chunk instead of the
 // first-load bundle for this default landing route.
 const ExploreMap = lazy(() => import('@/features/pulse/explore/ExploreMapMaplibre'));
@@ -77,7 +78,7 @@ const LS_VIEW_KEY = 'lit.explorer.companySearch.view';
 const LS_PANEL_KEY = 'lit.explorer.companySearch.panelOpen';
 
 export default function CompanySearchTab() {
-  const { setSelectedCompany, setMode } = useExplorer();
+  const { setSelectedCompany } = useExplorer();
   const navigate = useNavigate();
   const [sp, setSp] = useSearchParams();
 
@@ -118,6 +119,12 @@ export default function CompanySearchTab() {
   // Inline detail panel — clicking a result opens this in place (Google-Maps
   // behavior) instead of navigating straight to the full profile page.
   const [detailRow, setDetailRow] = useState(null);
+  // Search TYPE — 'companies' (name lookup) vs 'market' (Pulse universe browse
+  // by location/industry). Auto-detected from the query, overridable via the
+  // toggle. Both render in THIS same overlay/map/detail UI (the true merge).
+  const [searchMode, setSearchMode] = useState('companies');
+  const modeTouched = useRef(false); // stop auto-detect once the user toggles
+  const [marketFilters, setMarketFilters] = useState({});
 
   // List vs Cards view inside the panel. Default LIST per user spec.
   const initialView = useMemo(() => {
@@ -201,20 +208,28 @@ export default function CompanySearchTab() {
   const runSearch = useCallback(async (rawQ, opts) => {
     const q = (rawQ ?? query).trim();
     if (!q) return;
-    // Market / natural-language query ("companies in georgia", "consumer goods
-    // importers in the SE US") — NOT a company name. Company Search does name
-    // lookup only, so hand off to Pulse market-browse (which parses NL → filters
-    // + plots the universe). One search box, routed by intent. The query rides
-    // along in ?q= so Pulse auto-runs it on mount.
-    if (!looksLikeCompanyName(q)) {
+    // Decide the search TYPE. Respect an explicit toggle; otherwise auto-detect:
+    // a company name → 'companies'; a location/industry query ("companies in
+    // georgia") → 'market'.
+    const resolvedMode = opts?.mode ?? (modeTouched.current ? searchMode : (looksLikeCompanyName(q) ? 'companies' : 'market'));
+    if (resolvedMode !== searchMode) setSearchMode(resolvedMode);
+
+    if (resolvedMode === 'market') {
+      // Browse the universe by location/industry in THIS UI (no bounce to old
+      // Pulse). Parse the query → filters deterministically first, LLM fallback.
       handledQRef.current = q;
+      setSubmitted(q);
+      setDetailRow(null);
       setSp((prev) => {
         const next = new URLSearchParams(prev);
         next.set('q', q);
-        next.set('tab', 'pulse');
         return next;
-      });
-      setMode('pulse');
+      }, { replace: true });
+      let mf = localExtractFilters(q);
+      if (!hasAnyFilter(mf)) {
+        try { mf = parsedToFilters(await parseExploreQuery(q)); } catch { /* keep local */ }
+      }
+      setMarketFilters(mf);
       return;
     }
     // Mark this q handled so the ?q= effect (which fires when runSearch writes
@@ -281,7 +296,7 @@ export default function CompanySearchTab() {
     } finally {
       setSearching(false);
     }
-  }, [query, setSp, setMode]);
+  }, [query, setSp, searchMode]);
 
   const onSubmit = useCallback((e) => {
     e?.preventDefault?.();
@@ -383,19 +398,42 @@ export default function CompanySearchTab() {
 
   const mapRows = useMemo(() => mapPoints, [mapPoints]);
 
+  // ── Market mode: browse the universe by location/industry (Pulse data) inside
+  //    THIS overlay/map/detail. Rows are shape-compatible with company-search
+  //    rows (company_name/domain/city/state/teu/industry); a light mapper
+  //    reconciles the few differences (opportunity → opportunity_composite_score).
+  const marketEnabled = searchMode === 'market' && hasAnyFilter(marketFilters);
+  const { data: marketData, isLoading: marketLoading } = useExploreAccounts(marketFilters, null, {
+    enabled: marketEnabled,
+    limit: 500,
+  });
+  const marketRows = useMemo(() => (marketData?.rows ?? []).map((r) => ({
+    ...r,
+    id: r.id ?? r.company_id ?? r.source_company_key,
+    company_name: r.company_name ?? r.name ?? 'Company',
+    opportunity_composite_score: r.opportunity_composite_score ?? r.opportunity ?? null,
+    source_company_key: r.source_company_key ?? r.company_key ?? null,
+    is_saved: r.is_saved ?? false,
+    raw: r,
+  })), [marketData]);
+
+  // The active result set + map rows, whichever mode is live.
+  const displayResults = searchMode === 'market' ? marketRows : results;
+  const displayMapRows = searchMode === 'market' ? marketRows : mapRows;
+
   // ── High-level filters (client-side, over the current result set). Narrow
   //    the LIST and the MAP together so the two never disagree. ──────────────
   const [filters, setFilters] = useState({ country: '', industry: '', savedOnly: false, minShipments: 0 });
   const filterOptions = useMemo(() => {
     const countries = new Set();
     const industries = new Set();
-    for (const r of results) {
+    for (const r of displayResults) {
       if (r.country) countries.add(String(r.country));
       if (r.industry) industries.add(String(r.industry));
     }
     return { countries: [...countries].sort(), industries: [...industries].sort() };
-  }, [results]);
-  const filteredResults = useMemo(() => results.filter((r) => {
+  }, [displayResults]);
+  const filteredResults = useMemo(() => displayResults.filter((r) => {
     if (filters.country && String(r.country || '') !== filters.country) return false;
     if (filters.industry && String(r.industry || '') !== filters.industry) return false;
     if (filters.savedOnly && !r.is_saved) return false;
@@ -404,12 +442,12 @@ export default function CompanySearchTab() {
       if (!(s >= filters.minShipments)) return false;
     }
     return true;
-  }), [results, filters]);
+  }), [displayResults, filters]);
   const anyFilter = Boolean(filters.country || filters.industry || filters.savedOnly || filters.minShipments > 0);
   const filteredIds = useMemo(() => new Set(filteredResults.map((r) => r.id)), [filteredResults]);
   const filteredMapRows = useMemo(
-    () => (anyFilter ? mapRows.filter((m) => filteredIds.has(m.id)) : mapRows),
-    [mapRows, filteredIds, anyFilter],
+    () => (anyFilter ? displayMapRows.filter((m) => filteredIds.has(m.id)) : displayMapRows),
+    [displayMapRows, filteredIds, anyFilter],
   );
 
   // Resolve missing domains for the result set (free Apollo org search) so the
@@ -437,8 +475,9 @@ export default function CompanySearchTab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [results]);
 
-  const hasSearched = Boolean(submitted) && !searching;
-  const hasResults = results.length > 0;
+  const busy = searching || marketLoading;
+  const hasSearched = Boolean(submitted) && !busy;
+  const hasResults = displayResults.length > 0;
 
   return (
     <div className="flex h-full flex-col bg-slate-50">
@@ -491,6 +530,27 @@ export default function CompanySearchTab() {
             <span className="sm:hidden">{searching ? '…' : 'Go'}</span>
           </button>
         </form>
+
+        {/* Search-type toggle — auto-set from the query (name → Companies;
+            location/industry → Market), click to override. Both render in this
+            same map + overlay + detail UI. */}
+        <div className="mt-2 flex items-center gap-2">
+          <div className="inline-flex items-center rounded-lg border border-white/10 bg-white/5 p-0.5 text-[11.5px]">
+            {[['companies', 'Companies'], ['market', 'Market']].map(([m, label]) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => { modeTouched.current = true; setSearchMode(m); if (submitted) runSearch(submitted, { mode: m }); }}
+                className={`rounded-md px-2.5 py-1 font-semibold transition ${searchMode === m ? 'bg-cyan-500 text-slate-900' : 'text-slate-300 hover:text-white'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <span className="hidden text-[10.5px] text-cyan-200/60 sm:inline">
+            {searchMode === 'market' ? 'Browse companies by location / industry' : 'Find a company by name'}
+          </span>
+        </div>
 
         {/* Analytics ribbon */}
         {analytics ? (
@@ -598,7 +658,7 @@ export default function CompanySearchTab() {
           {/* Loading overlay — covers the map while a search runs (10–15s)
               so the user knows to wait. Animated spinner + bouncing dots +
               a friendly "cooking" message. */}
-          {searching ? (
+          {busy ? (
             <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-slate-900/10 backdrop-blur-[1px]">
               <div className="pointer-events-auto flex flex-col items-center gap-3 rounded-2xl border border-slate-200 bg-white/95 px-7 py-6 text-center shadow-xl backdrop-blur">
                 <div className="relative flex h-12 w-12 items-center justify-center">
