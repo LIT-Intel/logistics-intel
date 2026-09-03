@@ -217,6 +217,47 @@ export async function fetchCreditPackages(): Promise<CreditPack[]> {
   return data as CreditPack[];
 }
 
+/* ── Company unlock (Credits v2 §7 metering) ───────────────────────────── */
+
+export type UnlockResult =
+  | { ok: true; unlocked: true; charged: number; alreadyOwned: boolean; meteringOff: boolean }
+  | { ok: false; insufficient: true; message: string };
+
+/**
+ * Unlock a company for the workspace (credit-unlock-company edge fn). While the
+ * credits_metering_enabled flag is OFF this returns immediately with charged:0 /
+ * meteringOff:true, so callers can gate "open" on it transparently. Fails OPEN
+ * on any non-insufficient error so a flaky unlock call never blocks the user.
+ */
+export async function unlockCompany(opts: {
+  company_id?: string | null;
+  source_company_key?: string | null;
+  company_name?: string | null;
+}): Promise<UnlockResult> {
+  try {
+    const res = await invokeEdge<{
+      ok: true;
+      unlocked: boolean;
+      charged?: number;
+      already_owned?: boolean;
+      metering_off?: boolean;
+    }>("credit-unlock-company", opts);
+    return {
+      ok: true,
+      unlocked: true,
+      charged: res.charged ?? 0,
+      alreadyOwned: res.already_owned === true,
+      meteringOff: res.metering_off === true,
+    };
+  } catch (e) {
+    if (e instanceof EdgeFunctionError && e.code === "insufficient_credits") {
+      return { ok: false, insufficient: true, message: e.message || "Not enough credits to unlock this company." };
+    }
+    // Fail open — never block opening a company on a transient unlock error.
+    return { ok: true, unlocked: true, charged: 0, alreadyOwned: false, meteringOff: true };
+  }
+}
+
 /* ── Credit Usage report (Credit Usage page) ────────────────────────────── */
 
 export interface CreditUsageActivityRow {
