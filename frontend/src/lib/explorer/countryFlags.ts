@@ -29,7 +29,7 @@ export function compactLocation(
   city: string | null | undefined,
   state: string | null | undefined,
   country: string | null | undefined,
-): { flag: string; text: string } {
+): { flag: string; flagCode: string; text: string } {
   // Normalise the country code so the flag emoji + dedup work even
   // when the upstream API returns messy values like "Us", "USA", or
   // "Or 97005, Us". Only the first regional indicator pair is used
@@ -38,11 +38,14 @@ export function compactLocation(
   const isUS = /\b(US|USA|U\.S(\.A)?)\b/.test(countryNorm);
   const flagCode = isUS ? 'US' : (countryNorm.match(/[A-Z]{2}/)?.[0] ?? countryNorm);
   const flag = countryFlag(flagCode);
+  // Validated ISO-2 for image-based flags (emoji flags don't render on
+  // Windows desktop). Empty when we couldn't resolve a real 2-letter code.
+  const iso = /^[A-Z]{2}$/.test(flagCode) ? flagCode : '';
 
   const parts: string[] = [];
   if (city) parts.push(String(city).trim());
   if (state) parts.push(String(state).trim());
   // Country redundant when it's US — the flag already says so.
   if (country && !isUS) parts.push(String(country).trim());
-  return { flag, text: parts.join(', ') };
+  return { flag, flagCode: iso, text: parts.join(', ') };
 }

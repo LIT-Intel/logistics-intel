@@ -5,7 +5,8 @@ import {
   Phone, Loader2, Linkedin, Sparkles,
 } from 'lucide-react';
 import { CompanyAvatar } from '@/components/CompanyAvatar';
-import { countryFlag, compactLocation } from '@/lib/explorer/countryFlags';
+import { compactLocation } from '@/lib/explorer/countryFlags';
+import CountryFlag from './CountryFlag';
 import { springs, useReducedMotion } from '@/lib/motion';
 import { enrichCompanyLive } from '@/api/ai';
 
@@ -56,7 +57,6 @@ export default function CompanyDetailPanel({ row, onClose, onOpenFull, onSave })
   if (!row) return null;
 
   const loc = compactLocation(row.city, row.state, row.country);
-  const flag = loc.flag || countryFlag(row.country);
   const raw = row.raw || {};
   const shipments = row.shipments ?? raw.totalShipments ?? raw.shipments ?? raw.shipments_12m ?? null;
   const teu = row.teu ?? raw.latestYearTeu ?? raw.teu ?? null;
@@ -113,7 +113,7 @@ export default function CompanyDetailPanel({ row, onClose, onOpenFull, onSave })
           <CompanyAvatar name={row.company_name} domain={website} size={44} className="shrink-0" />
           <div className="min-w-0 flex-1">
             <h2 className="font-display flex items-center gap-1.5 text-[16px] font-bold leading-tight text-slate-900">
-              {flag ? <span className="text-[16px] leading-none" aria-hidden>{flag}</span> : null}
+              <CountryFlag code={loc.flagCode || row.country} size={15} />
               <span className="truncate">{row.company_name}</span>
             </h2>
             <div className="font-body mt-0.5 flex items-center gap-1 text-[12px] text-slate-500">

@@ -68,6 +68,7 @@ import { useExploreAccounts } from '@/features/pulse/explore/useExploreAccounts'
 const ExploreMap = lazy(() => import('@/features/pulse/explore/ExploreMapMaplibre'));
 import { normalizeCompanySearchResults } from '@/lib/explorer/normalizeCompanySearch';
 import { countryFlag, compactLocation } from '@/lib/explorer/countryFlags';
+import CountryFlag from './CountryFlag';
 import { unlockCompany } from '@/api/entitlements';
 import { useExplorer } from './ExplorerContext';
 
@@ -1041,7 +1042,7 @@ function ListRow({ row, onClick, onSave, onOpen }) {
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <div className="font-display flex items-center gap-1.5 truncate text-[13.5px] font-bold text-slate-900">
-                {loc.flag ? <span className="text-[13px] leading-none" aria-hidden>{loc.flag}</span> : null}
+                <CountryFlag code={loc.flagCode} size={12} />
                 <span className="truncate">{row.company_name}</span>
               </div>
               <div className="font-body mt-0.5 flex items-center gap-1 truncate text-[11px] text-slate-500">
@@ -1198,7 +1199,7 @@ function ResultCard({ row, onClick, onSave, onOpen }) {
         <CompanyAvatar name={row.company_name} domain={row.domain} size={32} className="shrink-0 sm:!h-9 sm:!w-9" />
         <div className="min-w-0 flex-1">
           <div className="font-display flex items-center gap-1.5 truncate text-[13px] font-semibold text-slate-900 sm:text-[13.5px]">
-            {loc.flag ? <span className="text-[14px] leading-none" aria-hidden>{loc.flag}</span> : null}
+            <CountryFlag code={loc.flagCode} size={13} />
             <span className="truncate">{row.company_name}</span>
           </div>
           {loc.text ? (
@@ -1289,7 +1290,7 @@ function BubblePopover({ row, pos, onOpen, onClose, onCardEnter, onCardLeave }) 
           <CompanyAvatar name={row.company_name} domain={row.domain} size={32} className="shrink-0" />
           <div className="min-w-0 flex-1">
             <div className="font-display flex items-center gap-1.5 truncate text-[12.5px] font-semibold text-slate-900">
-              {loc.flag ? <span className="text-[13px] leading-none" aria-hidden>{loc.flag}</span> : null}
+              <CountryFlag code={loc.flagCode} size={12} />
               <span className="truncate">{row.company_name}</span>
             </div>
             {loc.text ? (
