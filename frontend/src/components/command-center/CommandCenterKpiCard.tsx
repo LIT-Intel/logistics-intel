@@ -1,6 +1,7 @@
 import React from 'react';
 import { LucideIcon } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { springs } from '@/lib/motion';
 
 interface CommandCenterKpiCardProps {
   icon: LucideIcon;
@@ -66,8 +67,10 @@ export default function CommandCenterKpiCard({
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, delay: index * 0.05 }}
-      whileHover={{ y: -2 }}
+      // Apple §4: shared critically-damped spring instead of a fixed-duration
+      // tween, so hover-lift is interruptible and consistent app-wide.
+      transition={{ ...springs.default, delay: index * 0.05 }}
+      whileHover={{ y: -2, transition: springs.snappy }}
       className="group"
     >
       <Component
