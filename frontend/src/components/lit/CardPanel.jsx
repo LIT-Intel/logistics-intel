@@ -5,7 +5,7 @@ export default function CardPanel({ title, children }) {
   return (
     <div className={litUI.card}>
       <div className="px-6 pt-5">
-        <h3 className='text-[color:var(--lit-primary,#23135b)] font-semibold text-lg'>{title}</h3>
+        <h3 className='text-title text-foreground font-semibold text-lg'>{title}</h3>
       </div>
       <div className="p-6 pt-4">{children}</div>
     </div>

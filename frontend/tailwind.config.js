@@ -105,6 +105,7 @@ module.exports = {
   		fontFamily: {
   			display: ['"Space Grotesk"', 'Outfit', 'system-ui', 'sans-serif'],
   			body: ['"DM Sans"', 'system-ui', 'sans-serif'],
+  			mono: ['"JetBrains Mono"', '"Fira Code"', 'ui-monospace', 'monospace'],
   		},
   		boxShadow: {
   			'glow-cyan': '0 0 24px rgba(0, 240, 255, 0.35)',

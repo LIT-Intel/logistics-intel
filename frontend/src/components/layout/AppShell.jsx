@@ -328,7 +328,10 @@ export default function AppShell({ currentPageName, children }) {
 
         <main className="flex-1 min-w-0 flex flex-col">
           <LockoutBanner subscriptionStatus={subscriptionStatus} billingPath="/app/billing" />
-          <header className="bg-white/80 backdrop-blur-sm border-b border-gray-200 h-14 flex items-center justify-between px-4">
+          {/* Apple §12: floating translucent chrome. .lit-material gives a
+              stronger, consistent blur and auto-frosts under reduced-transparency
+              / high-contrast. (Was bg-white/80 backdrop-blur-sm inline.) */}
+          <header className="lit-material border-b h-14 flex items-center justify-between px-4">
             <div className="flex items-center gap-3 min-w-0">
               <button
                 className="hidden md:inline-flex p-2 rounded-lg border text-gray-600"

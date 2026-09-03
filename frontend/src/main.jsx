@@ -9,7 +9,6 @@ import { UpgradeModalProvider } from "./components/billing/UpgradeModal";
 import App from "./App";
 import { initSentry } from "./lib/sentry";
 import "./index.css";
-import "./styles/tokens.css";
 
 // Init Sentry before anything else renders so the first uncaught error gets
 // captured. No-op when VITE_SENTRY_DSN is unset (dev / preview / local).

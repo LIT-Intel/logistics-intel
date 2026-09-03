@@ -18,7 +18,11 @@ const DialogOverlay = React.forwardRef(({ className, ...props }, ref) => (
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      "fixed inset-0 z-50 bg-black/80  data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+      // Apple §12: dim-to-focus. Scrim pushes the background back AND blurs it
+      // slightly so the modal reads as a real layer floating above, not a flat
+      // fill. backdrop-blur is dropped under reduced-transparency via the global
+      // media query on .lit-material — here we soften the black instead.
+      "fixed inset-0 z-50 bg-black/60 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
       className
     )}
     {...props} />

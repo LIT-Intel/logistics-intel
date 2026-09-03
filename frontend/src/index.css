@@ -95,7 +95,34 @@
 
   body {
     @apply bg-background text-foreground;
-    font-family: "Outfit", sans-serif;
+    /* Canonical body face = DM Sans (agreed design-system font). Was leaking
+       Outfit, which drifted from tailwind's `font-body` + the .font-body util. */
+    font-family: "DM Sans", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    letter-spacing: -0.006em; /* Apple §15: body sits just under 0 */
+  }
+
+  /* Apple §1 (Response): interactive elements confirm on pointer-DOWN, not on
+     release — instant, compositor-only, and reversible. Applies app-wide to
+     every button / role=button / summary. Opt out with `.no-press`.
+     Suppressed under reduced-motion below (§14). */
+  button:not(:disabled):not(.no-press):active,
+  [role="button"]:not([aria-disabled="true"]):not(.no-press):active,
+  summary:not(.no-press):active {
+    transform: scale(0.97);
+  }
+  button:not(.no-press),
+  [role="button"]:not(.no-press),
+  summary:not(.no-press) {
+    transition: transform 120ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  /* Promote to its own layer only when motion is imminent (Apple §11) — never
+     permanently, so we don't churn layers for hundreds of idle buttons. */
+  button:not(.no-press):hover,
+  [role="button"]:not(.no-press):hover {
+    will-change: transform;
   }
 
   /* iOS auto-zooms focused inputs whose computed font-size is < 16px.
@@ -124,7 +151,7 @@
   --lit-dashboard-muted: #667085;
 
   --lit-dashboard-brand: #2563EB;
-  --lit-dashboard-brand-hover: #3641f5;
+  --lit-dashboard-brand-hover: #1D4ED8; /* was #3641f5 (old violet-brand family); now blue-700 darken of #2563EB */
   --lit-dashboard-brand-soft: #ecf3ff;
 
   --lit-dashboard-success: #039855;
@@ -136,7 +163,7 @@
   --lit-sidebar-text: #344054;
   --lit-sidebar-muted: #667085;
   --lit-sidebar-active-bg: #ecf3ff;
-  --lit-sidebar-active-text: #465fff;
+  --lit-sidebar-active-text: #2563EB; /* was #465fff — the last surviving old-brand accent; now canonical */
 
   --lit-header-bg: rgba(255, 255, 255, 0.9);
 
@@ -322,6 +349,63 @@
 .font-body    { font-family: 'DM Sans', system-ui, sans-serif; }
 .font-mono    { font-family: 'JetBrains Mono', 'Fira Code', monospace; }
 
+/* Apple §15 — tracking is size-specific, leading tracks size inversely.
+   Large display text reads too loose, so tighten it (negative tracking) with
+   tight leading; body sits near 0 with comfortable leading. Attach these to
+   headings so type shape follows size instead of one fixed letter-spacing. */
+.text-display {
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+  letter-spacing: -0.022em;
+  line-height: 1.05;
+  font-optical-sizing: auto;
+}
+.text-heading {
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+  letter-spacing: -0.014em;
+  line-height: 1.18;
+}
+.text-title {
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+/* Numeric / tabular data: tighten and lock column widths so figures align. */
+.text-numeric {
+  font-family: 'JetBrains Mono', monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* Apple §12 — translucent material for floating chrome (nav bars, toolbars,
+   popovers, sheets). Content scrolls UNDER it. Frosts down under
+   reduced-transparency (see §14 block below). Never stack .lit-material on
+   another .lit-material — legibility collapses. */
+.lit-material {
+  background: rgba(255, 255, 255, 0.68);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+.dark .lit-material {
+  background: rgba(16, 24, 40, 0.66);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+/* Heavier / thicker material for larger surfaces (sidebars, modal sheets) —
+   Apple §12: bigger surfaces read as thicker (stronger blur, deeper shadow). */
+.lit-material-strong {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(30px) saturate(180%);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  box-shadow: 0 12px 40px rgba(16, 24, 40, 0.12);
+}
+.dark .lit-material-strong {
+  background: rgba(11, 18, 32, 0.78);
+  backdrop-filter: blur(30px) saturate(160%);
+  -webkit-backdrop-filter: blur(30px) saturate(160%);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+
 /* KPI data value emphasis */
 .lit-kpi-mono {
   font-family: 'JetBrains Mono', monospace;
@@ -437,4 +521,58 @@
 }
 @media (max-width: 480px) {
   .lit-grid-4 { grid-template-columns: 1fr !important; }
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+ * Apple §14 — Reduced motion / transparency / contrast.
+ * Reduced motion doesn't mean NO feedback — it means a gentler, non-vestibular
+ * equivalent. Keep opacity/color feedback; drop travel, spring, parallax, and
+ * the press-scale. Framer-motion springs are gated in JS via the shared
+ * useReducedMotion() hook (see lib/motion), this is the CSS safety net.
+ * ──────────────────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* Kill the global press-scale and the looping pulse animations — vestibular. */
+  button:active,
+  [role="button"]:active,
+  summary:active { transform: none !important; }
+  .pulse-breathe,
+  .pulse-spin,
+  .pulse-orbit,
+  .pulse-ping-dot { animation: none !important; }
+}
+
+/* Reduced transparency — frost the translucent materials down to near-solid,
+   drop the blur so text stays legible for users who ask for it. */
+@media (prefers-reduced-transparency: reduce) {
+  .lit-material,
+  .lit-material-strong {
+    background: #ffffff;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+  .dark .lit-material,
+  .dark .lit-material-strong { background: #0f172a; }
+  .lit-header-shell { background: #ffffff; backdrop-filter: none !important; }
+  .dark .lit-header-shell { background: #101828; }
+}
+
+/* Increased contrast — near-solid surfaces with a defined, contrasting border. */
+@media (prefers-contrast: more) {
+  .lit-material,
+  .lit-material-strong {
+    background: #ffffff;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border: 1px solid #0f172a;
+  }
+  .dark .lit-material,
+  .dark .lit-material-strong { background: #0b1220; border-color: #e5edf9; }
 }
