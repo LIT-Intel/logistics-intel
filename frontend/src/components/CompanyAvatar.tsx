@@ -84,6 +84,11 @@ export const CompanyAvatar: React.FC<CompanyAvatarProps> = ({
         className="h-full w-full object-contain p-1"
         loading="lazy"
         decoding="async"
+        // logo.dev validates the Referer against its per-key allow-list. Force
+        // the origin to be sent so a future strict Referrer-Policy can't silently
+        // strip it and 401 every logo. (Origin must still be allow-listed on the
+        // logo.dev dashboard — see lib/logo.ts.)
+        referrerPolicy="strict-origin-when-cross-origin"
         onError={() => {
           // Phase B.11 — debug-only console hint when a candidate fails.
           // Browser <img> fires `onerror` for any non-2xx (including 401

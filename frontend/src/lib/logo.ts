@@ -25,14 +25,26 @@ const LOGO_DEV_BASE = (
 // copy from the public homepage. Env vars still take precedence.
 const LOGO_DEV_PUBLISHABLE_FALLBACK = "pk_FTj3iPbUS3SgUfJ7X1FXPQ";
 
-const LOGO_DEV_TOKEN =
+const LOGO_DEV_ENV_TOKEN =
   readEnv("VITE_LOGO_DEV_TOKEN") ??
   readEnv("VITE_LOGO_DEV_KEY") ??
   readEnv("NEXT_PUBLIC_LOGO_DEV_TOKEN") ??
   readEnv("NEXT_PUBLIC_LOGO_DEV_KEY") ??
   readEnv("LOGO_DEV_TOKEN") ??
-  readEnv("LOGO_DEV_KEY") ??
-  LOGO_DEV_PUBLISHABLE_FALLBACK;
+  readEnv("LOGO_DEV_KEY");
+
+const LOGO_DEV_TOKEN = LOGO_DEV_ENV_TOKEN ?? LOGO_DEV_PUBLISHABLE_FALLBACK;
+
+// logo.dev publishable keys are origin-locked (Referer-checked): a key returns
+// 401 "restricted to specific domains" on any origin not in its allow-list
+// (verified 2026-09-03 — pk_FTj3… 200s for app.logisticintel.com, 401s for
+// *.vercel.app / no-referer). If the operator set VITE_LOGO_DEV_TOKEN to a key
+// whose allow-list DOESN'T include the current deploy origin, it would 401 and
+// (previously) shadow the known-good hardcoded key. So we try BOTH keys as
+// separate candidates — whichever is allow-listed for the live origin wins.
+const LOGO_DEV_TOKENS = Array.from(
+  new Set([LOGO_DEV_ENV_TOKEN, LOGO_DEV_PUBLISHABLE_FALLBACK].filter(Boolean) as string[])
+);
 
 function cleanValue(value?: string | null): string {
   return String(value || "").trim();
@@ -65,7 +77,7 @@ export function extractDomain(value?: string | null): string | null {
   }
 }
 
-function buildLogoDevUrl(domain: string): string {
+function buildLogoDevUrl(domain: string, token?: string): string {
   const params = new URLSearchParams();
   params.set("size", "160");
   // CRITICAL for the fallback cascade: without this, logo.dev returns a
@@ -75,7 +87,7 @@ function buildLogoDevUrl(domain: string): string {
   // instead of a real logo. `fallback=404` makes logo.dev 404 on a miss so the
   // onError handler falls through to the next candidate. (2026-08-26)
   params.set("fallback", "404");
-  if (LOGO_DEV_TOKEN) params.set("token", LOGO_DEV_TOKEN);
+  if (token) params.set("token", token);
   return `${LOGO_DEV_BASE}/${domain}?${params.toString()}`;
 }
 
@@ -99,7 +111,10 @@ export function getLogoCandidates(source?: string | null): string[] {
   if (!domain) return [];
 
   const candidates: string[] = [];
-  if (LOGO_DEV_TOKEN) candidates.push(buildLogoDevUrl(domain));
+  // Try each configured logo.dev key (env first, then hardcoded fallback) so a
+  // key restricted to a different origin can't shadow one that IS allow-listed
+  // for the live domain. See LOGO_DEV_TOKENS note above.
+  for (const token of LOGO_DEV_TOKENS) candidates.push(buildLogoDevUrl(domain, token));
   // Clearbit's free logo API was shut down (connections now fail outright,
   // verified 2026-08-20) and img.logo.dev 401s without a token, so without
   // VITE_LOGO_DEV_TOKEN the old cascade burned two dead candidates before
