@@ -1,7 +1,8 @@
 {
   "framework": "vite",
   "ignoreCommand": "",
-  "buildCommand": "npm install && npm run build",
+  "installCommand": "npm install --prefer-offline --no-audit --no-fund",
+  "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "redirects": [
     { "source": "/", "destination": "/search", "permanent": false }
