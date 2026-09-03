@@ -42,13 +42,16 @@ import {
 
 import { useState } from "react";
 import { quoting } from "@/api/quoting";
+import { rfp } from "@/api/rfp";
 import { convertQuoteToDeal } from "@/api/quoteDeal";
 import { useToast } from "@/components/ui/use-toast";
 import { useEntitlements } from "@/hooks/useEntitlements";
 import type { QuoteListItem, QuoteMode, QuoteCreateInput } from "@/api/quoting";
+import type { RfpListItem } from "@/api/rfp";
 import EnhancedKpiCard from "@/components/dashboard/EnhancedKpiCard";
 import LitSectionCard from "@/components/ui/LitSectionCard";
 import { QuoteStatusPill } from "@/features/quoting/components/QuoteStatusPill";
+import { RfpStatusPill } from "@/features/rfp/components/RfpStatusPill";
 
 const money = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -80,6 +83,13 @@ function formatMargin(pct?: number | null): string {
   return `${Number(pct).toFixed(1)}%`;
 }
 
+function formatUpdated(iso?: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
 export default function CompanyQuotesTab({ companyId }: { companyId: string }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -109,8 +119,15 @@ export default function CompanyQuotesTab({ companyId }: { companyId: string }) {
     enabled: !!companyId,
   });
 
+  const rfpQuery = useQuery({
+    queryKey: ["rfp", "list", "company", companyId],
+    queryFn: () => rfp.list({ company_id: companyId }),
+    enabled: !!companyId,
+  });
+
   const metrics = metricsQuery.data?.data;
   const quotes: QuoteListItem[] = listQuery.data?.items ?? [];
+  const rfps: RfpListItem[] = rfpQuery.data?.items ?? [];
 
   async function refreshAll() {
     await Promise.all([
@@ -297,6 +314,52 @@ export default function CompanyQuotesTab({ companyId }: { companyId: string }) {
             delay={i * 0.04}
           />
         ))}
+      </div>
+
+      {/* RFPs / Opportunities — the opportunity; quotes are revisions under it */}
+      <div className="mb-6">
+      <LitSectionCard
+        title="RFPs & Opportunities"
+        sub={
+          rfpQuery.isLoading
+            ? "Loading…"
+            : `${rfps.length} ${rfps.length === 1 ? "opportunity" : "opportunities"}`
+        }
+        padded={false}
+      >
+        {rfpQuery.isLoading ? (
+          <QuotesSkeleton />
+        ) : rfps.length === 0 ? (
+          <RfpEmptyState
+            onNew={() => navigate(`/app/rfp/new?company_id=${companyId}`)}
+          />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="bg-[#FAFBFC]">
+                  <Th>RFP #</Th>
+                  <Th>Title</Th>
+                  <Th>Status</Th>
+                  <Th>Lanes</Th>
+                  <Th align="right">Est. Annual Value</Th>
+                  <Th>Quotes</Th>
+                  <Th>Updated</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {rfps.map((r) => (
+                  <RfpRow
+                    key={r.id}
+                    rfp={r}
+                    onOpen={() => navigate(`/app/rfp/${r.id}`)}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </LitSectionCard>
       </div>
 
       {/* Quotes table */}
@@ -514,6 +577,74 @@ function QuoteRow({
         </div>
       </td>
     </tr>
+  );
+}
+
+function RfpRow({ rfp, onOpen }: { rfp: RfpListItem; onOpen: () => void }) {
+  const laneCount = rfp.lane_count ?? 0;
+  const quoteCount = rfp.quotes?.count ?? 0;
+  return (
+    <tr
+      onClick={onOpen}
+      className="cursor-pointer hover:bg-slate-50 transition-colors"
+    >
+      <td className="px-3.5 py-3 border-b border-slate-50 whitespace-nowrap">
+        <span
+          className="text-[12.5px] font-semibold text-blue-700"
+          style={{ fontFamily: "'JetBrains Mono', monospace" }}
+        >
+          {rfp.rfp_number ?? "—"}
+        </span>
+      </td>
+      <td className="px-3.5 py-3 border-b border-slate-50 text-[13px] font-bold text-slate-900">
+        {rfp.title || "Untitled RFP"}
+      </td>
+      <td className="px-3.5 py-3 border-b border-slate-50 whitespace-nowrap">
+        <RfpStatusPill status={rfp.status} />
+      </td>
+      <td className="px-3.5 py-3 border-b border-slate-50 whitespace-nowrap text-[12.5px] text-slate-600">
+        {laneCount} {laneCount === 1 ? "lane" : "lanes"}
+      </td>
+      <td
+        className="px-3.5 py-3 border-b border-slate-50 whitespace-nowrap text-right text-[13px] font-semibold text-slate-900"
+        style={{ fontFamily: "'JetBrains Mono', monospace" }}
+      >
+        {money.format(rfp.estimated_annual_value ?? 0)}
+      </td>
+      <td className="px-3.5 py-3 border-b border-slate-50 whitespace-nowrap text-[12.5px] text-slate-600">
+        {quoteCount} {quoteCount === 1 ? "quote" : "quotes"}
+      </td>
+      <td className="px-3.5 py-3 border-b border-slate-50 whitespace-nowrap text-[13px] text-slate-700">
+        {formatUpdated(rfp.updated_at)}
+      </td>
+    </tr>
+  );
+}
+
+function RfpEmptyState({ onNew }: { onNew: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center text-center px-6 py-10">
+      <div className="w-12 h-12 rounded-xl bg-slate-100 grid place-items-center mb-4">
+        <FileText className="w-6 h-6 text-slate-400" />
+      </div>
+      <div
+        className="text-[14px] font-bold text-slate-900"
+        style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+      >
+        No RFPs yet — start one with New RFP
+      </div>
+      <p className="text-[13px] text-slate-500 mt-1 max-w-sm">
+        Track opportunities for this company and roll quote revisions up under each RFP.
+      </p>
+      <button
+        type="button"
+        onClick={onNew}
+        className="mt-5 inline-flex items-center justify-center gap-2 h-10 px-4 rounded-[10px] border border-slate-200 bg-white text-[13.5px] font-semibold text-slate-700 transition hover:bg-slate-50"
+        style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+      >
+        <FileText className="w-4 h-4" /> New RFP
+      </button>
+    </div>
   );
 }
 
