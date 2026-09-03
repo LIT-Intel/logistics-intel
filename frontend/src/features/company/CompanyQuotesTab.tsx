@@ -253,24 +253,35 @@ export default function CompanyQuotesTab({ companyId }: { companyId: string }) {
             Priced, sent, and tracked revenue for this company.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => navigate(newQuotePath)}
-          title={quotingLocked ? "Upgrade to Growth to create quotes" : undefined}
-          className="inline-flex items-center justify-center gap-2 h-10 w-full sm:w-auto px-4 rounded-[10px] text-[13.5px] font-semibold text-white transition hover:brightness-105"
-          style={{
-            fontFamily: "'Space Grotesk', sans-serif",
-            background: quotingLocked
-              ? "linear-gradient(180deg,#d97706,#b45309)"
-              : "linear-gradient(180deg,#2563eb,#1d4ed8)",
-            boxShadow: quotingLocked
-              ? "0 6px 16px rgba(217,119,6,.28), inset 0 1px 0 rgba(255,255,255,.18)"
-              : "0 6px 16px rgba(37,99,235,.28), inset 0 1px 0 rgba(255,255,255,.18)",
-          }}
-        >
-          {quotingLocked ? <Sparkles className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-          {quotingLocked ? "Upgrade to create quotes" : "New Quote"}
-        </button>
+        <div className="flex w-full items-center gap-2 sm:w-auto">
+          <button
+            type="button"
+            onClick={() => navigate(`/app/rfp/new?company_id=${companyId}`)}
+            title="Start an RFP / opportunity for this company"
+            className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-[10px] border border-slate-200 bg-white px-4 text-[13.5px] font-semibold text-slate-700 transition hover:bg-slate-50 sm:flex-none"
+            style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+          >
+            <FileText className="w-4 h-4" /> New RFP
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate(newQuotePath)}
+            title={quotingLocked ? "Upgrade to Growth to create quotes" : undefined}
+            className="inline-flex flex-1 items-center justify-center gap-2 h-10 sm:flex-none px-4 rounded-[10px] text-[13.5px] font-semibold text-white transition hover:brightness-105"
+            style={{
+              fontFamily: "'Space Grotesk', sans-serif",
+              background: quotingLocked
+                ? "linear-gradient(180deg,#d97706,#b45309)"
+                : "linear-gradient(180deg,#2563eb,#1d4ed8)",
+              boxShadow: quotingLocked
+                ? "0 6px 16px rgba(217,119,6,.28), inset 0 1px 0 rgba(255,255,255,.18)"
+                : "0 6px 16px rgba(37,99,235,.28), inset 0 1px 0 rgba(255,255,255,.18)",
+            }}
+          >
+            {quotingLocked ? <Sparkles className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+            {quotingLocked ? "Upgrade to create quotes" : "New Quote"}
+          </button>
+        </div>
       </div>
 
       {/* KPI row — 2-up on mobile, 6-up at lg */}

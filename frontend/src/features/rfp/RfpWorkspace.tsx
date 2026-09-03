@@ -35,7 +35,9 @@ import {
   type RfpStatus,
 } from "@/api/rfp";
 import { quoting, type QuoteLineItem, type QuoteMode } from "@/api/quoting";
+import { exportQuotePdf } from "@/lib/quoting/exportQuotePdf";
 import LitSectionCard from "@/components/ui/LitSectionCard";
+import { FileDown } from "lucide-react";
 import QuoteCompanySelector, { type AttachedCompany } from "@/features/quoting/components/QuoteCompanySelector";
 import { RfpStatusPill } from "./components/RfpStatusPill";
 
@@ -76,6 +78,7 @@ export default function RfpWorkspace() {
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [quoteError, setQuoteError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
   const hydratedId = useRef<string | null>(null);
 
   const detailQuery = useQuery({
@@ -183,6 +186,61 @@ export default function RfpWorkspace() {
     return Math.round((checks.filter(Boolean).length / checks.length) * 100);
   }, [company, title, dueDate, payload.lanes]);
 
+  // Branded proposal PDF — reuses the org's quote branding (logo, company
+  // details, prepared-by/signature from Quote Settings) and renders every lane
+  // with its customer-facing sell rate + annual total. Fully client-side.
+  async function handleExportPdf() {
+    if (!payload.lanes.length) { setSaveError("Add at least one lane before exporting a proposal."); return; }
+    if (!company?.company_name) { setSaveError("Select a company before exporting."); return; }
+    setExporting(true); setSaveError(null);
+    try {
+      const settingsRes = await quoting.settingsGet().catch(() => null);
+      const s = settingsRes?.data as { org_name?: string; org_logo_url?: string; settings?: Record<string, unknown> } | undefined;
+      const mergedSettings = {
+        ...(s?.settings ?? {}),
+        company_name: (s?.settings?.company_name as string) || s?.org_name || undefined,
+        logo_url: (s?.settings?.logo_url as string) || s?.org_logo_url || undefined,
+      };
+      const first = payload.lanes[0];
+      const lineItems = payload.lanes.map((lane, i) => ({
+        name: `${lane.origin || "Origin"} → ${lane.destination || "Destination"}`,
+        description: [String(lane.mode).toUpperCase(), lane.equipment, lane.commodity, lane.annual_volume ? `${lane.annual_volume.toLocaleString()} / yr` : ""].filter(Boolean).join(" · "),
+        quantity: lane.annual_volume || 1,
+        unit_sell: lane.sell_rate || 0,
+        sort_order: i,
+      })) as unknown as QuoteLineItem[];
+      const syntheticQuote = {
+        quote_number: record?.rfp_number || title || "RFP",
+        created_at: new Date().toISOString(),
+        valid_until: dueDate || first.validity_end || null,
+        mode: first.mode,
+        service_type: payload.lanes.length > 1 ? `Multi-lane ${String(first.mode).toUpperCase()}` : first.mode,
+        origin_city: first.origin, destination_city: first.destination,
+        equipment_type: first.equipment, commodity: first.commodity, incoterms: first.incoterm,
+        currency: payload.summary.currency || "USD",
+        subtotal_sell: totals.annualSell, total_sell: totals.annualSell,
+        accessorial_total: 0, fuel_surcharge_amount: 0,
+        terms_text: payload.summary.service_requirements || null,
+      } as unknown as Parameters<typeof exportQuotePdf>[0];
+      const dataUri = await exportQuotePdf(syntheticQuote, lineItems, {
+        settings: mergedSettings as Parameters<typeof exportQuotePdf>[2]["settings"],
+        companyName: company.company_name,
+        contactName: payload.summary.contact_name || undefined,
+      });
+      const blob = await (await fetch(dataUri)).blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${record?.rfp_number || "RFP"}-${company.company_name.replace(/[^\w]+/g, "-")}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Unable to export the proposal PDF.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   if (!isNew && detailQuery.isLoading) return <LoadingState />;
   if (!isNew && detailQuery.isError) return <ErrorState onBack={() => navigate("/app/rfp")} />;
 
@@ -202,6 +260,7 @@ export default function RfpWorkspace() {
           <div className="ml-auto flex w-full flex-wrap items-center gap-2 sm:w-auto">
             {savedAt && !saveMutation.isPending && <span className="hidden items-center gap-1.5 text-[12px] text-slate-400 md:inline-flex"><CheckCircle2 className="h-3.5 w-3.5 text-lime-400" /> Saved</span>}
             <button type="button" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending} className="inline-flex h-[38px] flex-1 items-center justify-center gap-2 rounded-[10px] border border-white/15 bg-white/5 px-4 font-display text-[13px] font-semibold text-slate-200 hover:bg-white/10 disabled:opacity-60 sm:flex-none">{saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save Draft</button>
+            <button type="button" onClick={handleExportPdf} disabled={exporting || !payload.lanes.length} className="inline-flex h-[38px] flex-1 items-center justify-center gap-2 rounded-[10px] border border-white/15 bg-white/5 px-4 font-display text-[13px] font-semibold text-slate-200 hover:bg-white/10 disabled:opacity-60 sm:flex-none" title="Download a branded proposal PDF">{exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />} Export PDF</button>
             <button type="button" onClick={() => quoteMutation.mutate()} disabled={quoteMutation.isPending || saveMutation.isPending || !payload.lanes.length} className="inline-flex h-[38px] flex-1 items-center justify-center gap-2 rounded-[10px] bg-cyan-400 px-4 font-display text-[13px] font-bold text-[#07111f] hover:bg-cyan-300 disabled:opacity-60 sm:flex-none">{quoteMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <FilePlus2 className="h-4 w-4" />} Create Quote Revision</button>
           </div>
           <WorkspacePipeline status={status} onStatus={setStatus} />
