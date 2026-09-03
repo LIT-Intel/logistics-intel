@@ -38,6 +38,14 @@ import {
   ExternalLink,
   RefreshCw,
   SlidersHorizontal,
+  Building2,
+  Ship,
+  CircleDollarSign,
+  Bookmark,
+  BookmarkCheck,
+  ArrowUpRight,
+  Globe2,
+  Filter,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useSearchParams, useNavigate } from 'react-router-dom';
@@ -423,7 +431,7 @@ export default function CompanySearchTab() {
 
   // ── High-level filters (client-side, over the current result set). Narrow
   //    the LIST and the MAP together so the two never disagree. ──────────────
-  const [filters, setFilters] = useState({ country: '', industry: '', savedOnly: false, minShipments: 0 });
+  const [filters, setFilters] = useState({ country: '', industry: '', savedOnly: false, minShipments: 0, minScore: 0 });
   const filterOptions = useMemo(() => {
     const countries = new Set();
     const industries = new Set();
@@ -441,9 +449,13 @@ export default function CompanySearchTab() {
       const s = Number(r.shipments ?? r.raw?.totalShipments ?? r.raw?.shipments ?? 0);
       if (!(s >= filters.minShipments)) return false;
     }
+    if (filters.minScore > 0) {
+      const sc = Number(r.opportunity_composite_score ?? 0);
+      if (!(sc >= filters.minScore)) return false;
+    }
     return true;
   }), [displayResults, filters]);
-  const anyFilter = Boolean(filters.country || filters.industry || filters.savedOnly || filters.minShipments > 0);
+  const anyFilter = Boolean(filters.country || filters.industry || filters.savedOnly || filters.minShipments > 0 || filters.minScore > 0);
   const filteredIds = useMemo(() => new Set(filteredResults.map((r) => r.id)), [filteredResults]);
   const filteredMapRows = useMemo(
     () => (anyFilter ? displayMapRows.filter((m) => filteredIds.has(m.id)) : displayMapRows),
@@ -858,56 +870,74 @@ function PanelHeader({ total, unmapped, view, onViewChange, onCollapse }) {
 // High-level filter bar inside the results overlay. Compact facet controls
 // (native selects fit the ~400px overlay) + a Clear + a shown/total count.
 // Narrows the list AND the map together (see filteredResults/filteredMapRows).
+function FacetSelect({ icon: Icon, value, onChange, active, tone = 'blue', title, children }) {
+  const on = active
+    ? (tone === 'amber' ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-blue-300 bg-blue-50 text-blue-700')
+    : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300';
+  return (
+    <label title={title} className={`inline-flex h-7 items-center gap-1 rounded-lg border pl-2 pr-1 text-[11px] transition ${on}`}>
+      <Icon size={11} className="shrink-0 opacity-80" />
+      <select value={value} onChange={onChange} className="max-w-[112px] cursor-pointer bg-transparent py-1 font-semibold outline-none">
+        {children}
+      </select>
+    </label>
+  );
+}
+
 function ResultFilters({ filters, options, onChange, total, shown }) {
   const set = (patch) => onChange({ ...filters, ...patch });
-  const any = filters.country || filters.industry || filters.savedOnly || filters.minShipments > 0;
-  const sel =
-    'h-7 max-w-[120px] rounded-md border border-slate-200 bg-white px-1.5 text-[11px] text-slate-700 outline-none focus:border-cyan-400';
+  const any = filters.country || filters.industry || filters.savedOnly || filters.minShipments > 0 || filters.minScore > 0;
   return (
-    <div className="border-b border-slate-100 bg-slate-50/70 px-3 py-2">
+    <div className="border-b border-slate-100 bg-white/70 px-3 py-2 backdrop-blur">
       <div className="flex flex-wrap items-center gap-1.5">
         <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">
-          <SlidersHorizontal size={11} /> Filters
+          <Filter size={11} className="text-blue-500" /> Filters
         </span>
         {options.countries.length > 1 ? (
-          <select value={filters.country} onChange={(e) => set({ country: e.target.value })} className={sel} title="Country">
+          <FacetSelect icon={Globe2} title="Country" active={Boolean(filters.country)} value={filters.country} onChange={(e) => set({ country: e.target.value })}>
             <option value="">Country</option>
             {options.countries.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
+          </FacetSelect>
         ) : null}
         {options.industries.length > 1 ? (
-          <select value={filters.industry} onChange={(e) => set({ industry: e.target.value })} className={sel} title="Industry">
+          <FacetSelect icon={Building2} title="Industry" active={Boolean(filters.industry)} value={filters.industry} onChange={(e) => set({ industry: e.target.value })}>
             <option value="">Industry</option>
             {options.industries.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
+          </FacetSelect>
         ) : null}
-        <select value={String(filters.minShipments)} onChange={(e) => set({ minShipments: Number(e.target.value) })} className={sel} title="Minimum shipments">
+        <FacetSelect icon={Ship} title="Shipment volume" active={filters.minShipments > 0} value={String(filters.minShipments)} onChange={(e) => set({ minShipments: Number(e.target.value) })}>
           <option value="0">Any volume</option>
           <option value="50">50+ shipments</option>
           <option value="200">200+ shipments</option>
           <option value="1000">1,000+ shipments</option>
-        </select>
+        </FacetSelect>
+        <FacetSelect icon={CircleDollarSign} tone="amber" title="Opportunity score" active={filters.minScore > 0} value={String(filters.minScore)} onChange={(e) => set({ minScore: Number(e.target.value) })}>
+          <option value="0">Any score</option>
+          <option value="40">Score 40+</option>
+          <option value="60">Score 60+</option>
+          <option value="80">Score 80+</option>
+        </FacetSelect>
         <button
           type="button"
           onClick={() => set({ savedOnly: !filters.savedOnly })}
-          className={`inline-flex h-7 items-center gap-1 rounded-md border px-2 text-[11px] font-semibold transition ${
-            filters.savedOnly ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+          className={`inline-flex h-7 items-center gap-1 rounded-lg border px-2 text-[11px] font-semibold transition active:scale-[0.96] motion-reduce:active:scale-100 ${
+            filters.savedOnly ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
           }`}
         >
-          Saved
+          {filters.savedOnly ? <BookmarkCheck size={11} className="text-emerald-500" /> : <Bookmark size={11} />} Saved
         </button>
         {any ? (
           <button
             type="button"
-            onClick={() => onChange({ country: '', industry: '', savedOnly: false, minShipments: 0 })}
-            className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] font-semibold text-slate-500 hover:text-rose-600"
+            onClick={() => onChange({ country: '', industry: '', savedOnly: false, minShipments: 0, minScore: 0 })}
+            className="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-[11px] font-semibold text-slate-500 hover:text-rose-600"
           >
             <X size={11} /> Clear
           </button>
         ) : null}
       </div>
       {any ? (
-        <div className="mt-1 text-[10.5px] text-slate-400">Showing {shown.toLocaleString()} of {total.toLocaleString()}</div>
+        <div className="mt-1 text-[10.5px] font-medium text-slate-500">Showing {shown.toLocaleString()} of {total.toLocaleString()}</div>
       ) : null}
     </div>
   );
@@ -991,50 +1021,94 @@ function ListRow({ row, onClick, onSave, onOpen }) {
     row.teu == null && row.opportunity_composite_score == null;
   const showProfileHint = enrichmentMissing && !row.is_saved;
 
+  const scoreN = row.opportunity_composite_score != null ? Math.round(row.opportunity_composite_score) : null;
+  const scoreTone = scoreN == null ? ''
+    : scoreN >= 80 ? 'bg-emerald-100 text-emerald-700'
+    : scoreN >= 60 ? 'bg-blue-100 text-blue-700'
+    : scoreN >= 40 ? 'bg-amber-100 text-amber-700'
+    : 'bg-rose-100 text-rose-700';
+  void oppScore;
+
   return (
     <div
       role="row"
       onClick={onClick}
-      className="group cursor-pointer text-left transition hover:bg-cyan-50/50"
+      className="group cursor-pointer text-left transition hover:bg-blue-50/40"
     >
-      {/* Single compact stacked row — Google-Maps style, fits the narrow
-          left overlay (the old wide 8-col grid overflowed → hidden h-scroll). */}
-      <div className="flex flex-col gap-1.5 px-3 py-2.5">
-        <div className="flex items-start gap-2">
-          <CompanyAvatar name={row.company_name} domain={row.domain} size={28} className="shrink-0" />
-          <div className="min-w-0 flex-1">
-            <div className="font-display flex items-center gap-1.5 truncate text-[13px] font-semibold text-slate-900">
-              {loc.flag ? <span className="text-[14px] leading-none" aria-hidden>{loc.flag}</span> : null}
-              <span className="truncate">{row.company_name}</span>
+      <div className="flex items-start gap-2.5 px-3 py-2.5">
+        <CompanyAvatar name={row.company_name} domain={row.domain} size={36} className="shrink-0 rounded-xl" />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <div className="font-display flex items-center gap-1.5 truncate text-[13.5px] font-bold text-slate-900">
+                {loc.flag ? <span className="text-[13px] leading-none" aria-hidden>{loc.flag}</span> : null}
+                <span className="truncate">{row.company_name}</span>
+              </div>
+              <div className="font-body mt-0.5 flex items-center gap-1 truncate text-[11px] text-slate-500">
+                <MapPin size={10} className="shrink-0 text-slate-400" />
+                <span className="truncate">{loc.text || '—'}</span>
+              </div>
             </div>
-            <div className="font-body mt-0.5 truncate text-[10.5px] text-slate-500">{loc.text || '—'}</div>
+            <div className="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onSave(e); }}
+                title={row.is_saved ? 'Saved' : 'Save to Command Center'}
+                className="inline-flex h-7 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-600 transition hover:border-blue-300 hover:text-blue-700 active:scale-[0.96] motion-reduce:active:scale-100"
+              >
+                {row.is_saved ? <BookmarkCheck size={12} className="text-emerald-500" /> : <Bookmark size={12} />}
+                <span className="hidden sm:inline">{row.is_saved ? 'Saved' : 'Save'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onOpen(e); }}
+                title="Open full profile"
+                className="inline-flex h-7 items-center gap-1 rounded-lg bg-blue-600 px-2.5 text-[11px] font-semibold text-white shadow-sm transition hover:bg-blue-700 active:scale-[0.96] motion-reduce:active:scale-100"
+              >
+                Open <ArrowUpRight size={12} />
+              </button>
+            </div>
           </div>
-          <div className="flex shrink-0 items-center gap-1">
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); onSave(e); }}
-              className="font-display rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[10.5px] font-semibold text-slate-700"
-            >
-              Save
-            </button>
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); onOpen(e); }}
-              className="font-display rounded-md bg-slate-900 px-2 py-1.5 text-[10.5px] font-semibold text-white"
-            >
-              Open
-            </button>
+          {/* Metric chips — icon + meaningful color (Apple §16: color carries meaning). */}
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            {row.industry ? <MetricChip icon={Building2} tone="blue">{row.industry}</MetricChip> : null}
+            {row.teu != null && Number(row.teu) > 0 ? <MetricChip icon={Ship} tone="cyan">{formatCompact(row.teu)} TEU</MetricChip> : null}
+            {annualSales !== '—' ? <MetricChip icon={CircleDollarSign} tone="emerald">{annualSales}</MetricChip> : null}
+            {scoreN != null ? (
+              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-display text-[10.5px] font-bold tabular-nums ${scoreTone}`}>
+                {scoreN}<span className="text-[8px] font-semibold uppercase opacity-70">opp</span>
+              </span>
+            ) : null}
+            {showProfileHint ? (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onOpen(e); }}
+                className="font-body inline-flex items-center gap-0.5 text-[10px] text-blue-600 hover:text-blue-800"
+              >
+                details on profile <ExternalLink size={9} />
+              </button>
+            ) : null}
           </div>
-        </div>
-        <div className="ml-9 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10.5px]">
-          <MobileStat label="Industry" value={row.industry ?? '—'} />
-          <MobileStat label="Vertical" value={row.vertical ?? '—'} />
-          <MobileStat label="TEU 12M" value={row.teu != null ? formatCompact(row.teu) : '—'} />
-          <MobileStat label="Annual Sales" value={annualSales} />
-          <MobileStat label="Opp Score" value={oppScore} />
         </div>
       </div>
     </div>
+  );
+}
+
+// Small icon + colored value pill for a result-row metric. Apple §16: color
+// is used to carry meaning, not decoration.
+function MetricChip({ icon: Icon, tone = 'slate', children }) {
+  const tones = {
+    blue: 'bg-blue-50 text-blue-700',
+    cyan: 'bg-cyan-50 text-cyan-700',
+    emerald: 'bg-emerald-50 text-emerald-700',
+    slate: 'bg-slate-100 text-slate-600',
+  };
+  return (
+    <span className={`inline-flex max-w-[150px] items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-semibold ${tones[tone] || tones.slate}`}>
+      <Icon size={10} className="shrink-0" />
+      <span className="truncate">{children}</span>
+    </span>
   );
 }
 
@@ -1162,7 +1236,7 @@ function ResultCard({ row, onClick, onSave, onOpen }) {
           <button
             type="button"
             onClick={onOpen}
-            className="font-display rounded-md bg-slate-900 px-2 py-1.5 text-[10.5px] font-semibold text-white transition hover:bg-slate-700 sm:py-1"
+            className="font-display rounded-md bg-blue-600 px-2 py-1.5 text-[10.5px] font-semibold text-white transition hover:bg-blue-700 active:scale-[0.96] motion-reduce:active:scale-100 sm:py-1"
           >
             Open
           </button>
@@ -1234,7 +1308,7 @@ function BubblePopover({ row, pos, onOpen, onClose, onCardEnter, onCardLeave }) 
           type="button"
           onMouseDown={(e) => e.preventDefault()}
           onClick={onOpen}
-          className="font-display mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-slate-900 px-2.5 py-1.5 text-[11px] font-semibold text-white transition hover:bg-slate-700"
+          className="font-display mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-blue-600 px-2.5 py-1.5 text-[11px] font-semibold text-white transition hover:bg-blue-700 active:scale-[0.97] motion-reduce:active:scale-100"
         >
           <ExternalLink size={11} />
           Open profile
