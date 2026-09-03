@@ -37,6 +37,7 @@ import {
   List as ListIcon,
   ExternalLink,
   RefreshCw,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useSearchParams, useNavigate } from 'react-router-dom';
@@ -364,6 +365,35 @@ export default function CompanySearchTab() {
 
   const mapRows = useMemo(() => mapPoints, [mapPoints]);
 
+  // ── High-level filters (client-side, over the current result set). Narrow
+  //    the LIST and the MAP together so the two never disagree. ──────────────
+  const [filters, setFilters] = useState({ country: '', industry: '', savedOnly: false, minShipments: 0 });
+  const filterOptions = useMemo(() => {
+    const countries = new Set();
+    const industries = new Set();
+    for (const r of results) {
+      if (r.country) countries.add(String(r.country));
+      if (r.industry) industries.add(String(r.industry));
+    }
+    return { countries: [...countries].sort(), industries: [...industries].sort() };
+  }, [results]);
+  const filteredResults = useMemo(() => results.filter((r) => {
+    if (filters.country && String(r.country || '') !== filters.country) return false;
+    if (filters.industry && String(r.industry || '') !== filters.industry) return false;
+    if (filters.savedOnly && !r.is_saved) return false;
+    if (filters.minShipments > 0) {
+      const s = Number(r.shipments ?? r.raw?.totalShipments ?? r.raw?.shipments ?? 0);
+      if (!(s >= filters.minShipments)) return false;
+    }
+    return true;
+  }), [results, filters]);
+  const anyFilter = Boolean(filters.country || filters.industry || filters.savedOnly || filters.minShipments > 0);
+  const filteredIds = useMemo(() => new Set(filteredResults.map((r) => r.id)), [filteredResults]);
+  const filteredMapRows = useMemo(
+    () => (anyFilter ? mapRows.filter((m) => filteredIds.has(m.id)) : mapRows),
+    [mapRows, filteredIds, anyFilter],
+  );
+
   const hasSearched = Boolean(submitted) && !searching;
   const hasResults = results.length > 0;
 
@@ -480,7 +510,7 @@ export default function CompanySearchTab() {
         <div className="absolute inset-0">
           <Suspense fallback={<div className="absolute inset-0 bg-slate-100 animate-pulse" />}>
             <ExploreMap
-              rows={mapRows}
+              rows={filteredMapRows}
               colorMode="industry"
               sizeMode="teu"
               selection={[]}
@@ -583,13 +613,20 @@ export default function CompanySearchTab() {
         {hasResults && (panelOpen || !isMobile) ? (
           <div className="absolute z-20 flex flex-col overflow-hidden border-slate-200 bg-white/95 shadow-2xl backdrop-blur-xl inset-x-0 bottom-0 h-[52%] min-h-[180px] rounded-t-2xl border-t sm:inset-y-3 sm:bottom-3 sm:left-3 sm:right-auto sm:h-auto sm:w-[400px] sm:rounded-2xl sm:border">
             <PanelHeader
-              total={results.length}
+              total={filteredResults.length}
               unmapped={unmappedCount}
               onCollapse={() => setPanelOpen(false)}
             />
+            <ResultFilters
+              filters={filters}
+              options={filterOptions}
+              onChange={setFilters}
+              total={results.length}
+              shown={filteredResults.length}
+            />
             <div className="flex-1 min-h-0 overflow-y-auto">
               <ListView
-                rows={results}
+                rows={filteredResults}
                 onRowClick={onRowClick}
                 onSave={onSave}
                 onOpen={onOpenDetails}
@@ -711,6 +748,64 @@ function PanelHeader({ total, unmapped, view, onViewChange, onCollapse }) {
           <ChevronDown size={14} />
         </button>
       </div>
+    </div>
+  );
+}
+
+// High-level filter bar inside the results overlay. Compact facet controls
+// (native selects fit the ~400px overlay) + a Clear + a shown/total count.
+// Narrows the list AND the map together (see filteredResults/filteredMapRows).
+function ResultFilters({ filters, options, onChange, total, shown }) {
+  const set = (patch) => onChange({ ...filters, ...patch });
+  const any = filters.country || filters.industry || filters.savedOnly || filters.minShipments > 0;
+  const sel =
+    'h-7 max-w-[120px] rounded-md border border-slate-200 bg-white px-1.5 text-[11px] text-slate-700 outline-none focus:border-cyan-400';
+  return (
+    <div className="border-b border-slate-100 bg-slate-50/70 px-3 py-2">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+          <SlidersHorizontal size={11} /> Filters
+        </span>
+        {options.countries.length > 1 ? (
+          <select value={filters.country} onChange={(e) => set({ country: e.target.value })} className={sel} title="Country">
+            <option value="">Country</option>
+            {options.countries.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        ) : null}
+        {options.industries.length > 1 ? (
+          <select value={filters.industry} onChange={(e) => set({ industry: e.target.value })} className={sel} title="Industry">
+            <option value="">Industry</option>
+            {options.industries.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        ) : null}
+        <select value={String(filters.minShipments)} onChange={(e) => set({ minShipments: Number(e.target.value) })} className={sel} title="Minimum shipments">
+          <option value="0">Any volume</option>
+          <option value="50">50+ shipments</option>
+          <option value="200">200+ shipments</option>
+          <option value="1000">1,000+ shipments</option>
+        </select>
+        <button
+          type="button"
+          onClick={() => set({ savedOnly: !filters.savedOnly })}
+          className={`inline-flex h-7 items-center gap-1 rounded-md border px-2 text-[11px] font-semibold transition ${
+            filters.savedOnly ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+          }`}
+        >
+          Saved
+        </button>
+        {any ? (
+          <button
+            type="button"
+            onClick={() => onChange({ country: '', industry: '', savedOnly: false, minShipments: 0 })}
+            className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] font-semibold text-slate-500 hover:text-rose-600"
+          >
+            <X size={11} /> Clear
+          </button>
+        ) : null}
+      </div>
+      {any ? (
+        <div className="mt-1 text-[10.5px] text-slate-400">Showing {shown.toLocaleString()} of {total.toLocaleString()}</div>
+      ) : null}
     </div>
   );
 }

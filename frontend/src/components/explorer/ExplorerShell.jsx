@@ -34,7 +34,6 @@
 import PulseExploreTab from '@/features/pulse/explore/PulseExploreTab';
 import CompanySearchTab from './CompanySearchTab';
 import { ExplorerProvider, useExplorer } from './ExplorerContext';
-import ExplorerTabs from './ExplorerTabs';
 
 /**
  * Public entry point. Wrap whatever route mounts the shell in this.
@@ -58,12 +57,14 @@ export default function ExplorerShell({ defaultMode = 'pulse', hideTabs = false 
 
 function ExplorerShellInner({ hideTabs }) {
   const { mode } = useExplorer();
+  // MERGED (2026-09-03): the tab bar is retired — /app/search is now a single
+  // unified Google-Maps search+explore surface (CompanySearchTab). Pulse's
+  // market-browse stays reachable via ?tab=pulse (/app/prospecting) for power
+  // users, just without a competing tab. `hideTabs` is now a no-op kept for
+  // call-site compatibility.
+  void hideTabs;
   return (
     <div className="flex h-full flex-col bg-slate-50">
-      {/* PR 2: both tabs live. hideTabs is retained for /app/prospecting
-          which still mounts the shell without exposing the tab bar
-          during the transition window. */}
-      {!hideTabs ? <ExplorerTabs /> : null}
       <div className="flex-1 min-h-0">
         {mode === 'pulse' ? <PulseExploreTab /> : <CompanySearchTab />}
       </div>
