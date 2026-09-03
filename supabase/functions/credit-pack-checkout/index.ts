@@ -45,6 +45,21 @@ serve(async (req) => {
     return json({ ok: false, error: "Only a workspace admin can purchase credits.", code: "admin_only" }, 403);
   }
 
+  // Fail-closed gate: no credit-pack session is created until the billing-webhook
+  // credit_pack grant branch is deployed (flag credits_purchase_enabled flipped
+  // on). Without this, a purchase could complete with no working grant path.
+  const { data: flag } = await admin
+    .from("lit_feature_flags")
+    .select("global_kill")
+    .eq("key", "credits_purchase_enabled")
+    .maybeSingle();
+  if (!flag || (flag as { global_kill?: boolean }).global_kill !== false) {
+    return json(
+      { ok: false, error: "Credit purchases are launching soon.", code: "billing_not_configured" },
+      200,
+    );
+  }
+
   const body = (await req.json().catch(() => ({}))) as Body;
   const packId = String(body.pack_id ?? "").trim();
   if (!packId) return json({ ok: false, error: "pack_id is required." }, 400);
