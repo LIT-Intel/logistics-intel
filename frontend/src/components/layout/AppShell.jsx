@@ -268,9 +268,9 @@ export default function AppShell({ currentPageName, children }) {
               )
             )}
             <SideLink
-              to="/app/quoting"
+              to="/app/rfp"
               icon={FileText}
-              label={collapsed ? "" : "Quoting"}
+              label={collapsed ? "" : "RFP & Quotes"}
               lockHint={!collapsed && quotingLocked}
             />
           </nav>
@@ -455,7 +455,7 @@ export default function AppShell({ currentPageName, children }) {
               ) : (
                 <SideLink to="#" icon={Mail} label="Campaigns" locked onClick={lockedClick} />
               )}
-              <SideLink to="/app/quoting" icon={FileText} label="Quoting" lockHint={quotingLocked} />
+              <SideLink to="/app/rfp" icon={FileText} label="RFP & Quotes" lockHint={quotingLocked} />
 
               <SectionLabel collapsed={false}>Tools</SectionLabel>
               <SideLink to="/app/widgets" icon={Box} label="Widgets" />

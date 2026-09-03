@@ -95,6 +95,8 @@ export type CompanyCrmPanelProps = {
   onOpenQuote: (quoteId: string) => void;
   /** Start a new quote for this company. */
   onNewQuote: () => void;
+  /** Start a multi-lane RFP for this company. */
+  onNewRfp?: () => void;
   /** Bump when a deal changes so the panel refetches. */
   refreshKey?: number;
 };
@@ -112,6 +114,7 @@ export default function CompanyCrmPanel(props: CompanyCrmPanelProps) {
     onOpenCampaign,
     onOpenQuote,
     onNewQuote,
+    onNewRfp,
     refreshKey,
   } = props;
 
@@ -419,6 +422,7 @@ export default function CompanyCrmPanel(props: CompanyCrmPanelProps) {
             onClick={onStartOutreach}
           />
           <QuickAction Icon={FileText} label="New quote" onClick={onNewQuote} />
+          {onNewRfp && <QuickAction Icon={FileText} label="New RFP" onClick={onNewRfp} />}
           <QuickAction
             Icon={UserPlus}
             label="Enrich contacts"

@@ -121,7 +121,7 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
           locked: !canUseCampaigns,
         },
         { label: "Communication Center", href: "/app/inbox", icon: Inbox },
-        { label: "Quoting", href: "/app/quoting", icon: FileText },
+        { label: "RFP & Quotes", href: "/app/rfp", icon: FileText },
       ],
     },
     // Account links (Settings / Billing / Affiliate) intentionally

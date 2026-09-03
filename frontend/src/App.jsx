@@ -29,8 +29,10 @@ const CampaignAnalyticsPage = lazy(() => import("@/pages/CampaignAnalyticsPage")
 const InboxPage = lazy(() => import("@/pages/InboxPage"));
 const NotificationsInbox = lazy(() => import("@/pages/NotificationsInbox"));
 const EmailCenter = lazy(() => import("@/pages/EmailCenter"));
-// RFPStudio discontinued 2026-06 — see docs/agents/2026-06-02-app-review-roadmap.md.
-// Route below redirects /app/rfp → /app/dashboard so old bookmarks land softly.
+// RFP Workspace v2 is intentionally integrated with the production quoting
+// module. It replaces the retired local-storage RFP Studio without reviving it.
+const RfpDashboard = lazy(() => import("@/features/rfp/RfpDashboard"));
+const RfpWorkspace = lazy(() => import("@/features/rfp/RfpWorkspace"));
 const QuotingDashboard = lazy(() => import("@/features/quoting/QuotingDashboard"));
 const QuoteBuilder = lazy(() => import("@/features/quoting/QuoteBuilder"));
 const QuoteSettings = lazy(() => import("@/features/quoting/QuoteSettings"));
@@ -599,7 +601,39 @@ export default function App() {
           }
         />
 
-        {/* Quoting — replaces the discontinued RFP Studio. */}
+        {/* Integrated RFP & Quotes commercial workspace. */}
+        <Route
+          path="/app/rfp"
+          element={
+            <RequireAuth>
+              <RequirePage page="quoting">
+                <LITPage>
+                  <RfpDashboard />
+                </LITPage>
+              </RequirePage>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/app/rfp/new"
+          element={
+            <RequireAuth>
+              <LITPage>
+                <RfpWorkspace />
+              </LITPage>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/app/rfp/:rfpId"
+          element={
+            <RequireAuth>
+              <LITPage>
+                <RfpWorkspace />
+              </LITPage>
+            </RequireAuth>
+          }
+        />
         <Route
           path="/app/quoting"
           element={
@@ -643,10 +677,7 @@ export default function App() {
           }
         />
 
-        {/* RFP Studio discontinued — soft redirect for stale bookmarks now
-            lands on the Quoting workspace that replaced it. */}
-        <Route path="/app/rfp" element={<Navigate to="/app/quoting" replace />} />
-        <Route path="/app/rfp/*" element={<Navigate to="/app/quoting" replace />} />
+        {/* Retired RFP Studio bookmark lands in the server-backed workspace. */}
         <Route path="/app/rfp-studio" element={<Navigate to="/app/quoting" replace />} />
 
         <Route

@@ -2343,6 +2343,11 @@ function ProfilePanel({ rawId }: { rawId: string }) {
             `/app/quoting/new${companyId ? `?company_id=${companyId}` : ""}`,
           )
         }
+        onNewRfp={() =>
+          navigate(
+            `/app/rfp/new${(bundle?.identity?.id ?? companyId) ? `?company_id=${encodeURIComponent(bundle?.identity?.id ?? companyId)}` : ""}`,
+          )
+        }
         refreshKey={crmRefreshKey}
       />
 

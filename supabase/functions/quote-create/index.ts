@@ -50,6 +50,23 @@ Deno.serve(async (req) => {
   }
   if (!companyId) return json({ ok: false, code: "INVALID_INPUT", message: "company_id or source_company_key required" }, 400);
 
+  // Optional RFP link. Never trust a client-supplied revision number: resolve
+  // the RFP inside the caller's org and assign the next revision server-side.
+  let rfpId: string | null = null;
+  let revisionNo = 1;
+  if (isUuid(body.rfp_id)) {
+    const { data: rfp } = await admin.from("lit_rfps").select("id,company_id")
+      .eq("id", body.rfp_id).eq("org_id", orgId).maybeSingle();
+    if (!rfp) return json({ ok: false, code: "RFP_NOT_FOUND", message: "RFP not found" }, 404);
+    if (rfp.company_id && rfp.company_id !== companyId) {
+      return json({ ok: false, code: "RFP_COMPANY_MISMATCH", message: "RFP and quote company must match" }, 400);
+    }
+    rfpId = rfp.id;
+    const { data: latest } = await admin.from("lit_quotes").select("revision_no")
+      .eq("rfp_id", rfpId).order("revision_no", { ascending: false }).limit(1).maybeSingle();
+    revisionNo = Number(latest?.revision_no ?? 0) + 1;
+  }
+
   const items: LineItem[] = Array.isArray(body.line_items) ? body.line_items : [];
   const totals = computeTotals(items, body.fuel_surcharge_pct);
 
@@ -58,6 +75,7 @@ Deno.serve(async (req) => {
 
   const { data: quote, error } = await admin.from("lit_quotes").insert({
     org_id: orgId, company_id: companyId, contact_id: body.contact_id ?? null,
+    rfp_id: rfpId, revision_no: revisionNo,
     created_by: userId, owner_user_id: body.owner_user_id ?? userId,
     quote_number: numberRow, status: "draft",
     mode: body.mode ?? null, service_type: body.service_type ?? null, incoterms: body.incoterms ?? null,
@@ -84,6 +102,16 @@ Deno.serve(async (req) => {
     await admin.from("lit_quote_line_items").insert(rows);
   }
   await admin.from("lit_quote_events").insert({ quote_id: quote.id, org_id: orgId, company_id: companyId, event_type: "created", created_by: userId });
+
+  if (rfpId) {
+    await admin.from("lit_rfp_events").insert({
+      rfp_id: rfpId,
+      org_id: orgId,
+      event_type: "quote_revision_created",
+      event_payload: { quote_id: quote.id, quote_number: numberRow, revision_no: revisionNo },
+      created_by: userId,
+    });
+  }
 
   log.info("created", { quote_id: quote.id, quote_number: numberRow });
   return json({ ok: true, data: { quote } });
