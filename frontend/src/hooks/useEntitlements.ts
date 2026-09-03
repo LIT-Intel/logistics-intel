@@ -125,6 +125,10 @@ export function useEntitlements() {
   // yet (older edge-fn version still deployed), so callers can always render.
   const credits = entitlements?.credits ?? null;
 
+  // Credits v2: the unified LIT Credits balance (included + purchased). NULL on
+  // older edge-fn versions that don't emit credit_balance yet.
+  const creditBalance = entitlements?.credit_balance ?? null;
+
   // CRM per-seat add-on gate (server-derived). Defaults to false/0 so the
   // Pipeline demo + purchase popup show for anyone without an active add-on,
   // including older edge-fn versions that don't emit these keys yet.
@@ -141,6 +145,7 @@ export function useEntitlements() {
     isPlatformAdmin,
     entitlements,
     credits,
+    creditBalance,
     crmEnabled,
     crmSeats,
   };

@@ -25,6 +25,7 @@ import "@/layout/lit/litLogo.css";
 import NotificationBell from "@/components/layout/NotificationBell";
 import HeaderSearch from "@/components/layout/HeaderSearch";
 import { AdminScopeToggle } from "@/components/layout/AdminScopeToggle";
+import CreditIndicator from "@/components/billing/CreditIndicator";
 
 const BASE_MOBILE_SECTIONS = [
   {
@@ -236,6 +237,10 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
             <HeaderSearch className="hidden w-[280px] md:block" />
 
             <AdminScopeToggle currentOrgName={null} />
+
+            {/* LIT Credits balance chip — opens the Purchase Credits modal.
+                Hidden until the server emits credit_balance (Credits v2). */}
+            <CreditIndicator className="hidden sm:inline-flex" />
 
             <NotificationBell />
 
