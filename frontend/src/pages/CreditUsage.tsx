@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { useEntitlements } from "@/hooks/useEntitlements";
 import { fetchCreditUsageReport } from "@/api/entitlements";
 import PurchaseCreditsModal from "@/components/billing/PurchaseCreditsModal";
+import CreditCostGuide from "@/components/billing/CreditCostGuide";
 
 const FEATURE_LABELS: Record<string, string> = {
   company_unlock: "Company Unlocks",
@@ -260,6 +261,10 @@ export default function CreditUsage() {
         ) : (
           <Empty text="No activity yet." />
         )}
+      </div>
+
+      <div className="mt-4">
+        <CreditCostGuide defaultOpen />
       </div>
 
       {showPurchase ? <PurchaseCreditsModal onClose={() => setShowPurchase(false)} /> : null}

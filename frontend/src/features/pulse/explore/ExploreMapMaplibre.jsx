@@ -77,13 +77,26 @@ function makeTileSource(styleId) {
 }
 
 function makeStyleSpec(styleId) {
-  return {
-    version: 8,
-    sources: { 'base-raster': makeTileSource(styleId) },
-    layers: [
-      { id: 'base-raster-layer', type: 'raster', source: 'base-raster', minzoom: 0, maxzoom: 20 },
-    ],
-  };
+  const sources = { 'base-raster': makeTileSource(styleId) };
+  const layers = [
+    { id: 'base-raster-layer', type: 'raster', source: 'base-raster', minzoom: 0, maxzoom: 20 },
+  ];
+  // Satellite imagery has no place names, so users can't tell what city/state
+  // they're looking at. Overlay Esri's reference layer — transparent tiles with
+  // country/state boundaries + city labels — to make it a readable hybrid view.
+  // Sits above the imagery but below the data bubbles (added later via addLayer).
+  if (styleId === 'alidade_satellite') {
+    sources['sat-reference'] = {
+      type: 'raster',
+      tiles: [
+        'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+      ],
+      tileSize: 256,
+      attribution: 'Labels &copy; Esri',
+    };
+    layers.push({ id: 'sat-reference-layer', type: 'raster', source: 'sat-reference', minzoom: 0, maxzoom: 20 });
+  }
+  return { version: 8, sources, layers };
 }
 
 const US_CENTER = [-98.35, 39.5]; // [lng, lat] for MapLibre

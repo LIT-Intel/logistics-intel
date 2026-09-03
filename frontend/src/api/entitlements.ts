@@ -217,6 +217,27 @@ export async function fetchCreditPackages(): Promise<CreditPack[]> {
   return data as CreditPack[];
 }
 
+/* ── Credit cost matrix (how credits are spent per action) ─────────────── */
+
+export interface CreditCost {
+  feature_key: string;
+  credits: number;
+  label: string;
+  category: string | null;
+}
+
+/** Active credit-cost matrix from lit_credit_feature_costs — what each billable
+ * action costs. Non-sensitive catalog (authenticated SELECT). Sorted by cost. */
+export async function fetchCreditCostMatrix(): Promise<CreditCost[]> {
+  const { data, error } = await supabase
+    .from("lit_credit_feature_costs")
+    .select("feature_key, credits, label, category")
+    .eq("active", true)
+    .order("credits", { ascending: true });
+  if (error || !data) return [];
+  return data as CreditCost[];
+}
+
 /* ── Company unlock (Credits v2 §7 metering) ───────────────────────────── */
 
 export type UnlockResult =
