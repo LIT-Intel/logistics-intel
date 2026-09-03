@@ -142,9 +142,8 @@ export const PLAN_LIMITS: Record<PlanCode, PlanConfig> = {
   starter: {
     code: "starter",
     label: "Starter",
-    // Credits v2 pricing ($150/mo · 300 LIT Credits). Annual price unchanged
-    // until the v2 annual Stripe price is minted (keeps annual display == charge).
-    pricing: { monthly: 150, yearly: 1125, perSeat: false },
+    // Credits v2 pricing: $150/mo · 300 LIT Credits · $1,350/yr (25% off).
+    pricing: { monthly: 150, yearly: 1350, perSeat: false },
     seatRules: { min: 1, max: 1, default: 1 },
     includedSeats: 1,
     features: {
@@ -222,9 +221,8 @@ export const PLAN_LIMITS: Record<PlanCode, PlanConfig> = {
   scale: {
     code: "scale",
     label: "Scale",
-    // Credits v2 pricing ($1,250/mo · 4,000 LIT Credits). Annual price unchanged
-    // until the v2 annual Stripe price is minted (keeps annual display == charge).
-    pricing: { monthly: 1250, yearly: 8991, perSeat: false },
+    // Credits v2 pricing: $1,250/mo · 4,000 LIT Credits · $11,250/yr (25% off).
+    pricing: { monthly: 1250, yearly: 11250, perSeat: false },
     seatRules: { min: 5, max: 5, default: 5 },
     includedSeats: 5,
     features: {
