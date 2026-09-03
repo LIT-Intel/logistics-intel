@@ -104,6 +104,22 @@ serve(async (req) => {
     // RPC may not exist in some environments; ignore.
   }
 
+  // Credits v2 — the unified LIT Credits balance (included + purchased) from the
+  // new credit engine (lit_credit_accounts). Soft-fail so the snapshot never
+  // breaks if the engine isn't present in this environment.
+  let creditBalance: Record<string, unknown> | null = null;
+  try {
+    if (orgId) {
+      const { data: cbData, error: cbErr } = await adminClient.rpc(
+        "lit_credit_balance",
+        { p_org_id: orgId },
+      );
+      if (!cbErr) creditBalance = cbData as Record<string, unknown>;
+    }
+  } catch (_) {
+    // engine not deployed in this env — ignore.
+  }
+
   const { data: paRow } = await adminClient
     .from("platform_admins")
     .select("user_id")
@@ -174,7 +190,7 @@ serve(async (req) => {
 
   const entitlements =
     data && typeof data === "object"
-      ? { ...(data as Record<string, unknown>), credits, crm_enabled: crmEnabled, crm_seats: crmSeats }
+      ? { ...(data as Record<string, unknown>), credits, credit_balance: creditBalance, crm_enabled: crmEnabled, crm_seats: crmSeats }
       : data;
 
   // Fold saved_map_view into the limits/used maps so the UI gate + Billing
