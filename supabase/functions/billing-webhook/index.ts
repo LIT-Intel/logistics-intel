@@ -521,6 +521,42 @@ serve(async (req) => {
           break;
         }
 
+        // ── Credit-pack top-up (one-time payment) ──
+        // Embedded credit-pack checkout carries metadata.kind='credit_pack'.
+        // Grant the credits idempotently — lit_credit_grant_purchase dedups on
+        // the session id, and this webhook already dedups on event.id. Fully
+        // isolated from the plan/CRM flows: only fires for credit_pack sessions.
+        if (session.metadata?.kind === "credit_pack") {
+          const orgId = session.metadata?.org_id ?? null;
+          const credits = Number(session.metadata?.credits ?? 0);
+          const paid = !session.payment_status || session.payment_status === "paid";
+          if (!orgId || !Number.isFinite(credits) || credits <= 0) {
+            log.warn("credit_pack_bad_metadata", { org_id: orgId, credits: session.metadata?.credits });
+            break;
+          }
+          if (!paid) {
+            log.warn("credit_pack_unpaid", { org_id: orgId, payment_status: session.payment_status });
+            break;
+          }
+          const { data: grant, error: grantErr } = await supabase.rpc("lit_credit_grant_purchase", {
+            p_org_id: orgId,
+            p_credits: credits,
+            p_ref: session.id,
+            p_metadata: {
+              pack_id: session.metadata?.pack_id ?? null,
+              stripe_session: session.id,
+              stripe_customer: (session.customer as string) ?? null,
+              source: "credit_pack_checkout",
+            },
+          });
+          if (grantErr) {
+            log.error("credit_pack_grant_failed", { err: grantErr.message, org_id: orgId, credits });
+          } else {
+            log.info("credit_pack_granted", { org_id: orgId, credits, duplicate: (grant as any)?.duplicate ?? false });
+          }
+          break;
+        }
+
         const userId =
           session.metadata?.supabase_user_id ||
           session.client_reference_id;

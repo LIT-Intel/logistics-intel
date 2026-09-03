@@ -55,6 +55,23 @@ export interface CreditUsageSnapshot {
   plan?: string;
 }
 
+/**
+ * Unified LIT Credits balance (Credits v2 engine, lit_credit_balance RPC):
+ * included monthly + non-expiring purchased. NULL when the engine isn't present.
+ */
+export interface CreditBalanceSnapshot {
+  org_id?: string | null;
+  plan?: string | null;
+  unlimited: boolean;
+  included_quota: number;
+  included_used: number;
+  included_remaining: number;
+  purchased_remaining: number;
+  total_remaining: number;
+  cycle_start?: string | null;
+  cycle_end?: string | null;
+}
+
 export interface EntitlementsSnapshot {
   plan: string;
   plan_name?: string;
@@ -69,6 +86,10 @@ export interface EntitlementsSnapshot {
    * deployed in this env (graceful fallback).
    */
   credits?: CreditUsageSnapshot | null;
+  /**
+   * Unified LIT Credits balance (Credits v2). NULL on older edge-fn versions.
+   */
+  credit_balance?: CreditBalanceSnapshot | null;
   /**
    * CRM per-seat add-on gate (derived server-side from lit_crm_subscriptions).
    * crm_enabled = the org has an active/trialing CRM subscription; crm_seats =
@@ -168,6 +189,87 @@ export async function startCrmCheckout(returnUrl?: string): Promise<CrmCheckoutR
     };
   } catch (e) {
     if (e instanceof EdgeFunctionError && e.code === "billing_not_configured") {
+      return { ok: false, notConfigured: true, message: e.message };
+    }
+    throw e;
+  }
+}
+
+/* ── LIT Credits top-up packs (Credits v2) ──────────────────────────────── */
+
+export interface CreditPack {
+  id: string;
+  credits: number;
+  price_usd_cents: number;
+  is_most_popular: boolean;
+  sort_order: number;
+}
+
+/** Active credit packs from lit_credit_packages (non-sensitive catalog; RLS
+ * allows authenticated SELECT). Sorted by sort_order. */
+export async function fetchCreditPackages(): Promise<CreditPack[]> {
+  const { data, error } = await supabase
+    .from("lit_credit_packages")
+    .select("id, credits, price_usd_cents, is_most_popular, sort_order")
+    .eq("active", true)
+    .order("sort_order", { ascending: true });
+  if (error || !data) return [];
+  return data as CreditPack[];
+}
+
+/* ── Credit Usage report (Credit Usage page) ────────────────────────────── */
+
+export interface CreditUsageActivityRow {
+  id: string;
+  user_id: string | null;
+  user_email: string | null;
+  feature: string | null;
+  action: string | null;
+  entity_type: string | null;
+  entity_id: string | null;
+  credits: number;
+  transaction_type: string | null;
+  created_at: string;
+}
+
+export interface CreditUsageReport {
+  ok: boolean;
+  is_admin: boolean;
+  balance: CreditBalanceSnapshot;
+  by_feature: { feature: string; credits: number }[];
+  by_user: { user_id: string; user_email: string | null; credits: number }[];
+  activity: CreditUsageActivityRow[];
+}
+
+/** Full Credit Usage report for a workspace (balance + per-feature + per-user +
+ * recent activity). Membership-gated server-side; per-user data is admin-only. */
+export async function fetchCreditUsageReport(orgId: string): Promise<CreditUsageReport | null> {
+  const { data, error } = await supabase.rpc("lit_credit_usage_report", { p_org_id: orgId });
+  if (error || !data || (data as { ok?: boolean }).ok === false) return null;
+  return data as CreditUsageReport;
+}
+
+export type CreditPackCheckoutResult =
+  | { ok: true; client_secret: string; pack_id: string; credits: number }
+  | { ok: false; notConfigured: true; message: string };
+
+/** Start an embedded one-time Stripe checkout for a credit pack (admin-gated
+ * server-side). Credits are granted by billing-webhook on completion. */
+export async function startCreditPackCheckout(
+  packId: string,
+  returnUrl?: string,
+): Promise<CreditPackCheckoutResult> {
+  try {
+    const res = await invokeEdge<{ ok: true; client_secret: string; pack_id: string; credits: number }>(
+      "credit-pack-checkout",
+      { pack_id: packId, ...(returnUrl ? { return_url: returnUrl } : {}) },
+    );
+    return { ok: true, client_secret: res.client_secret, pack_id: res.pack_id, credits: res.credits };
+  } catch (e) {
+    if (
+      e instanceof EdgeFunctionError &&
+      (e.code === "billing_not_configured" || e.code === "pack_not_found" || e.code === "admin_only")
+    ) {
       return { ok: false, notConfigured: true, message: e.message };
     }
     throw e;

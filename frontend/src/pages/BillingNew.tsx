@@ -40,6 +40,7 @@ import { BillingHeader, ReadOnlyBanner } from '@/components/billing/sections/Bil
 import { BillingAlerts } from '@/components/billing/sections/BillingAlerts';
 import { BillingHero } from '@/components/billing/sections/BillingHero';
 import { BillingUsage, type UsageMeter } from '@/components/billing/sections/BillingUsage';
+import BillingCreditsCard from '@/components/billing/BillingCreditsCard';
 import { BillingPlans } from '@/components/billing/sections/BillingPlans';
 import { PaymentMethodCard } from '@/components/billing/sections/PaymentMethodCard';
 import { EnterpriseCard } from '@/components/billing/sections/EnterpriseCard';
@@ -724,6 +725,12 @@ export default function Billing() {
             primaryDisabled={!canManage && (canonicalState !== 'enterprise' && canonicalState !== 'active')}
             isLoading={isRedirecting || Boolean(actionLoading)}
           />
+        </div>
+
+        {/* LIT Credits balance + purchase (Credits v2). Renders nothing until
+            the server emits credit_balance, so it's a safe additive card. */}
+        <div className="mb-6">
+          <BillingCreditsCard />
         </div>
 
         {/* PURCHASE GRID — pulled up above the informational cards so
