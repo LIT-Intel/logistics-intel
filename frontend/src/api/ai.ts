@@ -96,6 +96,40 @@ export async function normalizeCompany(
   return invokeEdge<NormalizeCompanyResponse>("normalize-company", req);
 }
 
+// ─── company-live-enrich (search detail panel, on-click) ───────────────────
+export interface CompanyLiveEnrich {
+  name: string | null;
+  website: string | null;
+  phone: string | null;
+  street_address: string | null;
+  city: string | null;
+  state: string | null;
+  country: string | null;
+  industry: string | null;
+  estimated_num_employees: number | null;
+  annual_revenue: number | null;
+  annual_revenue_printed: string | null;
+  linkedin_url: string | null;
+  logo_url: string | null;
+  apollo_organization_id: string | null;
+}
+export interface CompanyLiveEnrichResponse {
+  ok: boolean;
+  data: CompanyLiveEnrich | null;
+  enriched: boolean;
+  reason?: string;
+}
+/**
+ * On-demand live company enrichment (Apollo org search — website/phone/HQ/
+ * firmographics) for the search detail panel. Free org data; fired on panel
+ * open. Resolves to { enriched:false } cleanly when Apollo is unset or no match.
+ */
+export async function enrichCompanyLive(
+  req: { name?: string; domain?: string | null },
+): Promise<CompanyLiveEnrichResponse> {
+  return invokeEdge<CompanyLiveEnrichResponse>("company-live-enrich", req);
+}
+
 export async function pulseAiEnrich(
   req: PulseAiEnrichRequest,
 ): Promise<PulseAiEnrichResponse> {

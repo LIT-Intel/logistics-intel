@@ -1,10 +1,13 @@
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   ArrowLeft, Bookmark, BookmarkCheck, ExternalLink, MapPin, Building2, Ship, TrendingUp,
+  Phone, Loader2, Linkedin, Sparkles,
 } from 'lucide-react';
 import { CompanyAvatar } from '@/components/CompanyAvatar';
 import { countryFlag, compactLocation } from '@/lib/explorer/countryFlags';
 import { springs, useReducedMotion } from '@/lib/motion';
+import { enrichCompanyLive } from '@/api/ai';
 
 /**
  * LIT-native company detail panel — the inline "business card" that opens when
@@ -33,6 +36,23 @@ function fmtMoney(n) {
 
 export default function CompanyDetailPanel({ row, onClose, onOpenFull, onSave }) {
   const reduce = useReducedMotion();
+  // Live enrichment (Apollo org data) fired on open — website / phone / HQ /
+  // firmographics. Non-fatal: on failure the panel keeps its shipment-intel view.
+  const [live, setLive] = useState(null);
+  const [enriching, setEnriching] = useState(false);
+  useEffect(() => {
+    if (!row) return undefined;
+    let cancelled = false;
+    setLive(null);
+    setEnriching(true);
+    enrichCompanyLive({ name: row.company_name, domain: row.domain })
+      .then((res) => { if (!cancelled) setLive(res?.enriched ? res.data : null); })
+      .catch(() => { /* non-fatal */ })
+      .finally(() => { if (!cancelled) setEnriching(false); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [row?.id]);
+
   if (!row) return null;
 
   const loc = compactLocation(row.city, row.state, row.country);
@@ -43,7 +63,16 @@ export default function CompanyDetailPanel({ row, onClose, onOpenFull, onSave })
   const topLane = row.top_lane ?? row.top_origin_country ?? raw.top_route_12m ?? null;
   const oppScore = row.opportunity_composite_score != null ? Math.round(row.opportunity_composite_score) : null;
   const lastShip = row.last_shipment ?? raw.last_shipment ?? raw.most_recent_shipment_date ?? null;
-  const website = row.domain || row.website || raw.website || null;
+  // Enriched fields (fall back to whatever the row already had).
+  const website = live?.website || row.domain || row.website || raw.website || null;
+  const phone = live?.phone || null;
+  const addr = live?.street_address
+    ? [live.street_address, live.city, live.state].filter(Boolean).join(', ')
+    : null;
+  const linkedin = live?.linkedin_url || null;
+  const industry = row.industry || live?.industry || null;
+  const revenue = row.revenue ?? live?.annual_revenue ?? null;
+  const headcount = live?.estimated_num_employees ?? null;
 
   // Free Google Maps deep link (no API, no ToS) — user can jump to Google's listing.
   const gmapsQuery = encodeURIComponent(
@@ -54,7 +83,7 @@ export default function CompanyDetailPanel({ row, onClose, onOpenFull, onSave })
   const stats = [
     { label: 'Shipments 12M', value: fmtCompact(shipments), icon: Ship },
     { label: 'Est. TEU 12M', value: fmtCompact(teu), icon: Ship },
-    { label: 'Annual Sales', value: fmtMoney(row.revenue), icon: TrendingUp },
+    { label: 'Annual Sales', value: fmtMoney(revenue), icon: TrendingUp },
     { label: 'Opp Score', value: oppScore != null ? String(oppScore) : '—', icon: TrendingUp },
   ];
 
@@ -81,7 +110,7 @@ export default function CompanyDetailPanel({ row, onClose, onOpenFull, onSave })
       <div className="flex-1 overflow-y-auto">
         {/* Header */}
         <div className="flex items-start gap-3 px-4 pt-4">
-          <CompanyAvatar name={row.company_name} domain={row.domain} size={44} className="shrink-0" />
+          <CompanyAvatar name={row.company_name} domain={website} size={44} className="shrink-0" />
           <div className="min-w-0 flex-1">
             <h2 className="font-display flex items-center gap-1.5 text-[16px] font-bold leading-tight text-slate-900">
               {flag ? <span className="text-[16px] leading-none" aria-hidden>{flag}</span> : null}
@@ -90,12 +119,12 @@ export default function CompanyDetailPanel({ row, onClose, onOpenFull, onSave })
             <div className="font-body mt-0.5 flex items-center gap-1 text-[12px] text-slate-500">
               <MapPin size={11} className="shrink-0" /> <span className="truncate">{loc.text || '—'}</span>
             </div>
-            {(row.industry || row.vertical) ? (
-              <div className="mt-1.5 flex flex-wrap gap-1">
-                {row.industry ? <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10.5px] font-semibold text-blue-700">{row.industry}</span> : null}
-                {row.vertical ? <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10.5px] font-semibold text-slate-600">{row.vertical}</span> : null}
-              </div>
-            ) : null}
+            <div className="mt-1.5 flex flex-wrap items-center gap-1">
+              {industry ? <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10.5px] font-semibold text-blue-700">{industry}</span> : null}
+              {row.vertical ? <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10.5px] font-semibold text-slate-600">{row.vertical}</span> : null}
+              {headcount != null ? <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10.5px] font-semibold text-slate-600">{fmtCompact(headcount)} employees</span> : null}
+              {enriching ? <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-600"><Loader2 size={10} className="animate-spin" /> Enriching</span> : null}
+            </div>
           </div>
         </div>
 
@@ -117,6 +146,38 @@ export default function CompanyDetailPanel({ row, onClose, onOpenFull, onSave })
             <Building2 size={14} /> Open full profile
           </button>
         </div>
+
+        {/* Contact & location — from live Apollo enrichment (on open). */}
+        {(phone || addr || website || linkedin) ? (
+          <div className="mt-4 space-y-1.5 px-4">
+            <div className="font-mono text-[10px] font-bold uppercase tracking-wider text-slate-400">Contact & Location</div>
+            {website ? (
+              <a href={`https://${String(website).replace(/^https?:\/\//, '')}`} target="_blank" rel="noreferrer"
+                 className="flex items-center gap-2 text-[12.5px] font-medium text-blue-600 hover:text-blue-800">
+                <ExternalLink size={13} className="shrink-0" /> <span className="truncate">{String(website).replace(/^https?:\/\//, '')}</span>
+              </a>
+            ) : null}
+            {phone ? (
+              <a href={`tel:${phone}`} className="flex items-center gap-2 text-[12.5px] font-medium text-slate-700 hover:text-slate-900">
+                <Phone size={13} className="shrink-0" /> {phone}
+              </a>
+            ) : null}
+            {addr ? (
+              <div className="flex items-start gap-2 text-[12.5px] text-slate-600">
+                <MapPin size={13} className="mt-0.5 shrink-0" /> <span>{addr}</span>
+              </div>
+            ) : null}
+            {linkedin ? (
+              <a href={linkedin} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-[12.5px] font-medium text-slate-600 hover:text-slate-900">
+                <Linkedin size={13} className="shrink-0" /> LinkedIn
+              </a>
+            ) : null}
+          </div>
+        ) : enriching ? (
+          <div className="mt-4 flex items-center gap-2 px-4 text-[12px] text-slate-400">
+            <Sparkles size={13} className="animate-pulse text-blue-400" /> Harvey is pulling live company data…
+          </div>
+        ) : null}
 
         {/* Shipment intelligence */}
         <div className="mt-4 px-4">
@@ -141,13 +202,7 @@ export default function CompanyDetailPanel({ row, onClose, onOpenFull, onSave })
         </div>
 
         {/* Links */}
-        <div className="mt-4 space-y-1.5 border-t border-slate-100 px-4 py-4">
-          {website ? (
-            <a href={`https://${String(website).replace(/^https?:\/\//, '')}`} target="_blank" rel="noreferrer"
-               className="flex items-center gap-2 text-[12.5px] font-medium text-blue-600 hover:text-blue-800">
-              <ExternalLink size={13} /> {String(website).replace(/^https?:\/\//, '')}
-            </a>
-          ) : null}
+        <div className="mt-4 border-t border-slate-100 px-4 py-4">
           <a href={gmapsUrl} target="_blank" rel="noreferrer"
              className="flex items-center gap-2 text-[12.5px] font-medium text-slate-600 hover:text-slate-900">
             <MapPin size={13} /> View on Google Maps
