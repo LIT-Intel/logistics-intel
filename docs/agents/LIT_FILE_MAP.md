@@ -23,6 +23,21 @@ All agents should consult this before making changes to avoid duplicate work, wr
 - `src/pages/AcceptInvitePage.jsx`
 - any auth callback routes
 
+### RFP & Quotes
+- `frontend/src/features/rfp/RfpDashboard.tsx`
+- `frontend/src/features/rfp/RfpWorkspace.tsx`
+- `frontend/src/features/rfp/components/RfpStatusPill.tsx`
+- `frontend/src/api/rfp.ts`
+- `frontend/src/features/quoting/QuotingDashboard.tsx`
+- `frontend/src/features/quoting/QuoteBuilder.tsx`
+- `frontend/src/api/quoting.ts`
+- `supabase/functions/rfp-company-context/index.ts`
+- `supabase/functions/rfp-list/index.ts`
+- `supabase/functions/rfp-detail/index.ts`
+- `supabase/functions/rfp-save/index.ts`
+- `supabase/functions/rfp-document/index.ts`
+- `supabase/functions/quote-create/index.ts`
+
 ### API / Frontend Data Layer
 - `src/api/functions.js`
 - `src/api/pulse.js`

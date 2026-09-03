@@ -36,6 +36,8 @@ export interface QuoteLineItem {
 
 export interface Quote {
   id: string;
+  rfp_id?: string | null;
+  revision_no?: number;
   org_id: string;
   company_id: string;
   contact_id?: string | null;
@@ -155,6 +157,7 @@ export interface CompanyMetrics {
 }
 
 export interface QuoteCreateInput {
+  rfp_id?: string;
   company_id?: string;
   source_company_key?: string;
   source?: string;

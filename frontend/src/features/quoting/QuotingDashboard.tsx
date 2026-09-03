@@ -151,6 +151,21 @@ export default function QuotingDashboard() {
       {/* Page header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between mb-5">
         <div>
+          <div className="mb-2 inline-flex rounded-[10px] border border-slate-200 bg-white p-1 shadow-sm">
+            <button
+              type="button"
+              onClick={() => navigate("/app/rfp")}
+              className="h-8 rounded-[7px] px-3 text-[12px] font-semibold text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+            >
+              RFPs
+            </button>
+            <button
+              type="button"
+              className="h-8 rounded-[7px] bg-slate-900 px-3 text-[12px] font-semibold text-white"
+            >
+              Quotes
+            </button>
+          </div>
           <h1
             className="text-[20px] sm:text-[23px] font-bold text-slate-900 tracking-[-0.4px]"
             style={{ fontFamily: "'Space Grotesk', sans-serif" }}

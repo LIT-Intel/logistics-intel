@@ -138,6 +138,17 @@ A task is done when:
 - tablet layout is usable
 - no page looks like a different product
 
+### RFP & Quotes
+A task is done when:
+- an RFP is linked to an org-scoped saved company
+- multiple lanes can be added, edited, priced, and removed
+- annual sell, gross profit, and blended margin recalculate from lane inputs
+- observed shipment intelligence is clearly distinguished from customer tender data
+- tender documents are stored privately and opened through short-lived signed URLs
+- quote revisions remain linked to the RFP without overwriting the opportunity
+- create, update, status change, upload, and quote-revision events are auditable
+- desktop and mobile layouts remain usable
+
 ---
 
 ## 8. Website / SEO

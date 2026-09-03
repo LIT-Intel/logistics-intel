@@ -523,7 +523,7 @@ export default function QuoteBuilder() {
         <p className="mt-1 text-[13px] text-slate-500">{loadError}</p>
         <button
           type="button"
-          onClick={() => navigate("/app/quoting")}
+          onClick={() => navigate(savedQuote?.rfp_id ? `/app/rfp/${savedQuote.rfp_id}` : "/app/quoting")}
           className="mt-5 inline-flex h-10 items-center rounded-[10px] border border-slate-200 bg-white px-4 text-[13px] font-semibold text-slate-700 hover:bg-slate-50"
         >
           Back to Quoting
@@ -555,6 +555,11 @@ export default function QuoteBuilder() {
             {quoteNumber && (
               <span className="font-mono text-[12px] font-semibold text-blue-700">
                 {quoteNumber}
+              </span>
+            )}
+            {savedQuote?.rfp_id && (
+              <span className="rounded-full bg-cyan-50 px-2 py-1 text-[10px] font-bold text-cyan-700 ring-1 ring-inset ring-cyan-200">
+                RFP Revision {savedQuote.revision_no ?? 1}
               </span>
             )}
             <QuoteStatusPill status={status} />
