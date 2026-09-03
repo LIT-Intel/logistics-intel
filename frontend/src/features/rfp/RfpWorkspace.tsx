@@ -35,9 +35,11 @@ import {
   type RfpStatus,
 } from "@/api/rfp";
 import { quoting, type QuoteLineItem, type QuoteMode } from "@/api/quoting";
-import { exportQuotePdf } from "@/lib/quoting/exportQuotePdf";
+import { exportRfpProposal } from "@/lib/rfp/exportRfpProposal";
+import { SERVICE_TYPES } from "@/api/rfp";
+import { getCompanyLogoUrl } from "@/lib/logo";
 import LitSectionCard from "@/components/ui/LitSectionCard";
-import { FileDown } from "lucide-react";
+import { FileDown, Ship, Plane, Truck, Container, Boxes } from "lucide-react";
 import QuoteCompanySelector, { type AttachedCompany } from "@/features/quoting/components/QuoteCompanySelector";
 import { RfpStatusPill } from "./components/RfpStatusPill";
 
@@ -117,6 +119,13 @@ export default function RfpWorkspace() {
     if (detail.company) setCompany(toAttachedCompany(detail.company));
   }, [detailQuery.data?.data, rfpId]);
 
+  // Auto-phase the pipeline forward as the workspace fills in (Draft → Intake →
+  // Pricing → Internal review). Advances only; never downgrades and never
+  // touches the manual terminal states (Submitted / Won / Lost / Archived).
+  useEffect(() => {
+    setStatus((prev) => computeAutoPhase(prev, company, dueDate, payload));
+  }, [company, dueDate, payload]);
+
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!company?.company_id) throw new Error("Select a company first.");
@@ -186,9 +195,9 @@ export default function RfpWorkspace() {
     return Math.round((checks.filter(Boolean).length / checks.length) * 100);
   }, [company, title, dueDate, payload.lanes]);
 
-  // Branded proposal PDF — reuses the org's quote branding (logo, company
-  // details, prepared-by/signature from Quote Settings) and renders every lane
-  // with its customer-facing sell rate + annual total. Fully client-side.
+  // True executive RFP proposal PDF (NOT a quote): branded cover, service scope,
+  // lanes-of-service with mode glyphs + service type, LIT shipment intelligence,
+  // and INDICATIVE (not firm) pricing. Fully client-side.
   async function handleExportPdf() {
     if (!payload.lanes.length) { setSaveError("Add at least one lane before exporting a proposal."); return; }
     if (!company?.company_name) { setSaveError("Select a company before exporting."); return; }
@@ -196,42 +205,33 @@ export default function RfpWorkspace() {
     try {
       const settingsRes = await quoting.settingsGet().catch(() => null);
       const s = settingsRes?.data as { org_name?: string; org_logo_url?: string; settings?: Record<string, unknown> } | undefined;
-      const mergedSettings = {
-        ...(s?.settings ?? {}),
-        company_name: (s?.settings?.company_name as string) || s?.org_name || undefined,
-        logo_url: (s?.settings?.logo_url as string) || s?.org_logo_url || undefined,
-      };
-      const first = payload.lanes[0];
-      const lineItems = payload.lanes.map((lane, i) => ({
-        name: `${lane.origin || "Origin"} → ${lane.destination || "Destination"}`,
-        description: [String(lane.mode).toUpperCase(), lane.equipment, lane.commodity, lane.annual_volume ? `${lane.annual_volume.toLocaleString()} / yr` : ""].filter(Boolean).join(" · "),
-        quantity: lane.annual_volume || 1,
-        unit_sell: lane.sell_rate || 0,
-        sort_order: i,
-      })) as unknown as QuoteLineItem[];
-      const syntheticQuote = {
-        quote_number: record?.rfp_number || title || "RFP",
-        created_at: new Date().toISOString(),
-        valid_until: dueDate || first.validity_end || null,
-        mode: first.mode,
-        service_type: payload.lanes.length > 1 ? `Multi-lane ${String(first.mode).toUpperCase()}` : first.mode,
-        origin_city: first.origin, destination_city: first.destination,
-        equipment_type: first.equipment, commodity: first.commodity, incoterms: first.incoterm,
-        currency: payload.summary.currency || "USD",
-        subtotal_sell: totals.annualSell, total_sell: totals.annualSell,
-        accessorial_total: 0, fuel_surcharge_amount: 0,
-        terms_text: payload.summary.service_requirements || null,
-      } as unknown as Parameters<typeof exportQuotePdf>[0];
-      const dataUri = await exportQuotePdf(syntheticQuote, lineItems, {
-        settings: mergedSettings as Parameters<typeof exportQuotePdf>[2]["settings"],
-        companyName: company.company_name,
-        contactName: payload.summary.contact_name || undefined,
+      const dc = detail?.company;
+      const dataUri = await exportRfpProposal({
+        rfpNumber: record?.rfp_number ?? null,
+        title: title || "RFP",
+        dueDate: dueDate || null,
+        company: {
+          name: company.company_name,
+          domain: (dc?.domain ?? company.domain) ?? null,
+          logo_url: dc?.logo_url ?? null,
+          city: dc?.city ?? null,
+          state: dc?.state ?? null,
+          country_code: dc?.country_code ?? null,
+          shipments_12m: dc?.shipments_12m ?? company.shipments_12m ?? null,
+          teu_12m: dc?.teu_12m ?? null,
+          top_route_12m: dc?.top_route_12m ?? (company.top_routes?.[0] ?? null),
+          most_recent_shipment_date: dc?.most_recent_shipment_date ?? null,
+        },
+        payload,
+        settings: (s?.settings ?? null) as Parameters<typeof exportRfpProposal>[0]["settings"],
+        orgName: s?.org_name ?? null,
+        orgLogoUrl: s?.org_logo_url ?? null,
       });
       const blob = await (await fetch(dataUri)).blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${record?.rfp_number || "RFP"}-${company.company_name.replace(/[^\w]+/g, "-")}.pdf`;
+      a.download = `${record?.rfp_number || "RFP"}-${company.company_name.replace(/[^\w]+/g, "-")}-proposal.pdf`;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 4000);
     } catch (err) {
@@ -345,8 +345,8 @@ function LanesTab({ lanes, onChange }: { lanes: RfpLane[]; onChange: (lanes: Rfp
   const update = (index: number, patch: Partial<RfpLane>) => onChange(lanes.map((lane, i) => i === index ? { ...lane, ...patch } : lane));
   return <LitSectionCard title="Lane Workspace" sub="Price every customer lane in one working surface. Annual value and margin update as you type." padded={false}>
     <div className="overflow-x-auto">
-      <table className="min-w-[1420px] w-full border-collapse">
-        <thead><tr className="bg-[#FAFBFC]"><LaneTh>#</LaneTh><LaneTh>Origin</LaneTh><LaneTh>Destination</LaneTh><LaneTh>Mode</LaneTh><LaneTh>Equipment</LaneTh><LaneTh>Annual Volume</LaneTh><LaneTh>Commodity</LaneTh><LaneTh>Transit</LaneTh><LaneTh>Buy Rate</LaneTh><LaneTh>Sell Rate</LaneTh><LaneTh>Margin</LaneTh><LaneTh>Valid To</LaneTh><LaneTh /></tr></thead>
+      <table className="min-w-[1580px] w-full border-collapse">
+        <thead><tr className="bg-[#FAFBFC]"><LaneTh>#</LaneTh><LaneTh>Origin</LaneTh><LaneTh>Destination</LaneTh><LaneTh>Mode</LaneTh><LaneTh>Service</LaneTh><LaneTh>Equipment</LaneTh><LaneTh>Annual Volume</LaneTh><LaneTh>Commodity</LaneTh><LaneTh>Transit</LaneTh><LaneTh>Buy Rate</LaneTh><LaneTh>Sell Rate</LaneTh><LaneTh>Margin</LaneTh><LaneTh>Valid To</LaneTh><LaneTh /></tr></thead>
         <tbody>{lanes.map((lane, index) => {
           const margin = lane.sell_rate - lane.buy_rate;
           const marginPct = lane.sell_rate > 0 ? (margin / lane.sell_rate) * 100 : 0;
@@ -354,7 +354,8 @@ function LanesTab({ lanes, onChange }: { lanes: RfpLane[]; onChange: (lanes: Rfp
             <LaneTd><span className="grid h-7 w-7 place-items-center rounded-lg bg-slate-100 font-mono text-[11px] font-bold text-slate-600">{index + 1}</span></LaneTd>
             <LaneTd><input value={lane.origin} onChange={(event) => update(index, { origin: event.target.value })} placeholder="Shanghai, CN" className={cellInput} /></LaneTd>
             <LaneTd><input value={lane.destination} onChange={(event) => update(index, { destination: event.target.value })} placeholder="Savannah, GA" className={cellInput} /></LaneTd>
-            <LaneTd><select value={lane.mode} onChange={(event) => update(index, { mode: event.target.value as QuoteMode })} className={cellInput}>{MODE_OPTIONS.map((mode) => <option key={mode} value={mode}>{mode.toUpperCase()}</option>)}</select></LaneTd>
+            <LaneTd><div className="flex items-center gap-1.5">{(() => { const Icon = MODE_ICON[lane.mode] ?? Ship; return <Icon className="h-3.5 w-3.5 flex-shrink-0 text-slate-500" />; })()}<select value={lane.mode} onChange={(event) => update(index, { mode: event.target.value as QuoteMode })} className={cellInput}>{MODE_OPTIONS.map((mode) => <option key={mode} value={mode}>{mode.toUpperCase()}</option>)}</select></div></LaneTd>
+            <LaneTd><select value={lane.service_type} onChange={(event) => update(index, { service_type: event.target.value })} className={cellInput} title="Freight service scope">{SERVICE_TYPES.map((s) => <option key={s.value} value={s.value}>{s.short}</option>)}</select></LaneTd>
             <LaneTd><input value={lane.equipment} onChange={(event) => update(index, { equipment: event.target.value })} placeholder="40HC" className={cellInput} /></LaneTd>
             <LaneTd><input type="number" min="0" value={lane.annual_volume || ""} onChange={(event) => update(index, { annual_volume: toNumber(event.target.value) })} className={cellInput + " font-mono"} /></LaneTd>
             <LaneTd><input value={lane.commodity} onChange={(event) => update(index, { commodity: event.target.value })} placeholder="Consumer goods" className={cellInput} /></LaneTd>
@@ -477,6 +478,34 @@ function normalizeClientPayload(value: unknown): RfpPayload {
 }
 function toAttachedCompany(company: RfpCompany): AttachedCompany { return { company_id: company.id, company_name: company.name, domain: company.domain, shipments_12m: company.shipments_12m ?? null, top_routes: company.top_route_12m ? [company.top_route_12m] : null, address: [company.city, company.state, company.country_code].filter(Boolean).join(", ") }; }
 function computeRfpTotals(lanes: RfpLane[]) { const annualBuy = lanes.reduce((sum, lane) => sum + (lane.buy_rate || 0) * (lane.annual_volume || 0), 0); const annualSell = lanes.reduce((sum, lane) => sum + (lane.sell_rate || 0) * (lane.annual_volume || 0), 0); const grossProfit = annualSell - annualBuy; return { annualBuy, annualSell, grossProfit, marginPct: annualSell > 0 ? (grossProfit / annualSell) * 100 : 0 }; }
+
+// Which pipeline stage the RFP is in, derived from workspace completeness.
+// Forward-only + preserves manual terminal states, so filling the workspace
+// walks the pipeline Draft → Intake → Pricing → Internal review automatically.
+const AUTO_ORDER: RfpStatus[] = ["draft", "intake", "pricing", "review"];
+function computeAutoPhase(current: RfpStatus, company: AttachedCompany | null, dueDate: string, payload: RfpPayload): RfpStatus {
+  if (["submitted", "won", "lost", "archived"].includes(current)) return current;
+  const hasCompany = Boolean(company?.company_id);
+  const locatedLanes = payload.lanes.filter((l) => l.origin && l.destination).length;
+  const priced = (l: RfpLane) => (l.sell_rate || 0) > 0 || (l.target_rate || 0) > 0;
+  const anyPriced = payload.lanes.some(priced);
+  const allPriced = payload.lanes.length > 0 && payload.lanes.every(priced);
+  let phase: RfpStatus = "draft";
+  if (hasCompany && locatedLanes > 0) phase = "intake";
+  if (phase === "intake" && anyPriced) phase = "pricing";
+  if (phase === "pricing" && allPriced && Boolean(dueDate)) phase = "review";
+  const idx = Math.max(AUTO_ORDER.indexOf(current), AUTO_ORDER.indexOf(phase));
+  return AUTO_ORDER[idx] ?? phase;
+}
+
+// Per-mode icon for the lane table.
+const MODE_ICON: Record<QuoteMode, typeof Ship> = {
+  ocean: Ship,
+  air: Plane,
+  drayage: Container,
+  ftl: Truck,
+  ltl: Boxes,
+};
 function toNumber(value: string) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : 0; }
 function formatNumber(value?: number | null) { return value == null ? "—" : Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 }); }
 function formatShortDate(value?: string | null) { if (!value) return "—"; const date = new Date(value); return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }); }

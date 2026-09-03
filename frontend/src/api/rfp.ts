@@ -13,11 +13,29 @@ export type RfpStatus =
 
 export type RfpMode = QuoteMode | "multimodal";
 
+// Freight service scope for a lane — how far the rate covers the door/port chain.
+export const SERVICE_TYPES: Array<{ value: string; label: string; short: string }> = [
+  { value: "door_to_door", label: "Door to Door", short: "D2D" },
+  { value: "port_to_port", label: "Port to Port", short: "P2P" },
+  { value: "door_to_port", label: "Door to Port", short: "D2P" },
+  { value: "port_to_door", label: "Port to Door", short: "P2D" },
+  { value: "cy_to_cy", label: "CY to CY", short: "CY/CY" },
+  { value: "ramp_to_ramp", label: "Ramp to Ramp", short: "R2R" },
+];
+export function serviceTypeLabel(v?: string | null): string {
+  return SERVICE_TYPES.find((s) => s.value === v)?.label ?? "Door to Door";
+}
+export function serviceTypeShort(v?: string | null): string {
+  return SERVICE_TYPES.find((s) => s.value === v)?.short ?? "D2D";
+}
+
 export interface RfpLane {
   id: string;
   origin: string;
   destination: string;
   mode: QuoteMode;
+  /** Freight scope — one of SERVICE_TYPES (door_to_door, port_to_port, …). */
+  service_type: string;
   equipment: string;
   frequency: string;
   annual_volume: number;
@@ -197,6 +215,7 @@ export function emptyLane(): RfpLane {
     origin: "",
     destination: "",
     mode: "ocean",
+    service_type: "door_to_door",
     equipment: "40HC",
     frequency: "monthly",
     annual_volume: 0,
