@@ -52,6 +52,7 @@ import { CompanyAvatar } from '@/components/CompanyAvatar';
 import useBreakpoint from '@/hooks/useBreakpoint';
 import { AnimatePresence } from 'framer-motion';
 import CompanyDetailPanel from './CompanyDetailPanel';
+import { enrichCompanyLive } from '@/api/ai';
 // Lazy-loaded so maplibre-gl (~800KB) ships in its own chunk instead of the
 // first-load bundle for this default landing route.
 const ExploreMap = lazy(() => import('@/features/pulse/explore/ExploreMapMaplibre'));
@@ -393,6 +394,31 @@ export default function CompanySearchTab() {
     () => (anyFilter ? mapRows.filter((m) => filteredIds.has(m.id)) : mapRows),
     [mapRows, filteredIds, anyFilter],
   );
+
+  // Resolve missing domains for the result set (free Apollo org search) so the
+  // LIST logos render — the owner's "website on search" ask. Bounded to the top
+  // 10 domainless rows; a ref guards against re-tries so patching results can't
+  // loop. (On-click panel enrichment is separate + fuller.)
+  const domainTried = useRef(new Set());
+  useEffect(() => {
+    const targets = results.filter((r) => !r.domain && !domainTried.current.has(r.id)).slice(0, 10);
+    if (!targets.length) return undefined;
+    targets.forEach((r) => domainTried.current.add(r.id));
+    let cancelled = false;
+    (async () => {
+      await Promise.all(targets.map(async (r) => {
+        try {
+          const res = await enrichCompanyLive({ name: r.company_name });
+          const dom = res?.data?.website;
+          if (!cancelled && dom) {
+            setResults((prev) => prev.map((x) => (x.id === r.id ? { ...x, domain: dom } : x)));
+          }
+        } catch { /* ignore */ }
+      }));
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [results]);
 
   const hasSearched = Boolean(submitted) && !searching;
   const hasResults = results.length > 0;
