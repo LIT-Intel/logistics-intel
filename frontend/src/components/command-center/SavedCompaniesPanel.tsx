@@ -3,6 +3,7 @@ import { Loader2, Building2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { CommandCenterRecord } from "@/types/importyeti";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
+import { springs } from "@/lib/motion";
 
 type SavedCompaniesPanelProps = {
   companies: CommandCenterRecord[];
@@ -134,8 +135,8 @@ export default function SavedCompaniesPanel({
                 key={key}
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.3, delay: index * 0.03 }}
-                whileHover={{ x: 2 }}
+                transition={{ ...springs.default, delay: index * 0.03 }}
+                whileHover={{ x: 2, transition: springs.snappy }}
               >
                 <button
                   type="button"

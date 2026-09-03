@@ -55,6 +55,7 @@ import { DashboardLoadingSkeleton } from "@/components/dashboard/LoadingSkeleton
 import { useDashboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import QuickActionsButton from "@/components/dashboard/QuickActionsButton";
 import { motion } from "framer-motion";
+import { springs } from "@/lib/motion";
 // three.js globe is code-split so it stays out of the dashboard's first paint.
 const GlobeCanvas = lazy(() => import("@/components/GlobeCanvas"));
 import { laneStringToGlobeLane } from "@/lib/laneGlobe";
@@ -954,7 +955,7 @@ export default function Dashboard() {
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35, delay: 0.06 }}
+          transition={{ ...springs.default, delay: 0.06 }}
         >
           <InviteFreightProCard />
         </motion.div>
@@ -963,7 +964,7 @@ export default function Dashboard() {
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35, delay: 0.08 }}
+          transition={{ ...springs.default, delay: 0.08 }}
         >
           <SignalsCard />
         </motion.div>
@@ -975,7 +976,7 @@ export default function Dashboard() {
           <motion.div
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.35, delay: 0.1 }}
+            transition={{ ...springs.default, delay: 0.1 }}
             className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-start"
           >
             <div className="lg:col-span-1">
@@ -1018,7 +1019,7 @@ export default function Dashboard() {
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35, delay: 0.2 }}
+          transition={{ ...springs.default, delay: 0.2 }}
         >
           <WhatMattersNow savedCompanies={savedCompanies} />
         </motion.div>

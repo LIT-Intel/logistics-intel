@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Command, Briefcase, FileText } from 'lucide-react';
+import { springs } from '@/lib/motion';
 
 interface CommandCenterHeaderProps {
   userName?: string;
@@ -21,7 +22,7 @@ export default function CommandCenterHeader({
     <motion.div
       initial={{ opacity: 0, y: -10 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4 }}
+      transition={springs.default}
       className="mb-6"
     >
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -71,7 +72,7 @@ export default function CommandCenterHeader({
               whileTap={{ scale: 0.98 }}
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 0.2 }}
+              transition={{ ...springs.snappy, delay: 0.2 }}
               className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:shadow-md transition-all"
             >
               <Command className="w-4 h-4" />
