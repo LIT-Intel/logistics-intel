@@ -268,8 +268,26 @@ export default function CompanySearchTab() {
       }
       // Enrich with industry / vertical / revenue / opp score so the
       // results table can show the same column set as Pulse Explorer.
-      // Non-blocking — if the overlay errors the search still renders
-      // (those columns just show — instead of values).
+      // PAINT IMMEDIATELY: render the base result set the moment ImportYeti
+      // returns — do NOT hold the spinner through the firmographics overlay
+      // fetch (that made every search feel ~2× longer than the actual lookup).
+      const base = normalizeCompanySearchResults(resp.results, {});
+      setResults(base.rows);
+      setMapPoints(base.mapPoints);
+      setUnmappedCount(base.unmappedCount);
+      setAnalytics(base.analytics);
+      // Auto-open the panel after a result set lands — users explicitly
+      // searched, they want to see the list. If they collapse it again
+      // the choice sticks via localStorage.
+      if (base.rows.length > 0) setPanelOpen(true);
+      if (base.rows.length === 0) {
+        setError(`No companies found matching "${q}". Try a different spelling or a parent brand.`);
+      }
+      setSearching(false); // drop the overlay NOW; enrichment fills in below.
+
+      // BACKGROUND: firmographics overlay (industry / vertical / revenue / opp
+      // score). Merges in when ready without blocking the initial paint. Guard
+      // against a newer search having superseded this one before we apply.
       const keys = resp.results.map((h) => h.key).filter(Boolean);
       // Pass names too so the overlay can bridge V6 firmographics by canonical
       // company name (those rows have no source_company_key to match on).
@@ -277,19 +295,17 @@ export default function CompanySearchTab() {
       for (const h of resp.results) {
         if (h.key) nameByKey[h.key] = h.title || h.name || null;
       }
-      const metadata = await fetchSearchMetadataOverlay(keys, nameByKey).catch(() => ({}));
-      const norm = normalizeCompanySearchResults(resp.results, metadata);
-      setResults(norm.rows);
-      setMapPoints(norm.mapPoints);
-      setUnmappedCount(norm.unmappedCount);
-      setAnalytics(norm.analytics);
-      // Auto-open the panel after a result set lands — users explicitly
-      // searched, they want to see the list. If they collapse it again
-      // the choice sticks via localStorage.
-      if (norm.rows.length > 0) setPanelOpen(true);
-      if (norm.rows.length === 0) {
-        setError(`No companies found matching "${q}". Try a different spelling or a parent brand.`);
-      }
+      fetchSearchMetadataOverlay(keys, nameByKey)
+        .then((metadata) => {
+          if (!metadata || Object.keys(metadata).length === 0) return;
+          if (handledQRef.current !== q) return; // a newer search took over
+          const enriched = normalizeCompanySearchResults(resp.results, metadata);
+          setResults(enriched.rows);
+          setMapPoints(enriched.mapPoints);
+          setUnmappedCount(enriched.unmappedCount);
+          setAnalytics(enriched.analytics);
+        })
+        .catch(() => { /* columns just render without firmographics */ });
     } catch (err) {
       const msg =
         err?.code === 'LIMIT_EXCEEDED'
@@ -561,7 +577,7 @@ export default function CompanySearchTab() {
               <button
                 key={m}
                 type="button"
-                onClick={() => { modeTouched.current = true; setSearchMode(m); if (submitted) runSearch(submitted, { mode: m }); }}
+                onClick={() => { modeTouched.current = true; setSearchMode(m); }}
                 className={`rounded-md px-2.5 py-1 font-semibold transition ${searchMode === m ? 'bg-cyan-500 text-slate-900' : 'text-slate-300 hover:text-white'}`}
               >
                 {label}
@@ -686,12 +702,11 @@ export default function CompanySearchTab() {
                   <span className="absolute inset-0 animate-spin rounded-full border-[3px] border-cyan-100 border-t-cyan-500" />
                   <Sparkles size={18} className="animate-pulse text-cyan-600" />
                 </div>
-                <div className="font-display text-[14px] font-bold text-slate-900">
-                  Cooking up your query…
+                <div className="font-display text-[15px] font-bold tracking-tight text-slate-900">
+                  Hang tight
                 </div>
-                <p className="font-body max-w-[240px] text-[11.5px] leading-snug text-slate-500">
-                  Pulling live shipment intelligence and plotting your matches.
-                  This can take 10–15 seconds.
+                <p className="font-body max-w-[230px] text-[11.5px] leading-snug text-slate-500">
+                  Mapping live shipment intelligence.
                 </p>
                 <div className="flex gap-1">
                   <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-500 [animation-delay:-0.3s]" />
