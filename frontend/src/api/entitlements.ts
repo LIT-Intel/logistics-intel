@@ -273,6 +273,27 @@ export interface CreditUsageActivityRow {
   created_at: string;
 }
 
+export interface CreditUsageMember {
+  user_id: string;
+  user_email: string | null;
+  full_name: string | null;
+  role: string | null;
+  joined_at: string | null;
+}
+export interface CreditUsageFeatureUse {
+  feature: string;
+  uses: number;
+  users: number;
+}
+export interface CreditUsageActivityUse {
+  id: string;
+  feature: string | null;
+  action: string | null;
+  quantity: number;
+  user_email: string | null;
+  created_at: string;
+}
+
 export interface CreditUsageReport {
   ok: boolean;
   is_admin: boolean;
@@ -280,6 +301,11 @@ export interface CreditUsageReport {
   by_feature: { feature: string; credits: number }[];
   by_user: { user_id: string; user_email: string | null; credits: number }[];
   activity: CreditUsageActivityRow[];
+  // v2 additions — real activity from the live usage ledger + full team roster,
+  // so the page is meaningful even when credit metering is dark / unlimited.
+  members?: CreditUsageMember[];
+  feature_usage?: CreditUsageFeatureUse[];
+  usage_activity?: CreditUsageActivityUse[];
 }
 
 /** Full Credit Usage report for a workspace (balance + per-feature + per-user +

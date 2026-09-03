@@ -63,6 +63,21 @@ export default function CreditUsage() {
     [report],
   );
 
+  // v2: real activity from the live usage ledger + full team roster, so the
+  // page stays meaningful when credit metering is dark or the plan is unlimited.
+  const members = report?.members ?? [];
+  const featureUsage = report?.feature_usage ?? [];
+  const usageActivity = report?.usage_activity ?? [];
+  const totalFeatureUses = useMemo(
+    () => featureUsage.reduce((s, f) => s + (f.uses || 0), 0),
+    [featureUsage],
+  );
+  const creditByUser = useMemo(() => {
+    const m = new Map<string, number>();
+    (report?.by_user ?? []).forEach((u) => m.set(u.user_id, u.credits));
+    return m;
+  }, [report]);
+
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 sm:py-8">
       <Link to="/app/billing" className="mb-3 inline-flex items-center gap-1 text-[12px] font-medium text-slate-500 hover:text-slate-700">
@@ -142,9 +157,7 @@ export default function CreditUsage() {
         {isLoading ? (
           <div className="p-10 text-center font-body text-[13px] text-slate-400">Loading usage…</div>
         ) : tab === "features" ? (
-          (report?.by_feature ?? []).length === 0 ? (
-            <Empty text="No credit usage yet this billing period." />
-          ) : (
+          (report?.by_feature ?? []).length > 0 ? (
             <div className="divide-y divide-slate-100">
               {report!.by_feature.map((f, i) => {
                 const p = totalFeatureCredits > 0 ? Math.round((f.credits / totalFeatureCredits) * 100) : 0;
@@ -153,7 +166,7 @@ export default function CreditUsage() {
                     <div className="mb-1.5 flex items-center justify-between">
                       <span className="font-display text-[13px] font-semibold text-slate-800">{labelFor(f.feature)}</span>
                       <span className="font-mono text-[12px] text-slate-500">
-                        {f.credits.toLocaleString()} <span className="text-slate-400">· {p}%</span>
+                        {f.credits.toLocaleString()} <span className="text-slate-400">cr · {p}%</span>
                       </span>
                     </div>
                     <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
@@ -163,22 +176,46 @@ export default function CreditUsage() {
                 );
               })}
             </div>
+          ) : featureUsage.length > 0 ? (
+            // No credit spend yet (metering dark / unlimited) — show real
+            // feature activity from the usage ledger. Counted as uses, not credits.
+            <div>
+              <div className="border-b border-slate-100 px-4 py-2.5 font-body text-[11.5px] text-slate-500">
+                Activity from the last 90 days · counted as uses (credit metering not yet enabled)
+              </div>
+              <div className="divide-y divide-slate-100">
+                {featureUsage.map((f, i) => {
+                  const p = totalFeatureUses > 0 ? Math.round((f.uses / totalFeatureUses) * 100) : 0;
+                  return (
+                    <div key={f.feature} className="px-4 py-3">
+                      <div className="mb-1.5 flex items-center justify-between">
+                        <span className="font-display text-[13px] font-semibold text-slate-800">{labelFor(f.feature)}</span>
+                        <span className="font-mono text-[12px] text-slate-500">
+                          {f.uses.toLocaleString()} <span className="text-slate-400">uses · {p}%</span>
+                        </span>
+                      </div>
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                        <div className="h-full rounded-full" style={{ width: `${p}%`, background: BAR[i % BAR.length] }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <Empty text="No feature usage in the last 90 days." />
           )
         ) : tab === "users" ? (
-          !report?.is_admin && (report?.by_user ?? []).length <= 1 ? (
-            (report?.by_user ?? []).length === 0 ? (
-              <Empty text="No usage recorded for you yet this period." />
-            ) : (
-              <UserTable rows={report!.by_user} />
-            )
-          ) : (report?.by_user ?? []).length === 0 ? (
-            <Empty text="No team usage yet this billing period." />
-          ) : (
+          members.length > 0 ? (
+            // Full team roster — each member with their credit spend this cycle
+            // (0 until metering is live). Never empty for a real workspace.
+            <MemberTable members={members} creditByUser={creditByUser} showCredits={Boolean(report?.is_admin)} />
+          ) : (report?.by_user ?? []).length > 0 ? (
             <UserTable rows={report!.by_user} />
+          ) : (
+            <Empty text="No members found for this workspace." />
           )
-        ) : (report?.activity ?? []).length === 0 ? (
-          <Empty text="No credit activity yet." />
-        ) : (
+        ) : (report?.activity ?? []).length > 0 ? (
           <div className="divide-y divide-slate-100">
             {report!.activity.map((a) => (
               <div key={a.id} className="flex items-center justify-between gap-3 px-4 py-3">
@@ -198,6 +235,30 @@ export default function CreditUsage() {
               </div>
             ))}
           </div>
+        ) : usageActivity.length > 0 ? (
+          // No credit activity yet — show recent raw usage events instead.
+          <div>
+            <div className="border-b border-slate-100 px-4 py-2.5 font-body text-[11.5px] text-slate-500">
+              Recent feature activity · counted as uses (credit metering not yet enabled)
+            </div>
+            <div className="divide-y divide-slate-100">
+              {usageActivity.map((a) => (
+                <div key={a.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                  <div className="min-w-0">
+                    <div className="font-display text-[13px] font-semibold text-slate-800">{labelFor(a.feature)}</div>
+                    <div className="font-body mt-0.5 truncate text-[11.5px] text-slate-500">
+                      {a.user_email || "—"} · {fmtDate(a.created_at)}
+                    </div>
+                  </div>
+                  <div className="font-mono text-[13px] font-semibold text-slate-700">
+                    {a.quantity} <span className="text-[10px] font-normal text-slate-400">use{a.quantity === 1 ? "" : "s"}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <Empty text="No activity yet." />
         )}
       </div>
 
@@ -208,6 +269,41 @@ export default function CreditUsage() {
 
 function Empty({ text }: { text: string }) {
   return <div className="p-10 text-center font-body text-[13px] text-slate-400">{text}</div>;
+}
+
+function MemberTable({
+  members,
+  creditByUser,
+  showCredits,
+}: {
+  members: { user_id: string; user_email: string | null; full_name: string | null; role: string | null }[];
+  creditByUser: Map<string, number>;
+  showCredits: boolean;
+}) {
+  return (
+    <div className="divide-y divide-slate-100">
+      {members.map((m) => {
+        const credits = creditByUser.get(m.user_id) ?? 0;
+        const name = m.full_name || m.user_email || m.user_id;
+        return (
+          <div key={m.user_id} className="flex items-center justify-between gap-3 px-4 py-3">
+            <div className="min-w-0">
+              <div className="font-display truncate text-[13px] font-semibold text-slate-800">{name}</div>
+              <div className="font-body mt-0.5 truncate text-[11.5px] text-slate-500">
+                {m.full_name && m.user_email ? `${m.user_email} · ` : ""}
+                <span className="capitalize">{m.role || "member"}</span>
+              </div>
+            </div>
+            {showCredits ? (
+              <span className="font-mono shrink-0 text-[12.5px] text-slate-600">
+                {credits.toLocaleString()} <span className="text-[10px] text-slate-400">cr</span>
+              </span>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 function UserTable({ rows }: { rows: { user_id: string; user_email: string | null; credits: number }[] }) {
