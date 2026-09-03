@@ -25,7 +25,11 @@ export default function BulkSaveToListModal({ open, onClose, companyIds }) {
     setLoading(true);
     setError(null);
     listPulseLists()
-      .then((rows) => setLists(rows ?? []))
+      .then((res) => {
+        // listPulseLists resolves { ok, rows } (never throws) — unwrap it.
+        if (res?.ok) setLists(res.rows ?? []);
+        else setError(res?.message ?? 'Failed to load lists');
+      })
       .catch((e) => setError(e?.message ?? 'Failed to load lists'))
       .finally(() => setLoading(false));
   }, [open]);
@@ -36,6 +40,10 @@ export default function BulkSaveToListModal({ open, onClose, companyIds }) {
     setBusyListId(listId);
     try {
       const r = await bulkAddCompaniesToList(listId, companyIds);
+      if (!r?.ok) {
+        toast.error(r?.message ?? 'Add failed');
+        return;
+      }
       setDoneListId(listId);
       toast.success(`Added ${r?.added ?? companyIds.length} to list`);
       setTimeout(() => onClose?.(), 800);
@@ -51,8 +59,13 @@ export default function BulkSaveToListModal({ open, onClose, companyIds }) {
     if (!newName.trim()) return;
     setCreating(true);
     try {
+      // createPulseList resolves { ok, list } — unwrap before adding.
       const created = await createPulseList({ name: newName.trim() });
-      await onAdd(created.id);
+      if (!created?.ok || !created.list?.id) {
+        toast.error(created?.message ?? 'Create failed');
+        return;
+      }
+      await onAdd(created.list.id);
       setNewName('');
     } catch (e) {
       toast.error(e?.message ?? 'Create failed');
@@ -67,7 +80,7 @@ export default function BulkSaveToListModal({ open, onClose, companyIds }) {
         <div className="flex items-start justify-between">
           <div>
             <h3 className="font-semibold text-slate-900 flex items-center gap-2">
-              <FolderPlus size={16} className="text-cyan-600" />
+              <FolderPlus size={16} className="text-blue-600" />
               Save {companyIds?.length ?? 0} to list
             </h3>
             <p className="text-sm text-slate-600 mt-1">
@@ -100,7 +113,7 @@ export default function BulkSaveToListModal({ open, onClose, companyIds }) {
                   type="button"
                   onClick={() => onAdd(l.id)}
                   disabled={busyListId === l.id || doneListId === l.id}
-                  className="px-2 py-1 text-xs rounded bg-cyan-50 text-cyan-700 hover:bg-cyan-100 disabled:opacity-50"
+                  className="px-2 py-1 text-xs rounded bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50"
                 >
                   {doneListId === l.id ? (
                     <span className="inline-flex items-center gap-1"><CheckCircle2 size={12} /> Added</span>
@@ -119,12 +132,12 @@ export default function BulkSaveToListModal({ open, onClose, companyIds }) {
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             placeholder="New list name…"
-            className="flex-1 px-2 py-1.5 rounded border border-slate-200 text-sm focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 focus:outline-none"
+            className="flex-1 px-2 py-1.5 rounded border border-slate-200 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
           />
           <button
             type="submit"
             disabled={creating || !newName.trim()}
-            className="px-3 py-1.5 rounded bg-slate-900 text-white text-sm hover:bg-slate-700 disabled:opacity-50 inline-flex items-center gap-1"
+            className="px-3 py-1.5 rounded bg-blue-600 text-white text-sm hover:bg-blue-700 active:scale-[0.97] motion-reduce:active:scale-100 disabled:opacity-50 inline-flex items-center gap-1"
           >
             <Plus size={12} /> Create + add
           </button>
