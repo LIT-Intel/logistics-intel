@@ -491,6 +491,14 @@ export default function CompanySearchTab() {
   const busy = searching || marketLoading;
   const hasSearched = Boolean(submitted) && !busy;
   const hasResults = displayResults.length > 0;
+  const searchActive = Boolean(submitted);
+  // Show the results panel once a search is active — so a 0-result or
+  // couldn't-parse-the-query state renders real feedback instead of a blank
+  // map (the "no results returning" report). Prev gate was hasResults only.
+  const showPanel = (hasResults || searchActive) && (panelOpen || !isMobile);
+  // Market query that produced no usable filters → no fetch ever ran. Distinct
+  // empty copy nudges the user toward a location/industry.
+  const marketNoFilters = searchMode === 'market' && searchActive && !marketEnabled && !busy;
 
   return (
     <div className="flex h-full flex-col bg-slate-50">
@@ -726,27 +734,35 @@ export default function CompanySearchTab() {
 
         {/* Results panel — slides up from bottom. Header always present,
             body only rendered when open. */}
-        {hasResults && (panelOpen || !isMobile) ? (
+        {showPanel ? (
           <div className="absolute z-20 flex flex-col overflow-hidden border-slate-200 bg-white/95 shadow-2xl backdrop-blur-xl inset-x-0 bottom-0 h-[52%] min-h-[180px] rounded-t-2xl border-t sm:inset-y-3 sm:bottom-3 sm:left-3 sm:right-auto sm:h-auto sm:w-[400px] sm:rounded-2xl sm:border">
             <PanelHeader
               total={filteredResults.length}
               unmapped={unmappedCount}
               onCollapse={() => setPanelOpen(false)}
             />
-            <ResultFilters
-              filters={filters}
-              options={filterOptions}
-              onChange={setFilters}
-              total={results.length}
-              shown={filteredResults.length}
-            />
-            <div className="flex-1 min-h-0 overflow-y-auto">
-              <ListView
-                rows={filteredResults}
-                onRowClick={onRowClick}
-                onSave={onSave}
-                onOpen={onOpenDetails}
+            {hasResults ? (
+              <ResultFilters
+                filters={filters}
+                options={filterOptions}
+                onChange={setFilters}
+                total={results.length}
+                shown={filteredResults.length}
               />
+            ) : null}
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              {hasResults ? (
+                <ListView
+                  rows={filteredResults}
+                  onRowClick={onRowClick}
+                  onSave={onSave}
+                  onOpen={onOpenDetails}
+                />
+              ) : busy ? (
+                <PanelBusy />
+              ) : (
+                <PanelEmpty mode={searchMode} query={submitted} noFilters={marketNoFilters} />
+              )}
             </div>
           </div>
         ) : null}
@@ -840,6 +856,41 @@ function Chip({ label, value }) {
       <span className="opacity-70">{label}:</span>
       <span className="font-semibold">{value}</span>
     </span>
+  );
+}
+
+// Loading state inside the results panel (distinct from the full-map "cooking"
+// overlay — this keeps the panel itself from looking empty mid-fetch).
+function PanelBusy() {
+  return (
+    <div className="flex flex-col items-center justify-center gap-2.5 px-6 py-12 text-center">
+      <span className="h-6 w-6 animate-spin rounded-full border-[3px] border-blue-100 border-t-blue-500" />
+      <p className="font-body text-[12px] text-slate-500">Searching the shipment database…</p>
+    </div>
+  );
+}
+
+// Terminal empty state — a search ran and returned nothing, OR a market query
+// couldn't be parsed into a filter. Always gives the user a next step instead
+// of a silent blank map.
+function PanelEmpty({ mode, query, noFilters }) {
+  const isMarket = mode === 'market';
+  return (
+    <div className="flex flex-col items-center justify-center gap-2 px-6 py-12 text-center">
+      <div className="grid h-11 w-11 place-items-center rounded-full bg-slate-100">
+        <SearchIcon size={17} className="text-slate-400" />
+      </div>
+      <p className="font-display text-[13px] font-semibold text-slate-800">
+        {noFilters ? 'Add a place or industry' : 'No companies found'}
+      </p>
+      <p className="font-body max-w-[270px] text-[11.5px] leading-snug text-slate-500">
+        {noFilters
+          ? <>We couldn&apos;t turn &ldquo;{query}&rdquo; into a market filter. Try a location or sector — e.g. &ldquo;manufacturing companies in Texas&rdquo;.</>
+          : isMarket
+            ? <>Nothing matched &ldquo;{query}&rdquo;. Broaden the location or industry, or clear a filter.</>
+            : <>No shipper named &ldquo;{query}&rdquo;. Check the spelling, or switch to <span className="font-semibold text-slate-700">Market</span> to browse by location &amp; industry.</>}
+      </p>
+    </div>
   );
 }
 

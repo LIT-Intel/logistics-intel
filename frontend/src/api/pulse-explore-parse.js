@@ -77,6 +77,37 @@ const STATE_NAME_TO_CODE = {
 };
 const STATE_CODES = new Set(Object.values(STATE_NAME_TO_CODE));
 
+// Keyword → EXACT lit_company_directory.industry value. pulse-explore does an
+// exact `industry IN (...)` match, so these strings MUST match stored values
+// (verified against the live table). This lets the most common industry
+// queries ("manufacturing companies", "retailers in TX") resolve WITHOUT the
+// LLM parse — which is otherwise a single point of failure: when the edge
+// parse is cold/misconfigured, an industry-only query produced zero filters,
+// no fetch fired, and the user saw an empty map with no feedback.
+const INDUSTRY_PHRASES = [
+  [/\b(manufactur\w*|factor(y|ies)|oem)\b/, 'Manufacturing'],
+  [/\b(retail\w*)\b/, 'Retail'],
+  [/\b(construction|builders?|contractors?)\b/, 'Construction'],
+  [/\b(transportation|trucking|carriers?|3pl|logistics)\b/, 'Transportation'],
+  [/\b(energy|utilit(y|ies)|waste|oil and gas|renewables?)\b/, 'Energy, Utilities & Waste'],
+  [/\b(software|saas)\b/, 'Software'],
+  [/\b(agricultur\w*|farming|agri)\b/, 'Agriculture'],
+  [/\b(food products?|food and beverage|beverages?|f&b)\b/, 'Food Products'],
+  [/\b(chemicals?)\b/, 'Chemicals'],
+  [/\b(mining|minerals?)\b/, 'Minerals & Mining'],
+  [/\b(machinery)\b/, 'Machinery'],
+  [/\b(apparel|textiles?|clothing|garments?)\b/, 'Textiles, Apparel and Luxury Goods'],
+  [/\b(automotive|auto parts|auto components?)\b/, 'Auto Components'],
+  [/\b(telecom\w*)\b/, 'Telecommunications'],
+  [/\b(finance|financial|banks?|banking)\b/, 'Finance'],
+  [/\b(real estate)\b/, 'Real Estate'],
+  [/\b(hospitality|hotels?|restaurants?)\b/, 'Hospitality'],
+  [/\b(education|schools?|universit\w*)\b/, 'Education'],
+  [/\b(packaging|containers?)\b/, 'Containers and Packaging'],
+  [/\b(pharma\w*|healthcare|medical|hospitals?|clinics?)\b/, 'Healthcare Services'],
+  [/\b(wholesale|distributors?|distribution)\b/, 'Distributors'],
+];
+
 export function localExtractFilters(query) {
   const q = String(query ?? '').trim();
   if (!q) return {};
@@ -102,7 +133,15 @@ export function localExtractFilters(query) {
   }
   if (states.length) geo.states = states;
 
-  return Object.keys(geo).length ? { geo } : {};
+  const industry = [];
+  for (const [re, val] of INDUSTRY_PHRASES) {
+    if (re.test(lower) && !industry.includes(val)) industry.push(val);
+  }
+
+  const out = {};
+  if (Object.keys(geo).length) out.geo = geo;
+  if (industry.length) out.industry = industry;
+  return out;
 }
 
 // Map the edge fn's parsed payload to the Filters shape that pulse-explore
