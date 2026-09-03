@@ -319,7 +319,15 @@ async function bulkMatch(
   }
   const body: Record<string, unknown> = { details: identifiers };
   if (shared.reveal_personal_emails) body.reveal_personal_emails = true;
-  if (shared.reveal_phone_number) body.reveal_phone_number = true;
+  if (shared.reveal_phone_number) {
+    body.reveal_phone_number = true;
+    // Apollo delivers phone numbers ASYNCHRONOUSLY and needs a webhook_url to
+    // POST them back to (apollo-phone-webhook). Without this the request is
+    // accepted + returns a pending request_id but the number NEVER arrives —
+    // which is why phone reveal appeared to "not work". This is the fix.
+    const base = Deno.env.get("SUPABASE_URL") || "";
+    if (base) body.webhook_url = `${base}/functions/v1/apollo-phone-webhook`;
+  }
   const r = await apolloPost(APOLLO_BULK_MATCH_URL, body);
   if (!r.ok) {
     return { ok: false, status: r.status, people: [], raw: r.raw };
@@ -371,6 +379,10 @@ async function singleMatch(
   }
   if (shared.reveal_phone_number === true) {
     body.reveal_phone_number = true;
+    // Async phone delivery needs a webhook_url (see bulkMatch note) — without it
+    // Apollo never posts the number back to apollo-phone-webhook.
+    const base = Deno.env.get("SUPABASE_URL") || "";
+    if (base) body.webhook_url = `${base}/functions/v1/apollo-phone-webhook`;
   }
   const r = await apolloPost(APOLLO_MATCH_URL, body);
   if (!r.ok) return { ok: false, status: r.status, person: null, raw: r.raw };
