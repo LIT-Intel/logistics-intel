@@ -33,6 +33,9 @@ const EmailCenter = lazy(() => import("@/pages/EmailCenter"));
 // module. It replaces the retired local-storage RFP Studio without reviving it.
 const RfpDashboard = lazy(() => import("@/features/rfp/RfpDashboard"));
 const RfpWorkspace = lazy(() => import("@/features/rfp/RfpWorkspace"));
+// RFP module is on hold — RfpGate shows a "Coming Soon" screen to end users.
+// Owner bypass for continued dev: append ?preview=1 to any /app/rfp URL.
+import { RfpGate } from "@/features/rfp/RfpComingSoon";
 const QuotingDashboard = lazy(() => import("@/features/quoting/QuotingDashboard"));
 const QuoteBuilder = lazy(() => import("@/features/quoting/QuoteBuilder"));
 const QuoteSettings = lazy(() => import("@/features/quoting/QuoteSettings"));
@@ -609,7 +612,9 @@ export default function App() {
             <RequireAuth>
               <RequirePage page="quoting">
                 <LITPage>
-                  <RfpDashboard />
+                  <RfpGate>
+                    <RfpDashboard />
+                  </RfpGate>
                 </LITPage>
               </RequirePage>
             </RequireAuth>
@@ -620,7 +625,9 @@ export default function App() {
           element={
             <RequireAuth>
               <LITPage>
-                <RfpWorkspace />
+                <RfpGate>
+                  <RfpWorkspace />
+                </RfpGate>
               </LITPage>
             </RequireAuth>
           }
@@ -630,7 +637,9 @@ export default function App() {
           element={
             <RequireAuth>
               <LITPage>
-                <RfpWorkspace />
+                <RfpGate>
+                  <RfpWorkspace />
+                </RfpGate>
               </LITPage>
             </RequireAuth>
           }
