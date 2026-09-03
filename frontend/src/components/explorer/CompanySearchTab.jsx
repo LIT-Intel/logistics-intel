@@ -48,6 +48,7 @@ import {
   fetchSearchMetadataOverlay,
 } from '@/lib/api';
 import { CompanyAvatar } from '@/components/CompanyAvatar';
+import useBreakpoint from '@/hooks/useBreakpoint';
 // Lazy-loaded so maplibre-gl (~800KB) ships in its own chunk instead of the
 // first-load bundle for this default landing route.
 const ExploreMap = lazy(() => import('@/features/pulse/explore/ExploreMapMaplibre'));
@@ -106,6 +107,9 @@ export default function CompanySearchTab() {
     return window.matchMedia?.('(min-width: 768px)')?.matches ?? true;
   }, []);
   const [panelOpen, setPanelOpen] = useState(initialPanelOpen);
+  // Desktop (>=640px) shows the results list as a LEFT OVERLAY floating over a
+  // full-bleed map (Google-Maps style). Mobile keeps the bottom drawer.
+  const { isMobile } = useBreakpoint();
 
   // List vs Cards view inside the panel. Default LIST per user spec.
   const initialView = useMemo(() => {
@@ -461,17 +465,12 @@ export default function CompanySearchTab() {
         ) : null}
       </div>
 
-      {/* ── Body: map always visible; collapsible results overlay ── */}
-      <div className="relative flex flex-1 min-h-0 flex-col">
-        {/* Map fills available space. When the panel is open it
-            occupies the top portion; when collapsed the map gets the
-            whole area. The map is ALWAYS mounted so the user sees the
-            world from the moment the page lands. */}
-        <div
-          className={`relative transition-[height] duration-200 ${
-            panelOpen && hasResults ? 'h-[55%] min-h-[160px] sm:h-[58%]' : 'flex-1 min-h-[200px]'
-          }`}
-        >
+      {/* ── Body: FULL-BLEED map with the results list overlaying the left
+          edge (Google-Maps style) on desktop; bottom drawer on mobile. The
+          map never resizes — the list floats over it. ── */}
+      <div className="relative flex-1 min-h-0">
+        {/* Map is ALWAYS full-bleed + always mounted. */}
+        <div className="absolute inset-0">
           <Suspense fallback={<div className="absolute inset-0 bg-slate-100 animate-pulse" />}>
             <ExploreMap
               rows={mapRows}
@@ -557,9 +556,10 @@ export default function CompanySearchTab() {
             />
           ) : null}
 
-          {/* Collapsed-state pill — appears in the lower-right when
-              the panel is closed AND we have results. Click to expand. */}
-          {!panelOpen && hasResults ? (
+          {/* Collapsed-state pill — MOBILE ONLY (desktop always shows the
+              left overlay). Appears when the drawer is closed + we have
+              results. Click to expand. */}
+          {isMobile && !panelOpen && hasResults ? (
             <button
               type="button"
               onClick={() => setPanelOpen(true)}
@@ -573,36 +573,32 @@ export default function CompanySearchTab() {
 
         {/* Results panel — slides up from bottom. Header always present,
             body only rendered when open. */}
-        {hasResults ? (
-          <div className={`flex flex-col min-h-0 border-t border-slate-200 bg-white transition-[height] duration-200 ${panelOpen ? 'h-[45%] min-h-[140px] sm:h-[42%]' : 'h-0'}`}>
-            {panelOpen ? (
-              <>
-                <PanelHeader
-                  total={results.length}
-                  unmapped={unmappedCount}
-                  view={view}
-                  onViewChange={setView}
-                  onCollapse={() => setPanelOpen(false)}
+        {hasResults && (panelOpen || !isMobile) ? (
+          <div className="absolute z-20 flex flex-col overflow-hidden border-slate-200 bg-white/95 shadow-2xl backdrop-blur-xl inset-x-0 bottom-0 h-[52%] min-h-[180px] rounded-t-2xl border-t sm:inset-y-3 sm:bottom-3 sm:left-3 sm:right-auto sm:h-auto sm:w-[400px] sm:rounded-2xl sm:border">
+            <PanelHeader
+              total={results.length}
+              unmapped={unmappedCount}
+              view={view}
+              onViewChange={setView}
+              onCollapse={() => setPanelOpen(false)}
+            />
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              {view === 'list' ? (
+                <ListView
+                  rows={results}
+                  onRowClick={onRowClick}
+                  onSave={onSave}
+                  onOpen={onOpenDetails}
                 />
-                <div className="flex-1 min-h-0 overflow-y-auto">
-                  {view === 'list' ? (
-                    <ListView
-                      rows={results}
-                      onRowClick={onRowClick}
-                      onSave={onSave}
-                      onOpen={onOpenDetails}
-                    />
-                  ) : (
-                    <CardsView
-                      rows={results}
-                      onRowClick={onRowClick}
-                      onSave={onSave}
-                      onOpen={onOpenDetails}
-                    />
-                  )}
-                </div>
-              </>
-            ) : null}
+              ) : (
+                <CardsView
+                  rows={results}
+                  onRowClick={onRowClick}
+                  onSave={onSave}
+                  onOpen={onOpenDetails}
+                />
+              )}
+            </div>
           </div>
         ) : null}
 
@@ -611,7 +607,7 @@ export default function CompanySearchTab() {
             results are NOT live. Prominent amber so a 0-row degraded
             response never masquerades as "no such company exists". */}
         {degraded && !searching ? (
-          <div className="border-t border-amber-200 bg-amber-50 px-4 py-3">
+          <div className="absolute left-3 right-3 top-3 z-30 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 shadow-lg sm:left-[420px]">
             <div className="font-body flex items-start gap-2 text-[12.5px] font-medium text-amber-700">
               <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-600" />
               <span className="flex-1">{degradedBannerMessage(degraded)}</span>
@@ -631,7 +627,7 @@ export default function CompanySearchTab() {
         {/* Error / empty-state banner — sits outside the panel, always
             visible above whatever's open. */}
         {error && !searching ? (
-          <div className="border-t border-slate-200 bg-white px-4 py-3">
+          <div className="absolute left-3 right-3 top-3 z-30 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-lg sm:left-[420px]">
             <div className="font-body inline-flex items-center gap-2 text-[12.5px] text-slate-600">
               <Sparkles size={12} className="text-slate-400" />
               {error}
