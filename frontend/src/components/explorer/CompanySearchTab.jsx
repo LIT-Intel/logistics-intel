@@ -53,7 +53,14 @@ import { CompanyAvatar } from '@/components/CompanyAvatar';
 const ExploreMap = lazy(() => import('@/features/pulse/explore/ExploreMapMaplibre'));
 import { normalizeCompanySearchResults } from '@/lib/explorer/normalizeCompanySearch';
 import { countryFlag, compactLocation } from '@/lib/explorer/countryFlags';
+import { unlockCompany } from '@/api/entitlements';
 import { useExplorer } from './ExplorerContext';
+
+// Credits v2 (§7): once the unlock endpoint tells us metering is OFF we cache it
+// module-side so opening companies stays instant (no per-open round-trip) while
+// the credits_metering_enabled flag is dark. Flips itself the moment metering
+// goes live (the endpoint stops returning metering_off).
+let meteringKnownOff = false;
 
 const PAGE_SIZE = 50;
 const PLACEHOLDER = 'Search by company name, importer, shipper, or supplier';
@@ -269,27 +276,51 @@ export default function CompanySearchTab() {
     }
   }, []);
 
-  const onOpenDetails = useCallback((row, e) => {
+  const onOpenDetails = useCallback(async (row, e) => {
     e?.stopPropagation?.();
-    // Pre-warm the profile snapshot in the BACKGROUND. Never await it — it's a
-    // 10-15s importyeti-proxy call, and awaiting it before navigating made the
-    // click do nothing for many seconds (users hard-refreshed to recover).
-    getIyCompanyProfile({ companyKey: row.source_company_key }).catch(() => {});
-    // Auto-save on open — core behavior from the legacy Search page that the
-    // Explorer rewrite (daf839c) dropped. Skip if already saved; never block
-    // navigation (cap-reached / network errors are non-fatal here).
-    if (!row.is_saved) {
-      saveCompanyToCommandCenter({
-        shipper: row.raw,
-        profile: null,
-        stage: 'prospect',
-        source: 'importyeti',
-      }).catch(() => { /* non-fatal: explicit Save button still available */ });
+
+    const proceed = () => {
+      // Pre-warm the profile snapshot in the BACKGROUND. Never await it — it's a
+      // 10-15s importyeti-proxy call, and awaiting it before navigating made the
+      // click do nothing for many seconds (users hard-refreshed to recover).
+      getIyCompanyProfile({ companyKey: row.source_company_key }).catch(() => {});
+      // Auto-save on open — core behavior from the legacy Search page that the
+      // Explorer rewrite (daf839c) dropped. Skip if already saved; never block
+      // navigation (cap-reached / network errors are non-fatal here).
+      if (!row.is_saved) {
+        saveCompanyToCommandCenter({
+          shipper: row.raw,
+          profile: null,
+          stage: 'prospect',
+          source: 'importyeti',
+        }).catch(() => { /* non-fatal: explicit Save button still available */ });
+      }
+      const slug = encodeURIComponent(row.source_company_key || row.id);
+      // SPA navigation — instant, keeps the React app mounted. The previous
+      // window.location.href did a full document reload, which read as a hang.
+      navigate(`/app/companies/${slug}`);
+    };
+
+    // Credits v2 unlock gate (§7). While credits_metering_enabled is OFF this is
+    // a no-op: the endpoint returns metering_off, we cache it, and every open is
+    // instant. When metering is ON, unlocking a NEW company costs 1 credit at
+    // the workspace level; re-opening an already-owned company is free. On an
+    // insufficient balance we block the open and offer a top-up rather than
+    // silently failing. unlockCompany() fails OPEN on any transient error.
+    if (meteringKnownOff) { proceed(); return; }
+    const res = await unlockCompany({
+      source_company_key: row.source_company_key,
+      company_id: row.company_id ?? null,
+      company_name: row.company_name ?? null,
+    });
+    if (res.ok) {
+      if (res.meteringOff) meteringKnownOff = true;
+      proceed();
+    } else {
+      toast.error(res.message || 'Not enough credits to unlock this company.', {
+        action: { label: 'Add credits', onClick: () => navigate('/app/billing/credits') },
+      });
     }
-    const slug = encodeURIComponent(row.source_company_key || row.id);
-    // SPA navigation — instant, keeps the React app mounted. The previous
-    // window.location.href did a full document reload, which read as a hang.
-    navigate(`/app/companies/${slug}`);
   }, [navigate]);
 
   const onRowClick = useCallback((row) => {
