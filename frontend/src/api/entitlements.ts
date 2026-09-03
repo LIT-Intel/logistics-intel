@@ -217,6 +217,38 @@ export async function fetchCreditPackages(): Promise<CreditPack[]> {
   return data as CreditPack[];
 }
 
+/* ── Credit Usage report (Credit Usage page) ────────────────────────────── */
+
+export interface CreditUsageActivityRow {
+  id: string;
+  user_id: string | null;
+  user_email: string | null;
+  feature: string | null;
+  action: string | null;
+  entity_type: string | null;
+  entity_id: string | null;
+  credits: number;
+  transaction_type: string | null;
+  created_at: string;
+}
+
+export interface CreditUsageReport {
+  ok: boolean;
+  is_admin: boolean;
+  balance: CreditBalanceSnapshot;
+  by_feature: { feature: string; credits: number }[];
+  by_user: { user_id: string; user_email: string | null; credits: number }[];
+  activity: CreditUsageActivityRow[];
+}
+
+/** Full Credit Usage report for a workspace (balance + per-feature + per-user +
+ * recent activity). Membership-gated server-side; per-user data is admin-only. */
+export async function fetchCreditUsageReport(orgId: string): Promise<CreditUsageReport | null> {
+  const { data, error } = await supabase.rpc("lit_credit_usage_report", { p_org_id: orgId });
+  if (error || !data || (data as { ok?: boolean }).ok === false) return null;
+  return data as CreditUsageReport;
+}
+
 export type CreditPackCheckoutResult =
   | { ok: true; client_secret: string; pack_id: string; credits: number }
   | { ok: false; notConfigured: true; message: string };

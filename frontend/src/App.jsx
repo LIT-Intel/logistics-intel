@@ -36,6 +36,7 @@ const QuoteBuilder = lazy(() => import("@/features/quoting/QuoteBuilder"));
 const QuoteSettings = lazy(() => import("@/features/quoting/QuoteSettings"));
 const Settings = lazy(() => import("@/pages/SettingsPage"));
 const Billing = lazy(() => import("@/pages/BillingNew"));
+const CreditUsage = lazy(() => import("@/pages/CreditUsage"));
 const AffiliateDash = lazy(() => import("@/pages/AffiliateDashboard"));
 const AffiliateOnboarding = lazy(() => import("@/pages/AffiliateOnboarding"));
 const PartnersApply = lazy(() => import("@/pages/PartnersApply"));
@@ -702,6 +703,19 @@ export default function App() {
               <RequirePage page="billing">
                 <LITPage>
                   <Billing />
+                </LITPage>
+              </RequirePage>
+            </RequireAuth>
+          }
+        />
+
+        <Route
+          path="/app/billing/credits"
+          element={
+            <RequireAuth>
+              <RequirePage page="billing">
+                <LITPage>
+                  <CreditUsage />
                 </LITPage>
               </RequirePage>
             </RequireAuth>
