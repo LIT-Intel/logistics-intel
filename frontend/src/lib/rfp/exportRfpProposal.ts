@@ -158,9 +158,24 @@ function usd(value: unknown, currency = "USD"): string {
   }
 }
 
+// jsPDF's built-in Helvetica is WinAnsi/Latin-1 only. The MOMENT a string
+// contains a non-Latin-1 char (e.g. the "→" arrow), jsPDF re-encodes the WHOLE
+// string as UTF-16 — which both garbles that char ("!'") AND wide-spaces every
+// letter of the line. So we normalise unicode to Latin-1-safe equivalents and
+// drop anything else before it ever reaches doc.text().
+function winAnsiSafe(s: string): string {
+  return s
+    .replace(/[→➔⟶⇒➙⮕➜⭢]/g, ">") // arrows → ">"
+    .replace(/[‘’‚′]/g, "'") // smart single quotes
+    .replace(/[“”„″]/g, '"') // smart double quotes
+    .replace(/[–—−]/g, "-") // en/em/minus dash → hyphen
+    .replace(/…/g, "...") // ellipsis
+    .replace(/[   ]/g, " ") // non-breaking spaces
+    .replace(/[^\x00-\xFF]/g, ""); // drop anything still outside Latin-1
+}
 function clean(text: unknown): string {
   if (text == null) return "";
-  return String(text).replace(/\s+/g, " ").trim();
+  return winAnsiSafe(String(text)).replace(/\s+/g, " ").trim();
 }
 
 function fmtDate(value: unknown): string {
@@ -614,11 +629,7 @@ function drawLane(doc: jsPDF, lane: RfpLane, currency: string, startY: number): 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12);
   doc.setTextColor(...INK_900);
-  const route = `${clean(lane.origin) || "Origin"}  →  ${clean(lane.destination) || "Destination"}`;
-  for (const line of doc.splitTextToSize(route, textW).slice(0, 2)) {
-    doc.text(line, textX, ty);
-    ty += 15;
-  }
+  ty = drawRoute(doc, clean(lane.origin) || "Origin", clean(lane.destination) || "Destination", textX, ty, textW);
 
   // Metadata line(s).
   const meta: string[] = [];
@@ -673,6 +684,29 @@ function drawLane(doc: jsPDF, lane: RfpLane, currency: string, startY: number): 
   return y + cardH + 10;
 }
 
+// Origin → Destination on one line with a small DRAWN arrow (no unicode glyph,
+// which jsPDF's Helvetica can't encode). Shrinks the font to fit `maxW`.
+function drawRoute(doc: jsPDF, origin: string, dest: string, x: number, y: number, maxW: number): number {
+  const ARROW = 16; // horizontal space reserved for the drawn arrow
+  doc.setFont("helvetica", "bold");
+  let size = 12;
+  const widthAt = (s: number) => { doc.setFontSize(s); return doc.getTextWidth(origin) + ARROW + doc.getTextWidth(dest); };
+  while (widthAt(size) > maxW && size > 8) size -= 0.5;
+  doc.setFontSize(size);
+  doc.setTextColor(...INK_900);
+  const ow = doc.getTextWidth(origin);
+  doc.text(origin, x, y);
+  const ax = x + ow + 5;
+  const ay = y - size * 0.28;
+  doc.setDrawColor(...LIT_CYAN);
+  doc.setLineWidth(1.1);
+  doc.line(ax, ay, ax + 8, ay);
+  doc.setFillColor(...LIT_CYAN);
+  doc.triangle(ax + 7.5, ay - 2.4, ax + 7.5, ay + 2.4, ax + 12, ay, "F");
+  doc.text(dest, ax + ARROW, y);
+  return y + size + 3;
+}
+
 function drawLanes(doc: jsPDF, lanes: RfpLane[], currency: string, startY: number): number {
   let y = ensureRoom(doc, startY, 60);
   y = drawSectionHeader(doc, "Lanes of Service", y);
@@ -722,23 +756,29 @@ function drawIntelligencePanel(doc: jsPDF, company: RfpProposalInput["company"],
   doc.line(MARGIN, y, MARGIN, y + panelH);
 
   const cols = Math.min(items.length, 4);
-  const cellW = (CONTENT_W - 24) / cols;
+  const cellW = (CONTENT_W - 32) / cols;
   const baseX = MARGIN + 16;
-  const statY = y + 26;
+  const topY = y + 20;
   for (let i = 0; i < items.length; i++) {
     const [label, value] = items[i];
-    const col = i % cols;
-    const row = Math.floor(i / cols);
-    const cx = baseX + col * cellW;
-    const cy = statY + row * 40;
+    const cx = baseX + (i % cols) * cellW;
+    // Label on top (small, muted).
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(15);
+    doc.setFontSize(6.5);
+    doc.setTextColor(148, 163, 184);
+    doc.text(label.toUpperCase(), cx, topY);
+    // Value below — big for short numbers; wrapped + smaller for long text so it
+    // never spills into the neighbouring column (the old maxWidth wrapped DOWN
+    // over the label, causing the overlap).
+    doc.setFont("helvetica", "bold");
     doc.setTextColor(...LIT_CYAN);
-    doc.text(value, cx, cy, { maxWidth: cellW - 8 });
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.5);
-    doc.setTextColor(203, 213, 225);
-    doc.text(label.toUpperCase(), cx, cy + 12, { maxWidth: cellW - 8 });
+    if (value.length > 11) {
+      doc.setFontSize(9.5);
+      doc.splitTextToSize(value, cellW - 10).slice(0, 3).forEach((ln: string, k: number) => doc.text(ln, cx, topY + 15 + k * 11));
+    } else {
+      doc.setFontSize(17);
+      doc.text(value, cx, topY + 20);
+    }
   }
 
   // Honest provenance line.
