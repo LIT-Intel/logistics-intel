@@ -187,30 +187,31 @@ export default function RfpWorkspace() {
   if (!isNew && detailQuery.isError) return <ErrorState onBack={() => navigate("/app/rfp")} />;
 
   return (
-    <div className="min-h-full">
-      <div className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur sm:px-6">
+    <div className="min-h-full bg-[#eef3f8]">
+      <div className="sticky top-0 z-30 border-b border-cyan-400/15 bg-[#07111f]/95 px-4 py-3 text-white shadow-[0_10px_30px_rgba(7,17,31,.16)] backdrop-blur sm:px-6">
         <div className="mx-auto flex max-w-[1440px] flex-wrap items-center gap-3">
-          <button type="button" onClick={() => navigate("/app/rfp")} className="grid h-9 w-9 place-items-center rounded-[9px] border border-slate-200 bg-white text-slate-600 hover:bg-slate-50" aria-label="Back to RFPs"><ArrowLeft className="h-[18px] w-[18px]" /></button>
+          <button type="button" onClick={() => navigate("/app/rfp")} className="grid h-9 w-9 place-items-center rounded-[9px] border border-white/15 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white" aria-label="Back to RFPs"><ArrowLeft className="h-[18px] w-[18px]" /></button>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2.5">
-              <h1 className="font-display text-[18px] font-bold tracking-[-0.3px] text-slate-900">{isNew ? "New RFP" : title || "RFP Workspace"}</h1>
-              {record?.rfp_number && <span className="font-mono text-[11.5px] font-semibold text-blue-700">{record.rfp_number}</span>}
+              <h1 className="font-display text-[18px] font-bold tracking-[-0.3px] text-white">{isNew ? "New RFP" : title || "RFP Workspace"}</h1>
+              {record?.rfp_number && <span className="font-mono text-[11.5px] font-semibold text-cyan-300">{record.rfp_number}</span>}
               <RfpStatusPill status={status} />
             </div>
-            <p className="mt-0.5 truncate text-[12px] text-slate-500">{company?.company_name ? `${company.company_name} · ${payload.lanes.length} lane${payload.lanes.length === 1 ? "" : "s"}` : "Select a saved company to begin"}</p>
+            <p className="mt-0.5 truncate text-[12px] text-slate-400">{company?.company_name ? `${company.company_name} · ${payload.lanes.length} lane${payload.lanes.length === 1 ? "" : "s"}` : "Select a saved company to begin"}</p>
           </div>
           <div className="ml-auto flex w-full flex-wrap items-center gap-2 sm:w-auto">
-            {savedAt && !saveMutation.isPending && <span className="hidden items-center gap-1.5 text-[12px] text-slate-400 md:inline-flex"><CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> Saved</span>}
-            <button type="button" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending} className="inline-flex h-[38px] flex-1 items-center justify-center gap-2 rounded-[10px] border border-slate-200 bg-white px-4 font-display text-[13px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 sm:flex-none">{saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save Draft</button>
-            <button type="button" onClick={() => quoteMutation.mutate()} disabled={quoteMutation.isPending || saveMutation.isPending || !payload.lanes.length} className="inline-flex h-[38px] flex-1 items-center justify-center gap-2 rounded-[10px] px-4 font-display text-[13px] font-semibold text-white hover:brightness-105 disabled:opacity-60 sm:flex-none" style={{ background: "linear-gradient(180deg,#2563eb,#1d4ed8)" }}>{quoteMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <FilePlus2 className="h-4 w-4" />} Create Quote Revision</button>
+            {savedAt && !saveMutation.isPending && <span className="hidden items-center gap-1.5 text-[12px] text-slate-400 md:inline-flex"><CheckCircle2 className="h-3.5 w-3.5 text-lime-400" /> Saved</span>}
+            <button type="button" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending} className="inline-flex h-[38px] flex-1 items-center justify-center gap-2 rounded-[10px] border border-white/15 bg-white/5 px-4 font-display text-[13px] font-semibold text-slate-200 hover:bg-white/10 disabled:opacity-60 sm:flex-none">{saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save Draft</button>
+            <button type="button" onClick={() => quoteMutation.mutate()} disabled={quoteMutation.isPending || saveMutation.isPending || !payload.lanes.length} className="inline-flex h-[38px] flex-1 items-center justify-center gap-2 rounded-[10px] bg-cyan-400 px-4 font-display text-[13px] font-bold text-[#07111f] hover:bg-cyan-300 disabled:opacity-60 sm:flex-none">{quoteMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <FilePlus2 className="h-4 w-4" />} Create Quote Revision</button>
           </div>
+          <WorkspacePipeline status={status} onStatus={setStatus} />
         </div>
       </div>
 
       {(saveError || quoteError) && <div className="mx-auto mt-3 max-w-[1440px] px-4 sm:px-6"><div className="rounded-[10px] border border-rose-200 bg-rose-50 px-3 py-2 text-[12.5px] text-rose-700">{saveError || quoteError}</div></div>}
 
       <div className="mx-auto max-w-[1440px] px-4 pt-4 sm:px-6">
-        <div className="flex gap-1 overflow-x-auto rounded-[11px] border border-slate-200 bg-white p-1 shadow-sm">
+        <div className="flex gap-1 overflow-x-auto rounded-[11px] border border-[#17314d] bg-[#0a1728] p-1 shadow-sm">
           {([
             ["overview", "Overview", Building2],
             ["lanes", "Lanes & Pricing", FileSpreadsheet],
@@ -218,7 +219,7 @@ export default function RfpWorkspace() {
             ["documents", "Documents", FolderOpen],
             ["activity", "Activity", Activity],
           ] as Array<[Tab, string, typeof Building2]>).map(([key, label, Icon]) => (
-            <button key={key} type="button" onClick={() => setActiveTab(key)} className={`inline-flex h-9 flex-shrink-0 items-center gap-2 rounded-[8px] px-3 text-[12px] font-semibold transition ${activeTab === key ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"}`}><Icon className="h-3.5 w-3.5" /> {label}</button>
+            <button key={key} type="button" onClick={() => setActiveTab(key)} className={`inline-flex h-9 flex-shrink-0 items-center gap-2 rounded-[8px] px-3 text-[12px] font-semibold transition ${activeTab === key ? "bg-cyan-400 text-[#07111f]" : "text-slate-400 hover:bg-white/5 hover:text-white"}`}><Icon className="h-3.5 w-3.5" /> {label}</button>
           ))}
         </div>
       </div>
@@ -235,6 +236,24 @@ export default function RfpWorkspace() {
       </div>
     </div>
   );
+}
+
+function WorkspacePipeline({ status, onStatus }: { status: RfpStatus; onStatus: (status: RfpStatus) => void }) {
+  const stages = STATUS_OPTIONS.filter((option) => !["lost"].includes(option.value));
+  const current = stages.findIndex((stage) => stage.value === status);
+  return <div className="order-last w-full border-t border-white/10 pt-3">
+    <div className="flex min-w-[650px] items-center overflow-x-auto pb-0.5">
+      {stages.map((stage, index) => {
+        const active = stage.value === status;
+        const complete = current >= 0 && index < current;
+        return <button key={stage.value} type="button" onClick={() => onStatus(stage.value)} className="group flex flex-1 items-center text-left">
+          <span className={`grid h-6 w-6 flex-none place-items-center rounded-full border font-mono text-[9px] font-bold transition ${active ? "border-cyan-300 bg-cyan-300 text-[#07111f] shadow-[0_0_16px_rgba(34,211,238,.35)]" : complete ? "border-lime-400 bg-lime-400 text-[#07111f]" : "border-slate-600 bg-[#0c1a2b] text-slate-400 group-hover:border-cyan-400/60"}`}>{complete ? <CheckCircle2 className="h-3.5 w-3.5" /> : index + 1}</span>
+          <span className={`ml-2 whitespace-nowrap text-[9.5px] font-bold uppercase tracking-[0.08em] ${active ? "text-cyan-300" : complete ? "text-lime-300" : "text-slate-500"}`}>{stage.label}</span>
+          {index < stages.length - 1 && <span className={`mx-3 h-px flex-1 ${complete ? "bg-lime-400/60" : "bg-slate-700"}`} />}
+        </button>;
+      })}
+    </div>
+  </div>;
 }
 
 function OverviewTab({ company, title, status, dueDate, payload, onCompany, onTitle, onStatus, onDueDate, onPayload }: {
@@ -283,7 +302,7 @@ function LanesTab({ lanes, onChange }: { lanes: RfpLane[]; onChange: (lanes: Rfp
             <LaneTd><input type="number" min="0" value={lane.transit_days || ""} onChange={(event) => update(index, { transit_days: toNumber(event.target.value) })} className={cellInput + " font-mono"} /></LaneTd>
             <LaneTd><input type="number" min="0" value={lane.buy_rate || ""} onChange={(event) => update(index, { buy_rate: toNumber(event.target.value) })} className={cellInput + " font-mono"} /></LaneTd>
             <LaneTd><input type="number" min="0" value={lane.sell_rate || ""} onChange={(event) => update(index, { sell_rate: toNumber(event.target.value) })} className={cellInput + " font-mono"} /></LaneTd>
-            <LaneTd><div className={`min-w-[92px] rounded-[8px] px-2 py-2 font-mono text-[11px] font-bold ${margin >= 0 ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>{money.format(margin)}<br /><span className="text-[9.5px] opacity-70">{marginPct.toFixed(1)}%</span></div></LaneTd>
+            <LaneTd><div className={`min-w-[92px] rounded-[8px] px-2 py-2 font-mono text-[11px] font-bold ${margin >= 0 ? "bg-lime-50 text-lime-700" : "bg-rose-50 text-rose-700"}`}>{money.format(margin)}<br /><span className="text-[9.5px] opacity-70">{marginPct.toFixed(1)}%</span></div></LaneTd>
             <LaneTd><input type="date" value={lane.validity_end} onChange={(event) => update(index, { validity_end: event.target.value })} className={cellInput} /></LaneTd>
             <LaneTd><button type="button" disabled={lanes.length === 1} onClick={() => onChange(lanes.filter((_, i) => i !== index))} className="grid h-9 w-9 place-items-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-30"><Trash2 className="h-4 w-4" /></button></LaneTd>
           </tr>;
@@ -362,18 +381,18 @@ function ActivityTab({ detail, navigate }: { detail: RfpDetail | null; navigate:
 
 function CommercialSummary({ totals, readiness, lanes, quotes, onReviewLanes }: { totals: ReturnType<typeof computeRfpTotals>; readiness: number; lanes: RfpLane[]; quotes: RfpDetail["quotes"]; onReviewLanes: () => void }) {
   return <div className="space-y-4 xl:sticky xl:top-[82px] xl:self-start">
-    <section className="overflow-hidden rounded-[14px] border border-slate-200 bg-white shadow-sm">
-      <div className="border-b border-slate-100 bg-gradient-to-r from-slate-950 to-slate-800 px-4 py-3 text-white"><div className="flex items-center gap-2 font-display text-[13px] font-bold"><CircleDollarSign className="h-4 w-4 text-cyan-300" /> Commercial Summary</div></div>
+    <section className="overflow-hidden rounded-[14px] border border-[#17314d] bg-white shadow-[0_14px_34px_rgba(7,17,31,.11)]">
+      <div className="border-b border-cyan-400/15 bg-[#081827] px-4 py-3 text-white"><div className="flex items-center gap-2 font-display text-[13px] font-bold"><CircleDollarSign className="h-4 w-4 text-cyan-300" /> Commercial Command</div></div>
       <div className="space-y-3 p-4">
         <SummaryRow label="Annual buy" value={money.format(totals.annualBuy)} />
         <SummaryRow label="Annual sell" value={money.format(totals.annualSell)} strong />
         <SummaryRow label="Gross profit" value={money.format(totals.grossProfit)} tone={totals.grossProfit >= 0 ? "good" : "bad"} />
-        <div className="border-t border-slate-100 pt-3"><div className="flex items-end justify-between"><div><div className="text-[9.5px] font-bold uppercase tracking-[0.07em] text-slate-400">Blended Margin</div><div className={`mt-1 font-mono text-[26px] font-bold ${totals.marginPct >= 15 ? "text-emerald-600" : totals.marginPct > 0 ? "text-amber-600" : "text-slate-400"}`}>{totals.marginPct.toFixed(1)}%</div></div><span className="text-[11px] text-slate-400">{lanes.length} lanes</span></div></div>
+        <div className="border-t border-slate-100 pt-3"><div className="flex items-end justify-between"><div><div className="text-[9.5px] font-bold uppercase tracking-[0.07em] text-slate-400">Blended Margin</div><div className={`mt-1 font-mono text-[26px] font-bold ${totals.marginPct >= 15 ? "text-lime-600" : totals.marginPct > 0 ? "text-amber-600" : "text-slate-400"}`}>{totals.marginPct.toFixed(1)}%</div></div><span className="text-[11px] text-slate-400">{lanes.length} lanes</span></div></div>
         <button type="button" onClick={onReviewLanes} className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-[9px] border border-slate-200 bg-slate-50 text-[11.5px] font-semibold text-slate-700 hover:bg-slate-100">Review Lane Pricing <ArrowRight className="h-3.5 w-3.5" /></button>
       </div>
     </section>
-    <section className="rounded-[14px] border border-slate-200 bg-white p-4 shadow-sm"><div className="flex items-center justify-between"><div className="font-display text-[12.5px] font-bold text-slate-900">Proposal Readiness</div><span className="font-mono text-[12px] font-bold text-blue-700">{readiness}%</span></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-gradient-to-r from-blue-600 to-cyan-500 transition-all" style={{ width: `${readiness}%` }} /></div><p className="mt-2 text-[10.5px] leading-relaxed text-slate-500">Complete the customer, due date, lane, and sell-rate fields before submission.</p></section>
-    <section className="rounded-[14px] border border-cyan-200 bg-gradient-to-br from-cyan-50 to-blue-50 p-4"><div className="flex items-center gap-2 font-display text-[12.5px] font-bold text-slate-900"><Sparkles className="h-4 w-4 text-cyan-700" /> LIT Advantage</div><p className="mt-2 text-[11.5px] leading-relaxed text-slate-600">Compare the customer's tender with observed shipment activity before committing pricing.</p></section>
+    <section className="rounded-[14px] border border-slate-200 bg-white p-4 shadow-sm"><div className="flex items-center justify-between"><div className="font-display text-[12.5px] font-bold text-slate-900">Proposal Readiness</div><span className="font-mono text-[12px] font-bold text-cyan-700">{readiness}%</span></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-lime-400 transition-all" style={{ width: `${readiness}%` }} /></div><p className="mt-2 text-[10.5px] leading-relaxed text-slate-500">Complete the customer, due date, lane, and sell-rate fields before submission.</p></section>
+    <section className="rounded-[14px] border border-cyan-400/20 bg-[#091827] p-4 text-white"><div className="flex items-center gap-2 font-display text-[12.5px] font-bold"><Sparkles className="h-4 w-4 text-cyan-300" /> LIT Bid Intelligence</div><p className="mt-2 text-[11.5px] leading-relaxed text-slate-400">Compare the customer's tender with observed shipment activity before committing pricing.</p></section>
     {quotes.length > 0 && <section className="rounded-[14px] border border-emerald-200 bg-emerald-50 p-4"><div className="text-[10px] font-bold uppercase tracking-[0.07em] text-emerald-700">Latest Quote</div><div className="mt-1 text-[13px] font-bold text-emerald-900">Revision {quotes[0].revision_no} · {quotes[0].quote_number}</div><div className="mt-1 font-mono text-[12px] text-emerald-800">{money.format(quotes[0].total_sell)}</div></section>}
   </div>;
 }
