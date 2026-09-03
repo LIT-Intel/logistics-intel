@@ -817,6 +817,22 @@ function ProfilePanel({ rawId }: { rawId: string }) {
             await getIyCompanyProfile({ companyKey: bareKey });
             if (cancelled) return;
             cached = await getSavedCompanyShellOnly(companyId);
+            // The snapshot write behind getIyCompanyProfile is eventually
+            // consistent, so a SINGLE immediate re-read frequently still races
+            // it and returns empty — which is exactly why the page looked blank
+            // until a manual hard refresh (by then the write had landed). Poll
+            // the cache-only read a few times so the profile fills in on its own
+            // as soon as the snapshot is durable. Bounded + cancel-aware so a
+            // fast nav away or a genuinely snapshot-less company can't hang it.
+            for (let i = 0; i < 5 && !(cached.profile || cached.routeKpis); i++) {
+              await new Promise((r) => setTimeout(r, 1500));
+              if (cancelled) return;
+              try {
+                cached = await getSavedCompanyShellOnly(companyId);
+              } catch {
+                /* transient — keep polling */
+              }
+            }
           } catch (liveErr) {
             if (cancelled) return;
             console.warn(
