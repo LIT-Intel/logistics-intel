@@ -37,6 +37,8 @@ import { resetOnboarding } from "@/lib/onboardingState";
 import { useInboxStatus } from "@/features/outbound/hooks/useInboxStatus";
 import type { LitEmailAccountRow } from "@/types/lit-outbound";
 import { useAuth } from "@/auth/AuthProvider";
+import { toast } from "sonner";
+import { fetchUserCreditLimits, setUserCreditLimit } from "@/api/entitlements";
 import {
   SCard,
   SectionHeader,
@@ -542,6 +544,11 @@ export function WorkspaceSection(props: {
   // save so the checkboxes reflect the write without a full settings reload.
   const [permOpenKey, setPermOpenKey] = useState<string | null>(null);
   const [permOverrides, setPermOverrides] = useState<Record<string, Record<string, boolean>>>({});
+  // Per-member monthly LIT-credit caps (Credits v2). creditLimits: user_id ->
+  // current cap; creditDrafts: row key -> in-progress input.
+  const [creditLimits, setCreditLimits] = useState<Record<string, number>>({});
+  const [creditDrafts, setCreditDrafts] = useState<Record<string, string>>({});
+  const [creditSavingKey, setCreditSavingKey] = useState<string | null>(null);
   // Account-sharing toggle — optimistic local value after a save so the
   // switch reflects the write without a full settings reload.
   const [sharingLocal, setSharingLocal] = useState<boolean | null>(null);
@@ -556,6 +563,50 @@ export function WorkspaceSection(props: {
   const members = props.members || [];
   const invites = props.invites || [];
   const allowed = isInviteAllowedPlan(props.plan);
+
+  // Credits v2: load per-member monthly caps for admins (RPC is admin-gated).
+  const orgId: string | null = (members[0] as any)?.org_id ?? null;
+  useEffect(() => {
+    if (!orgId || !props.isAdmin) return;
+    let alive = true;
+    fetchUserCreditLimits(orgId).then((m) => { if (alive) setCreditLimits(m); });
+    return () => { alive = false; };
+  }, [orgId, props.isAdmin]);
+
+  const saveCreditLimit = async (
+    row: { key: string; m: any },
+    explicit?: number | null,
+  ) => {
+    if (!orgId) return;
+    let limit: number | null;
+    if (explicit !== undefined) {
+      limit = explicit;
+    } else {
+      const raw = (creditDrafts[row.key] ?? "").trim();
+      if (raw === "") {
+        limit = null;
+      } else {
+        const n = Math.floor(Number(raw));
+        if (!Number.isFinite(n) || n < 0) {
+          toast.error("Enter a whole number (0 or more), or leave blank for no cap.");
+          return;
+        }
+        limit = n;
+      }
+    }
+    setCreditSavingKey(row.key);
+    const ok = await setUserCreditLimit(orgId, row.m.user_id, limit);
+    setCreditSavingKey(null);
+    if (!ok) { toast.error("Couldn't update the credit cap."); return; }
+    setCreditLimits((prev) => {
+      const next = { ...prev };
+      if (limit == null) delete next[row.m.user_id];
+      else next[row.m.user_id] = limit as number;
+      return next;
+    });
+    setCreditDrafts((prev) => { const n = { ...prev }; delete n[row.key]; return n; });
+    toast.success(limit == null ? "Credit cap removed." : `Monthly cap set to ${limit.toLocaleString()} credits.`);
+  };
   const seatLine = props.seatLimit
     ? `${members.length} of ${props.seatLimit} seats used`
     : `${members.length} active members`;
@@ -931,6 +982,40 @@ export function WorkspaceSection(props: {
                           );
                         })}
                       </div>
+                      <div style={{ fontFamily: "Space Grotesk,sans-serif", fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.06em", margin: "16px 0 8px" }}>
+                        Monthly credit cap
+                      </div>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                        <input
+                          type="number"
+                          min={0}
+                          step={1}
+                          placeholder={creditLimits[row.m.user_id] != null ? String(creditLimits[row.m.user_id]) : "No cap"}
+                          value={creditDrafts[row.key] ?? (creditLimits[row.m.user_id] != null ? String(creditLimits[row.m.user_id]) : "")}
+                          onChange={(e) => setCreditDrafts((prev) => ({ ...prev, [row.key]: e.target.value }))}
+                          style={{ ...sInputStyle, width: 150, fontSize: 12.5, padding: "7px 10px" }}
+                        />
+                        <button
+                          onClick={() => saveCreditLimit(row)}
+                          disabled={creditSavingKey === row.key}
+                          style={{ ...sBtnPrimary, padding: "7px 14px", fontSize: 12 }}
+                        >
+                          {creditSavingKey === row.key ? "Saving…" : "Save"}
+                        </button>
+                        {creditLimits[row.m.user_id] != null && (
+                          <button
+                            onClick={() => saveCreditLimit(row, null)}
+                            disabled={creditSavingKey === row.key}
+                            style={{ border: "1px solid #E2E8F0", background: "#fff", color: "#64748B", borderRadius: 8, padding: "7px 12px", fontSize: 12, fontFamily: "DM Sans,sans-serif", cursor: "pointer" }}
+                          >
+                            Remove cap
+                          </button>
+                        )}
+                      </div>
+                      <div style={{ fontFamily: "DM Sans,sans-serif", fontSize: 11, color: "#94A3B8", marginTop: 6 }}>
+                        Max LIT Credits this member can spend per billing cycle. Leave blank for no cap — they draw on the shared workspace balance.
+                      </div>
+
                       <div style={{ fontFamily: "DM Sans,sans-serif", fontSize: 11, color: "#94A3B8", marginTop: 8 }}>
                         Changes apply the next time this member loads the app.
                       </div>

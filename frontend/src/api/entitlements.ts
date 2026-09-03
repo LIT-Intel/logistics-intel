@@ -238,6 +238,31 @@ export async function fetchCreditCostMatrix(): Promise<CreditCost[]> {
   return data as CreditCost[];
 }
 
+/* ── Per-user credit limits (workspace admin control) ──────────────────── */
+
+/** Map of user_id -> monthly credit cap for the org (admin-gated read). Users
+ * without a cap are absent from the map (they draw on the shared org balance). */
+export async function fetchUserCreditLimits(orgId: string): Promise<Record<string, number>> {
+  const { data, error } = await supabase.rpc("lit_credit_user_limits", { p_org_id: orgId });
+  const out: Record<string, number> = {};
+  if (error || !Array.isArray(data)) return out;
+  for (const r of data as { user_id: string; monthly_limit: number | null }[]) {
+    if (r.monthly_limit != null) out[r.user_id] = r.monthly_limit;
+  }
+  return out;
+}
+
+/** Set (or clear, with null) a member's monthly credit cap. Server-side the RPC
+ * is workspace-admin gated. Returns true on success. */
+export async function setUserCreditLimit(orgId: string, userId: string, limit: number | null): Promise<boolean> {
+  const { error } = await supabase.rpc("lit_credit_set_user_limit", {
+    p_org_id: orgId,
+    p_user_id: userId,
+    p_limit: limit,
+  });
+  return !error;
+}
+
 /* ── Company unlock (Credits v2 §7 metering) ───────────────────────────── */
 
 export type UnlockResult =
