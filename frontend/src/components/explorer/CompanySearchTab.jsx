@@ -49,6 +49,8 @@ import {
 } from '@/lib/api';
 import { CompanyAvatar } from '@/components/CompanyAvatar';
 import useBreakpoint from '@/hooks/useBreakpoint';
+import { AnimatePresence } from 'framer-motion';
+import CompanyDetailPanel from './CompanyDetailPanel';
 // Lazy-loaded so maplibre-gl (~800KB) ships in its own chunk instead of the
 // first-load bundle for this default landing route.
 const ExploreMap = lazy(() => import('@/features/pulse/explore/ExploreMapMaplibre'));
@@ -110,6 +112,9 @@ export default function CompanySearchTab() {
   // Desktop (>=640px) shows the results list as a LEFT OVERLAY floating over a
   // full-bleed map (Google-Maps style). Mobile keeps the bottom drawer.
   const { isMobile } = useBreakpoint();
+  // Inline detail panel — clicking a result opens this in place (Google-Maps
+  // behavior) instead of navigating straight to the full profile page.
+  const [detailRow, setDetailRow] = useState(null);
 
   // List vs Cards view inside the panel. Default LIST per user spec.
   const initialView = useMemo(() => {
@@ -339,8 +344,10 @@ export default function CompanySearchTab() {
       countryCode: row.country,
       raw: row.raw,
     });
-    void onOpenDetails(row);
-  }, [setSelectedCompany, onOpenDetails]);
+    // Open the inline detail panel in place — the map keeps context. The full
+    // profile is the deliberate "Open full profile" action inside the panel.
+    setDetailRow(row);
+  }, [setSelectedCompany]);
 
   // Bubble hover — opens the floating preview card. The Map calls this
   // with screen coords so we don't have to query the map again.
@@ -578,29 +585,33 @@ export default function CompanySearchTab() {
             <PanelHeader
               total={results.length}
               unmapped={unmappedCount}
-              view={view}
-              onViewChange={setView}
               onCollapse={() => setPanelOpen(false)}
             />
             <div className="flex-1 min-h-0 overflow-y-auto">
-              {view === 'list' ? (
-                <ListView
-                  rows={results}
-                  onRowClick={onRowClick}
-                  onSave={onSave}
-                  onOpen={onOpenDetails}
-                />
-              ) : (
-                <CardsView
-                  rows={results}
-                  onRowClick={onRowClick}
-                  onSave={onSave}
-                  onOpen={onOpenDetails}
-                />
-              )}
+              <ListView
+                rows={results}
+                onRowClick={onRowClick}
+                onSave={onSave}
+                onOpen={onOpenDetails}
+              />
             </div>
           </div>
         ) : null}
+
+        {/* Inline company detail panel — overlays the list (same position,
+            higher z) when a result/bubble is clicked. Back button returns to
+            the list; "Open full profile" navigates to the full Command Center
+            profile. */}
+        <AnimatePresence>
+          {detailRow ? (
+            <CompanyDetailPanel
+              row={detailRow}
+              onClose={() => setDetailRow(null)}
+              onOpenFull={onOpenDetails}
+              onSave={onSave}
+            />
+          ) : null}
+        </AnimatePresence>
 
         {/* Degraded-search banner — the edge fn fell back to the saved
             local index (quota / kill-switch / upstream outage), so these
@@ -691,26 +702,11 @@ function PanelHeader({ total, unmapped, view, onViewChange, onCollapse }) {
         </span>
       </div>
       <div className="flex items-center gap-1">
-        {/* View toggle: list <-> cards */}
-        <div className="inline-flex items-center rounded-md border border-slate-200 bg-white p-0.5">
-          <ViewToggleBtn
-            active={view === 'list'}
-            onClick={() => onViewChange('list')}
-            icon={<ListIcon size={12} />}
-            label="List"
-          />
-          <ViewToggleBtn
-            active={view === 'cards'}
-            onClick={() => onViewChange('cards')}
-            icon={<LayoutGrid size={12} />}
-            label="Cards"
-          />
-        </div>
         <button
           type="button"
           onClick={onCollapse}
           aria-label="Collapse results"
-          className="rounded-md border border-slate-200 bg-white p-1.5 text-slate-500 transition hover:bg-slate-50 hover:text-slate-900"
+          className="rounded-md border border-slate-200 bg-white p-1.5 text-slate-500 transition hover:bg-slate-50 hover:text-slate-900 sm:hidden"
         >
           <ChevronDown size={14} />
         </button>
@@ -752,22 +748,6 @@ const LIST_GRID_COLS =
 function ListView({ rows, onRowClick, onSave, onOpen }) {
   return (
     <div>
-      {/* Header row — sticks to the top of the scroll area so column
-          labels stay visible while the user scrolls a long result set. */}
-      <div
-        className="sticky top-0 z-10 hidden border-b border-slate-200 bg-slate-50/95 px-3 py-1.5 backdrop-blur lg:grid lg:px-4"
-        style={{ gridTemplateColumns: LIST_GRID_COLS, columnGap: '0.75rem' }}
-      >
-        <HeaderCell>Account</HeaderCell>
-        <HeaderCell>Industry</HeaderCell>
-        <HeaderCell>Vertical</HeaderCell>
-        <HeaderCell>Origin → Destination</HeaderCell>
-        <HeaderCell align="right">TEU 12M</HeaderCell>
-        <HeaderCell align="right">Annual Sales</HeaderCell>
-        <HeaderCell align="right">Opp Score</HeaderCell>
-        <HeaderCell align="right">Actions</HeaderCell>
-      </div>
-
       <div className="divide-y divide-slate-100">
         {rows.map((row) => (
           <ListRow
@@ -819,71 +799,9 @@ function ListRow({ row, onClick, onSave, onOpen }) {
       onClick={onClick}
       className="group cursor-pointer text-left transition hover:bg-cyan-50/50"
     >
-      {/* Desktop / tablet — the aligned grid. */}
-      <div
-        className="hidden items-center px-3 py-2 lg:grid lg:px-4"
-        style={{ gridTemplateColumns: LIST_GRID_COLS, columnGap: '0.75rem' }}
-      >
-        {/* Account = avatar + name + location */}
-        <div className="flex min-w-0 items-center gap-2.5">
-          <CompanyAvatar name={row.company_name} domain={row.domain} size={28} className="shrink-0" />
-          <div className="min-w-0 flex-1">
-            <div className="font-display flex items-center gap-1.5 truncate text-[13px] font-semibold text-slate-900">
-              {loc.flag ? <span className="text-[14px] leading-none" aria-hidden>{loc.flag}</span> : null}
-              <span className="truncate">{row.company_name}</span>
-            </div>
-            <div className="font-body mt-0.5 flex items-center gap-1 truncate text-[10.5px] text-slate-500">
-              <span className="truncate">{loc.text || '—'}</span>
-              {row.is_saved ? (
-                <span className="shrink-0 rounded-sm bg-emerald-100 px-1 text-[8.5px] uppercase text-emerald-700">saved</span>
-              ) : null}
-              {row.mapStatus === 'approximate' ? (
-                <span className="shrink-0 rounded-sm bg-amber-100 px-1 text-[8.5px] uppercase text-amber-700">approx</span>
-              ) : null}
-              {row.mapStatus === 'unmapped' ? (
-                <span className="shrink-0 rounded-sm bg-slate-100 px-1 text-[8.5px] uppercase text-slate-500">no map</span>
-              ) : null}
-            </div>
-            {showProfileHint ? (
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); onOpen(e); }}
-                className="font-body mt-0.5 inline-flex items-center gap-0.5 text-[10px] text-cyan-700 hover:text-cyan-900"
-              >
-                Open profile for full details
-                <ExternalLink size={9} />
-              </button>
-            ) : null}
-          </div>
-        </div>
-
-        <Cell text={row.industry} />
-        <Cell text={row.vertical} />
-        <Cell text={row.top_lane ?? row.top_origin_country} muted />
-        <NumberCell value={row.teu != null ? formatCompact(row.teu) : '—'} />
-        <NumberCell value={annualSales} />
-        <ScoreCell value={oppScore} />
-
-        <div className="flex shrink-0 items-center justify-end gap-1">
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); onSave(e); }}
-            className="font-display rounded-md border border-slate-200 bg-white px-2 py-1 text-[10.5px] font-semibold text-slate-700 transition hover:border-cyan-400 hover:text-cyan-700"
-          >
-            Save
-          </button>
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); onOpen(e); }}
-            className="font-display rounded-md bg-slate-900 px-2 py-1 text-[10.5px] font-semibold text-white transition hover:bg-slate-700"
-          >
-            Open
-          </button>
-        </div>
-      </div>
-
-      {/* Mobile — denser two-row card. */}
-      <div className="flex flex-col gap-1.5 px-3 py-2 lg:hidden">
+      {/* Single compact stacked row — Google-Maps style, fits the narrow
+          left overlay (the old wide 8-col grid overflowed → hidden h-scroll). */}
+      <div className="flex flex-col gap-1.5 px-3 py-2.5">
         <div className="flex items-start gap-2">
           <CompanyAvatar name={row.company_name} domain={row.domain} size={28} className="shrink-0" />
           <div className="min-w-0 flex-1">
