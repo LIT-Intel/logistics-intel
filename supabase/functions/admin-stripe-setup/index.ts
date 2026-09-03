@@ -102,6 +102,7 @@ async function ensurePrice(opts: {
   lookup: string;
   amount: number;
   recurring: boolean;
+  interval?: "month" | "year";
   metadata: Record<string, string>;
 }): Promise<{ price_id: string; product_id: string; reused: boolean }> {
   const existing = await findPriceByLookup(opts.lookup);
@@ -118,7 +119,7 @@ async function ensurePrice(opts: {
     transfer_lookup_key: "true",
     metadata: opts.metadata,
   };
-  if (opts.recurring) params.recurring = { interval: "month" };
+  if (opts.recurring) params.recurring = { interval: opts.interval ?? "month" };
   const price = await stripe("POST", "prices", params, `lit-price-${opts.lookup}`);
   return { price_id: price.id, product_id: productId, reused: false };
 }
@@ -129,14 +130,21 @@ Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
   if (!STRIPE_KEY) return json({ ok: false, error: "stripe_not_configured" }, 503);
 
-  const auth = await requireUser(req);
-  if (auth instanceof Response) return auth;
-  const { data: admin } = await auth.admin
-    .from("platform_admins")
-    .select("user_id")
-    .eq("user_id", auth.user.id)
-    .maybeSingle();
-  if (!admin) return json({ ok: false, error: "forbidden_platform_admin_only" }, 403);
+  // Auth: a platform-admin JWT OR the shared internal-cron secret (so setup can
+  // be driven server-side via net.http_post without a user session). This fn only
+  // creates Stripe catalog objects and returns their ids — it writes no DB rows.
+  const cronSecret = Deno.env.get("LIT_CRON_SECRET");
+  const isCron = Boolean(cronSecret) && req.headers.get("X-Internal-Cron") === cronSecret;
+  if (!isCron) {
+    const auth = await requireUser(req);
+    if (auth instanceof Response) return auth;
+    const { data: admin } = await auth.admin
+      .from("platform_admins")
+      .select("user_id")
+      .eq("user_id", auth.user.id)
+      .maybeSingle();
+    if (!admin) return json({ ok: false, error: "forbidden_platform_admin_only" }, 403);
+  }
 
   // Report the mode so we can confirm LIVE vs TEST before relying on the IDs.
   const mode = STRIPE_KEY.startsWith("sk_live_") ? "live" : STRIPE_KEY.startsWith("sk_test_") ? "test" : "unknown";
@@ -163,6 +171,28 @@ Deno.serve(async (req: Request) => {
       plans[p.code] = { ...r, amount: p.amount, monthly_credits: p.credits, lookup_key: p.lookup };
     }
 
+    // Annual (yearly) recurring prices — 25% off the v2 monthly, on the SAME
+    // products (objKey plan:<code> reuses each plan's existing product). Idempotent
+    // by lookup_key. Enterprise annual is sales-assisted, so it's omitted here.
+    const ANNUAL_PLANS = [
+      { code: "starter", name: "LIT Starter", amount: 135000, credits: "300", lookup: "lit_plan_starter_annual_v2" },
+      { code: "growth", name: "LIT Growth", amount: 449100, credits: "1500", lookup: "lit_plan_growth_annual_v2" },
+      { code: "scale", name: "LIT Scale", amount: 1125000, credits: "4000", lookup: "lit_plan_scale_annual_v2" },
+    ] as const;
+    const plansAnnual: Record<string, unknown> = {};
+    for (const p of ANNUAL_PLANS) {
+      const r = await ensurePrice({
+        objKey: `plan:${p.code}`,
+        productName: p.name,
+        lookup: p.lookup,
+        amount: p.amount,
+        recurring: true,
+        interval: "year",
+        metadata: { lit_plan_code: p.code, lit_monthly_credits: p.credits, lit_model: "credits_v2", lit_interval: "year" },
+      });
+      plansAnnual[p.code] = { ...r, amount: p.amount, lookup_key: p.lookup };
+    }
+
     const packs: Record<string, unknown> = {};
     for (const p of PACKS) {
       const r = await ensurePrice({
@@ -176,7 +206,7 @@ Deno.serve(async (req: Request) => {
       packs[p.key] = { ...r, amount: p.amount, credits: p.credits, lookup_key: p.lookup };
     }
 
-    return json({ ok: true, mode, plans, packs });
+    return json({ ok: true, mode, plans, plans_annual: plansAnnual, packs });
   } catch (err) {
     return json({ ok: false, mode, error: String((err as Error)?.message ?? err) }, 500);
   }
