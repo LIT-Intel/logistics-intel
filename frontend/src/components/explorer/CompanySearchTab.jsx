@@ -53,6 +53,7 @@ import useBreakpoint from '@/hooks/useBreakpoint';
 import { AnimatePresence } from 'framer-motion';
 import CompanyDetailPanel from './CompanyDetailPanel';
 import { enrichCompanyLive } from '@/api/ai';
+import { looksLikeCompanyName } from '@/api/pulse-explore-parse';
 // Lazy-loaded so maplibre-gl (~800KB) ships in its own chunk instead of the
 // first-load bundle for this default landing route.
 const ExploreMap = lazy(() => import('@/features/pulse/explore/ExploreMapMaplibre'));
@@ -76,7 +77,7 @@ const LS_VIEW_KEY = 'lit.explorer.companySearch.view';
 const LS_PANEL_KEY = 'lit.explorer.companySearch.panelOpen';
 
 export default function CompanySearchTab() {
-  const { setSelectedCompany } = useExplorer();
+  const { setSelectedCompany, setMode } = useExplorer();
   const navigate = useNavigate();
   const [sp, setSp] = useSearchParams();
 
@@ -200,6 +201,22 @@ export default function CompanySearchTab() {
   const runSearch = useCallback(async (rawQ, opts) => {
     const q = (rawQ ?? query).trim();
     if (!q) return;
+    // Market / natural-language query ("companies in georgia", "consumer goods
+    // importers in the SE US") — NOT a company name. Company Search does name
+    // lookup only, so hand off to Pulse market-browse (which parses NL → filters
+    // + plots the universe). One search box, routed by intent. The query rides
+    // along in ?q= so Pulse auto-runs it on mount.
+    if (!looksLikeCompanyName(q)) {
+      handledQRef.current = q;
+      setSp((prev) => {
+        const next = new URLSearchParams(prev);
+        next.set('q', q);
+        next.set('tab', 'pulse');
+        return next;
+      });
+      setMode('pulse');
+      return;
+    }
     // Mark this q handled so the ?q= effect (which fires when runSearch writes
     // the param below) doesn't kick off a duplicate search.
     handledQRef.current = q;
@@ -264,7 +281,7 @@ export default function CompanySearchTab() {
     } finally {
       setSearching(false);
     }
-  }, [query, setSp]);
+  }, [query, setSp, setMode]);
 
   const onSubmit = useCallback((e) => {
     e?.preventDefault?.();

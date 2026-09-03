@@ -4,6 +4,7 @@
 // the bottom so the user can re-claim map space at any time.
 
 import { useState, useCallback, useEffect, useMemo, useRef, lazy, Suspense } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Compass, Sparkles, ChevronDown, ChevronUp, Table2, Lasso, BoxSelect, Maximize2, Minimize2 } from 'lucide-react';
 import { useExploreState } from './useExploreState';
@@ -301,6 +302,22 @@ export default function PulseExploreTab() {
   }, [setFilters, resolveLocalFilters]);
 
   const onSubmitSearch = useCallback(() => doSearch(query), [doSearch, query]);
+
+  // Seed from ?q= — the unified Company Search box hands off market / NL queries
+  // ("companies in georgia") here via ?tab=pulse&q=… . Run it once on mount so
+  // the handed-off query executes without the user re-typing.
+  const [sp] = useSearchParams();
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (seededRef.current) return;
+    const q = (sp.get('q') ?? '').trim();
+    if (q) {
+      seededRef.current = true;
+      setQuery(q);
+      doSearch(q);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sp, doSearch]);
 
   const onSelectAllInView = useCallback(() => {
     // Read the LIVE viewport from the map ref — relying on the cached
