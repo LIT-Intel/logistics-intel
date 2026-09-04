@@ -669,6 +669,14 @@ export default function CompanySearchTab() {
           <span className="hidden text-[10.5px] text-cyan-200/60 sm:inline">
             {searchMode === 'market' ? 'Browse companies by location / industry' : 'Find a company by name'}
           </span>
+          <button
+            type="button"
+            onClick={() => navigate('/app/lists')}
+            title="Your saved lists + lists assigned to you"
+            className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/10 px-2.5 py-1 text-[11.5px] font-semibold text-slate-100 transition hover:bg-white/20 hover:text-white active:scale-[0.97] motion-reduce:active:scale-100"
+          >
+            <FolderPlus size={13} /> Library
+          </button>
         </div>
 
         {/* Analytics ribbon */}
