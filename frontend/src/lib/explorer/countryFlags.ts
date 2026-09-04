@@ -21,6 +21,43 @@ export function countryFlag(code: string | null | undefined): string {
   return String.fromCodePoint(a, b);
 }
 
+// Full country NAME → ISO-2. Market/directory rows store the full name
+// ("United States", "China") while ImportYeti rows store 2-letter codes — the
+// old code only understood codes, so full-name rows resolved to garbage (the
+// first two letters, e.g. "UN") and their flag 404'd. Covers the countries that
+// actually show up in freight data; unknowns fall through to code detection.
+const COUNTRY_NAME_TO_ISO: Record<string, string> = {
+  'UNITED STATES': 'US', 'UNITED STATES OF AMERICA': 'US', USA: 'US', 'U.S.A': 'US', 'U.S': 'US', US: 'US', AMERICA: 'US',
+  CANADA: 'CA', MEXICO: 'MX', 'UNITED KINGDOM': 'GB', UK: 'GB', 'GREAT BRITAIN': 'GB', ENGLAND: 'GB',
+  CHINA: 'CN', "CHINA (MAINLAND)": 'CN', 'HONG KONG': 'HK', TAIWAN: 'TW', JAPAN: 'JP', 'SOUTH KOREA': 'KR', KOREA: 'KR',
+  INDIA: 'IN', VIETNAM: 'VN', 'VIET NAM': 'VN', THAILAND: 'TH', INDONESIA: 'ID', MALAYSIA: 'MY', SINGAPORE: 'SG',
+  PHILIPPINES: 'PH', BANGLADESH: 'BD', PAKISTAN: 'PK', CAMBODIA: 'KH',
+  GERMANY: 'DE', FRANCE: 'FR', ITALY: 'IT', SPAIN: 'ES', NETHERLANDS: 'NL', BELGIUM: 'BE', 'THE NETHERLANDS': 'NL',
+  POLAND: 'PL', SWEDEN: 'SE', SWITZERLAND: 'CH', AUSTRIA: 'AT', PORTUGAL: 'PT', IRELAND: 'IE', DENMARK: 'DK',
+  NORWAY: 'NO', FINLAND: 'FI', 'CZECH REPUBLIC': 'CZ', CZECHIA: 'CZ', GREECE: 'GR', TURKEY: 'TR', TÜRKIYE: 'TR',
+  BRAZIL: 'BR', ARGENTINA: 'AR', CHILE: 'CL', COLOMBIA: 'CO', PERU: 'PE', ECUADOR: 'EC',
+  AUSTRALIA: 'AU', 'NEW ZEALAND': 'NZ', 'SOUTH AFRICA': 'ZA', 'UNITED ARAB EMIRATES': 'AE', UAE: 'AE',
+  'SAUDI ARABIA': 'SA', ISRAEL: 'IL', EGYPT: 'EG', NIGERIA: 'NG', RUSSIA: 'RU',
+};
+
+// Resolve any messy country value ("US" / "Us" / "United States" / "Or 97005, Us")
+// to a validated ISO-2 code, or '' when nothing recognisable is present.
+export function resolveCountryIso(country: string | null | undefined): string {
+  const raw = (country ?? '').trim();
+  if (!raw) return '';
+  const up = raw.toUpperCase();
+  if (/^[A-Z]{2}$/.test(up)) return up;               // already an ISO-2 code
+  if (COUNTRY_NAME_TO_ISO[up]) return COUNTRY_NAME_TO_ISO[up];
+  // Try a trailing/standalone 2-letter token (address tails like "…, US").
+  const tail = up.match(/\b([A-Z]{2})\b\s*$/);
+  if (tail && COUNTRY_NAME_TO_ISO[tail[1]]) return COUNTRY_NAME_TO_ISO[tail[1]];
+  // First whole word that's a known country name (e.g. "UNITED STATES OF …").
+  for (const name of Object.keys(COUNTRY_NAME_TO_ISO)) {
+    if (up.includes(name)) return COUNTRY_NAME_TO_ISO[name];
+  }
+  return '';
+}
+
 /**
  * Best-effort label for "where is this company" — pieces together
  * city, state, and country (with flag) for compact display.
@@ -30,17 +67,9 @@ export function compactLocation(
   state: string | null | undefined,
   country: string | null | undefined,
 ): { flag: string; flagCode: string; text: string } {
-  // Normalise the country code so the flag emoji + dedup work even
-  // when the upstream API returns messy values like "Us", "USA", or
-  // "Or 97005, Us". Only the first regional indicator pair is used
-  // by countryFlag(), so we strip non-letters first.
-  const countryNorm = (country ?? '').trim().toUpperCase();
-  const isUS = /\b(US|USA|U\.S(\.A)?)\b/.test(countryNorm);
-  const flagCode = isUS ? 'US' : (countryNorm.match(/[A-Z]{2}/)?.[0] ?? countryNorm);
-  const flag = countryFlag(flagCode);
-  // Validated ISO-2 for image-based flags (emoji flags don't render on
-  // Windows desktop). Empty when we couldn't resolve a real 2-letter code.
-  const iso = /^[A-Z]{2}$/.test(flagCode) ? flagCode : '';
+  const iso = resolveCountryIso(country);
+  const isUS = iso === 'US';
+  const flag = countryFlag(iso);
 
   const parts: string[] = [];
   if (city) parts.push(String(city).trim());

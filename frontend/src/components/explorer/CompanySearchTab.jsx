@@ -494,19 +494,26 @@ export default function CompanySearchTab() {
 
   // ── High-level filters (client-side, over the current result set). Narrow
   //    the LIST and the MAP together so the two never disagree. ──────────────
-  const [filters, setFilters] = useState({ country: '', industry: '', savedOnly: false, minShipments: 0, minScore: 0 });
+  const [filters, setFilters] = useState({
+    country: '', industry: '', savedOnly: false, minShipments: 0, minScore: 0,
+    // Restored Pulse Explorer facets (client-side over the fetched rows):
+    q: '', state: '', lane: '', forwarder: '', fresh: '',
+  });
   const filterOptions = useMemo(() => {
     const countries = new Set();
     const industries = new Set();
+    const states = new Set();
     for (const r of displayResults) {
       if (r.country) countries.add(String(r.country));
       if (r.industry) industries.add(String(r.industry));
+      if (r.state) states.add(String(r.state));
     }
-    return { countries: [...countries].sort(), industries: [...industries].sort() };
+    return { countries: [...countries].sort(), industries: [...industries].sort(), states: [...states].sort() };
   }, [displayResults]);
   const filteredResults = useMemo(() => displayResults.filter((r) => {
     if (filters.country && String(r.country || '') !== filters.country) return false;
     if (filters.industry && String(r.industry || '') !== filters.industry) return false;
+    if (filters.state && String(r.state || '') !== filters.state) return false;
     if (filters.savedOnly && !r.is_saved) return false;
     if (filters.minShipments > 0) {
       const s = Number(r.shipments ?? r.raw?.totalShipments ?? r.raw?.shipments ?? 0);
@@ -516,9 +523,32 @@ export default function CompanySearchTab() {
       const sc = Number(r.opportunity_composite_score ?? 0);
       if (!(sc >= filters.minScore)) return false;
     }
+    const q = filters.q.trim().toLowerCase();
+    if (q && !String(r.company_name || '').toLowerCase().includes(q)) return false;
+    // Trade lane / forwarder / status mirror the Pulse Explorer's in-results
+    // filter. Rows without the underlying data (common in Companies mode) don't
+    // match a lane/forwarder query — same semantics as Pulse.
+    const lane = filters.lane.trim().toLowerCase();
+    if (lane) {
+      const dims = Array.isArray(r.top_dimensions) ? r.top_dimensions : (Array.isArray(r.raw?.top_dimensions) ? r.raw.top_dimensions : []);
+      if (!dims.some((d) => String(d?.lane ?? '').toLowerCase().includes(lane))) return false;
+    }
+    const fwd = filters.forwarder.trim().toLowerCase();
+    if (fwd) {
+      const tf = Array.isArray(r.top_forwarders) ? r.top_forwarders : (Array.isArray(r.raw?.top_forwarders) ? r.raw.top_forwarders : []);
+      if (!tf.some((x) => String(x?.name ?? x ?? '').toLowerCase().includes(fwd))) return false;
+    }
+    if (filters.fresh) {
+      const chip = r.freshness?.chip ?? r.raw?.freshness?.chip ?? (r.is_saved ? 'saved' : 'directory');
+      if (chip !== filters.fresh) return false;
+    }
     return true;
   }), [displayResults, filters]);
-  const anyFilter = Boolean(filters.country || filters.industry || filters.savedOnly || filters.minShipments > 0 || filters.minScore > 0);
+  const anyFilter = Boolean(
+    filters.country || filters.industry || filters.state || filters.savedOnly ||
+    filters.minShipments > 0 || filters.minScore > 0 ||
+    filters.q.trim() || filters.lane.trim() || filters.forwarder.trim() || filters.fresh,
+  );
   const filteredIds = useMemo(() => new Set(filteredResults.map((r) => r.id)), [filteredResults]);
   const filteredMapRows = useMemo(
     () => (anyFilter ? displayMapRows.filter((m) => filteredIds.has(m.id)) : displayMapRows),
@@ -1018,9 +1048,37 @@ function FacetSelect({ icon: Icon, value, onChange, active, tone = 'blue', title
   );
 }
 
+const FRESH_LABELS = { live: 'Live', saved: 'Saved', directory: 'Directory' };
+
+function TextFacet({ icon: Icon, value, onChange, placeholder, title, width = 'w-[128px]' }) {
+  const active = Boolean(String(value || '').trim());
+  return (
+    <label title={title} className={`inline-flex h-7 items-center gap-1 rounded-lg border pl-2 pr-1 text-[11px] transition ${active ? 'border-blue-300 bg-blue-50' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
+      <Icon size={11} className={`shrink-0 ${active ? 'text-blue-500' : 'text-slate-400'}`} />
+      <input
+        type="text"
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        className={`${width} bg-transparent py-1 font-medium text-slate-700 placeholder:text-slate-400 outline-none`}
+      />
+    </label>
+  );
+}
+
 function ResultFilters({ filters, options, onChange, total, shown }) {
+  const [more, setMore] = useState(false);
   const set = (patch) => onChange({ ...filters, ...patch });
-  const any = filters.country || filters.industry || filters.savedOnly || filters.minShipments > 0 || filters.minScore > 0;
+  const clear = () => onChange({
+    country: '', industry: '', savedOnly: false, minShipments: 0, minScore: 0,
+    q: '', state: '', lane: '', forwarder: '', fresh: '',
+  });
+  const any = filters.country || filters.industry || filters.state || filters.savedOnly ||
+    filters.minShipments > 0 || filters.minScore > 0 ||
+    filters.q?.trim() || filters.lane?.trim() || filters.forwarder?.trim() || filters.fresh;
+  const moreCount =
+    (filters.q?.trim() ? 1 : 0) + (filters.state ? 1 : 0) + (filters.lane?.trim() ? 1 : 0) +
+    (filters.forwarder?.trim() ? 1 : 0) + (filters.fresh ? 1 : 0);
   return (
     <div className="border-b border-slate-100 bg-white/70 px-3 py-2 backdrop-blur">
       <div className="flex flex-wrap items-center gap-1.5">
@@ -1060,16 +1118,45 @@ function ResultFilters({ filters, options, onChange, total, shown }) {
         >
           {filters.savedOnly ? <BookmarkCheck size={11} className="text-emerald-500" /> : <Bookmark size={11} />} Saved
         </button>
+        <button
+          type="button"
+          onClick={() => setMore((v) => !v)}
+          className={`inline-flex h-7 items-center gap-1 rounded-lg border px-2 text-[11px] font-semibold transition ${
+            more || moreCount > 0 ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+          }`}
+        >
+          <SlidersHorizontal size={11} /> More{moreCount > 0 ? ` · ${moreCount}` : ''}
+          <ChevronDown size={11} className={`transition-transform ${more ? 'rotate-180' : ''}`} />
+        </button>
         {any ? (
           <button
             type="button"
-            onClick={() => onChange({ country: '', industry: '', savedOnly: false, minShipments: 0, minScore: 0 })}
+            onClick={clear}
             className="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-[11px] font-semibold text-slate-500 hover:text-rose-600"
           >
             <X size={11} /> Clear
           </button>
         ) : null}
       </div>
+
+      {more ? (
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5 border-t border-slate-100 pt-1.5">
+          <TextFacet icon={SearchIcon} title="Filter by company name" placeholder="Company name…" value={filters.q} onChange={(e) => set({ q: e.target.value })} />
+          {options.states?.length > 1 ? (
+            <FacetSelect icon={Globe2} title="State / region" active={Boolean(filters.state)} value={filters.state} onChange={(e) => set({ state: e.target.value })}>
+              <option value="">State</option>
+              {options.states.map((s) => <option key={s} value={s}>{s}</option>)}
+            </FacetSelect>
+          ) : null}
+          <TextFacet icon={Ship} title="Trade lane — any origin/destination port or city in the company's routes" placeholder="Lane / port…" value={filters.lane} onChange={(e) => set({ lane: e.target.value })} width="w-[104px]" />
+          <TextFacet icon={Building2} title="Freight forwarder used by the company" placeholder="Forwarder…" value={filters.forwarder} onChange={(e) => set({ forwarder: e.target.value })} width="w-[96px]" />
+          <FacetSelect icon={Filter} title="Data status" active={Boolean(filters.fresh)} value={filters.fresh} onChange={(e) => set({ fresh: e.target.value })}>
+            <option value="">Any status</option>
+            {Object.entries(FRESH_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </FacetSelect>
+        </div>
+      ) : null}
+
       {any ? (
         <div className="mt-1 text-[10.5px] font-medium text-slate-500">Showing {shown.toLocaleString()} of {total.toLocaleString()}</div>
       ) : null}

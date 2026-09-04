@@ -10,13 +10,11 @@
 // to a lowercase ISO-2, and renders nothing when it can't resolve one so
 // callers can drop it inline without a null-check wrapper.
 
+import { resolveCountryIso } from '@/lib/explorer/countryFlags';
+
 function normIso(code) {
-  if (!code || typeof code !== 'string') return '';
-  const t = code.trim().toUpperCase();
-  if (/^[A-Z]{2}$/.test(t)) return t.toLowerCase();
-  if (/\b(US|USA|U\.S(\.A)?)\b/.test(t)) return 'us';
-  const m = t.match(/[A-Z]{2}/);
-  return m ? m[0].toLowerCase() : '';
+  const iso = resolveCountryIso(code); // handles codes AND full names ("United States")
+  return iso ? iso.toLowerCase() : '';
 }
 
 export default function CountryFlag({ code, size = 14, className = '' }) {
