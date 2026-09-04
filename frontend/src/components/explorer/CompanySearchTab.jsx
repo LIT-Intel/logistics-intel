@@ -60,6 +60,8 @@ import { CompanyAvatar } from '@/components/CompanyAvatar';
 import useBreakpoint from '@/hooks/useBreakpoint';
 import { AnimatePresence } from 'framer-motion';
 import CompanyDetailPanel from './CompanyDetailPanel';
+import BulkSaveToListModal from '@/features/pulse/explore/BulkSaveToListModal';
+import { FolderPlus } from 'lucide-react';
 import { enrichCompanyLive } from '@/api/ai';
 import { looksLikeCompanyName, parseExploreQuery, localExtractFilters, parsedToFilters, hasAnyFilter } from '@/api/pulse-explore-parse';
 import { useExploreAccounts } from '@/features/pulse/explore/useExploreAccounts';
@@ -85,6 +87,14 @@ const EXAMPLE_QUERIES = ['Walmart', 'Tesla', 'Nike', 'Home Depot', 'Target'];
 // localStorage keys so view-mode + panel state persist across visits.
 const LS_VIEW_KEY = 'lit.explorer.companySearch.view';
 const LS_PANEL_KEY = 'lit.explorer.companySearch.panelOpen';
+
+// pulse_list_companies.company_id is a NOT-NULL FK to lit_companies.id, so only
+// rows that already carry a real lit_companies UUID can be saved to a shareable
+// list. Market rows (DB-backed) always do; fresh ImportYeti rows may not until
+// they've been ingested/opened once. We filter to saveable ids + report the gap
+// rather than FK-failing silently.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isUuid = (v) => typeof v === 'string' && UUID_RE.test(v);
 
 export default function CompanySearchTab() {
   const { setSelectedCompany } = useExplorer();
@@ -128,6 +138,8 @@ export default function CompanySearchTab() {
   // Inline detail panel — clicking a result opens this in place (Google-Maps
   // behavior) instead of navigating straight to the full profile page.
   const [detailRow, setDetailRow] = useState(null);
+  // Save-to-list: array of lit_companies ids to save (opens the modal), or null.
+  const [saveModalIds, setSaveModalIds] = useState(null);
   // Search TYPE — 'companies' (name lookup) vs 'market' (Pulse universe browse
   // by location/industry). Auto-detected from the query, overridable via the
   // toggle. Both render in THIS same overlay/map/detail UI (the true merge).
@@ -327,6 +339,40 @@ export default function CompanySearchTab() {
     e?.preventDefault?.();
     runSearch();
   }, [runSearch]);
+
+  // Single-company "Save to list". Search rows carry ids from lit_company_directory
+  // (NOT the lit_companies FK the list membership table needs), so we can't insert
+  // the row id directly. Instead we MATERIALIZE the company via the blessed
+  // save-company path (idempotent — dedups by source_company_key, creates the
+  // lit_companies row if missing) and add its real id. Same path Open/Save use.
+  const [savingListRow, setSavingListRow] = useState(false);
+  const onSaveRowToList = useCallback(async (row) => {
+    if (!row) return;
+    // Already a lit_companies-backed id (rare in search) — skip the round-trip.
+    if (isUuid(row.company_id) && row.company_id === row.id) {
+      setSaveModalIds([row.company_id]);
+      return;
+    }
+    setSavingListRow(true);
+    try {
+      const res = await saveCompanyToCommandCenter({
+        shipper: row.raw,
+        profile: null,
+        stage: 'prospect',
+        source: row.source || 'importyeti',
+      });
+      const id = res?.company?.id;
+      if (!isUuid(id)) {
+        toast.error('Couldn’t prepare this company to save. Try opening its profile first.');
+        return;
+      }
+      setSaveModalIds([id]);
+    } catch (err) {
+      toast.error(err?.message || 'Couldn’t save this company.');
+    } finally {
+      setSavingListRow(false);
+    }
+  }, []);
 
   const onSave = useCallback(async (row, e) => {
     e?.stopPropagation?.();
@@ -793,9 +839,20 @@ export default function CompanySearchTab() {
               onClose={() => setDetailRow(null)}
               onOpenFull={onOpenDetails}
               onSave={onSave}
+              onSaveToList={() => onSaveRowToList(detailRow)}
+              savingToList={savingListRow}
             />
           ) : null}
         </AnimatePresence>
+
+        {/* Save-to-list modal — reuses the Pulse list picker (create + add).
+            Saved lists are shareable with the team via the Library's
+            "Share with your team" toggle. */}
+        <BulkSaveToListModal
+          open={Array.isArray(saveModalIds) && saveModalIds.length > 0}
+          companyIds={saveModalIds || []}
+          onClose={() => setSaveModalIds(null)}
+        />
 
         {/* Degraded-search banner — the edge fn fell back to the saved
             local index (quota / kill-switch / upstream outage), so these
@@ -909,18 +966,28 @@ function PanelEmpty({ mode, query, noFilters }) {
   );
 }
 
-function PanelHeader({ total, unmapped, view, onViewChange, onCollapse }) {
+function PanelHeader({ total, unmapped, view, onViewChange, onCollapse, onSaveList }) {
   return (
     <div className="flex items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2 sm:px-4">
-      <div className="flex items-center gap-2 text-[12px] font-medium text-slate-700">
-        <ListIcon size={14} className="text-slate-500" />
+      <div className="flex min-w-0 items-center gap-2 text-[12px] font-medium text-slate-700">
+        <ListIcon size={14} className="shrink-0 text-slate-500" />
         <span className="font-display">Results</span>
-        <span className="font-body text-slate-500">
+        <span className="font-body truncate text-slate-500">
           · {total.toLocaleString()} account{total === 1 ? '' : 's'}
           {unmapped > 0 ? ` · ${unmapped} unmapped` : ''}
         </span>
       </div>
-      <div className="flex items-center gap-1">
+      <div className="flex shrink-0 items-center gap-1">
+        {onSaveList && total > 0 ? (
+          <button
+            type="button"
+            onClick={onSaveList}
+            title="Save these results to a list"
+            className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 py-1.5 text-[11px] font-semibold text-blue-700 transition hover:bg-blue-100 active:scale-[0.96] motion-reduce:active:scale-100"
+          >
+            <FolderPlus size={13} /> <span className="hidden sm:inline">Save to list</span>
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={onCollapse}

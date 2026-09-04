@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
-  ArrowLeft, Bookmark, BookmarkCheck, ExternalLink, MapPin, Building2, Ship, TrendingUp,
+  ArrowLeft, Bookmark, BookmarkCheck, ExternalLink, MapPin, Building2, Ship, TrendingUp, FolderPlus,
   Phone, Loader2, Linkedin, Sparkles,
 } from 'lucide-react';
 import { CompanyAvatar } from '@/components/CompanyAvatar';
@@ -35,7 +35,7 @@ function fmtMoney(n) {
   return `$${v.toLocaleString()}`;
 }
 
-export default function CompanyDetailPanel({ row, onClose, onOpenFull, onSave }) {
+export default function CompanyDetailPanel({ row, onClose, onOpenFull, onSave, onSaveToList, savingToList }) {
   const reduce = useReducedMotion();
   // Live enrichment (Apollo org data) fired on open — website / phone / HQ /
   // firmographics. Non-fatal: on failure the panel keeps its shipment-intel view.
@@ -145,6 +145,18 @@ export default function CompanyDetailPanel({ row, onClose, onOpenFull, onSave })
           >
             <Building2 size={14} /> Open full profile
           </button>
+          {onSaveToList ? (
+            <button
+              type="button"
+              onClick={onSaveToList}
+              disabled={savingToList}
+              className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 text-[12.5px] font-semibold text-blue-700 transition active:scale-[0.97] hover:bg-blue-100 disabled:opacity-60 motion-reduce:active:scale-100"
+            >
+              {savingToList
+                ? <><span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600" /> Preparing…</>
+                : <><FolderPlus size={14} /> Save to list</>}
+            </button>
+          ) : null}
         </div>
 
         {/* Contact & location — from live Apollo enrichment (on open). */}
