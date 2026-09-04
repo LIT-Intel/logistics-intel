@@ -217,6 +217,107 @@ export async function shareList(listId, share, orgId) {
   }
 }
 
+/* ─── Per-member assignment (Pulse Lists v3) ─── */
+
+/** The caller's fellow org members — powers the "assign to teammate" picker.
+ *  Resolves the caller's first org (matches the workspace-KPI convention),
+ *  then returns the OTHER members with display names. Excludes the caller. */
+export async function listOrgMembers() {
+  try {
+    const { data: userResp } = await supabase.auth.getUser();
+    const uid = userResp?.user?.id || null;
+    if (!uid) return { ok: false, code: 'UNAUTHORIZED', orgId: null, members: [] };
+
+    const { data: mine } = await supabase
+      .from('org_members').select('org_id').eq('user_id', uid).limit(1);
+    const orgId = mine?.[0]?.org_id || null;
+    if (!orgId) return { ok: true, orgId: null, members: [] };
+
+    const { data: rows, error } = await supabase
+      .from('org_members').select('user_id, role').eq('org_id', orgId);
+    if (error) return { ok: false, code: classifyError(error), message: error.message, orgId, members: [] };
+
+    const ids = (rows || []).map((r) => r.user_id).filter((id) => id && id !== uid);
+    const display = await fetchOwnerDisplay(ids);
+    const members = (rows || [])
+      .filter((r) => r.user_id && r.user_id !== uid)
+      .map((r) => ({
+        user_id: r.user_id,
+        role: r.role || 'member',
+        name: display[r.user_id]?.name || `User ${String(r.user_id).slice(0, 6)}`,
+        email: display[r.user_id]?.email || null,
+        avatar_url: display[r.user_id]?.avatar_url || null,
+      }));
+    return { ok: true, orgId, members };
+  } catch (err) {
+    return { ok: false, code: classifyError(err), message: err?.message, orgId: null, members: [] };
+  }
+}
+
+/** Assign a saved list to one or more teammates. Owner-only (RLS enforced).
+ *  The assignee sees it in their Library on next load. */
+export async function assignList(listId, userIds) {
+  if (!listId || !userIds?.length) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Pick at least one teammate.' };
+  }
+  try {
+    const { data: userResp } = await supabase.auth.getUser();
+    const assignedBy = userResp?.user?.id || null;
+    const rows = Array.from(new Set(userIds.filter(Boolean))).map((uid) => ({
+      list_id: listId,
+      assignee_user_id: uid,
+      assigned_by: assignedBy,
+    }));
+    const { error } = await supabase
+      .from('pulse_list_assignments')
+      .upsert(rows, { onConflict: 'list_id,assignee_user_id' });
+    if (error) return { ok: false, code: classifyError(error), message: error.message };
+    return { ok: true, assigned: rows.length };
+  } catch (err) {
+    return { ok: false, code: classifyError(err), message: err?.message };
+  }
+}
+
+/** Remove a teammate's assignment (owner) or leave a list (assignee). */
+export async function unassignList(listId, userId) {
+  if (!listId || !userId) return { ok: false, code: 'INVALID_INPUT' };
+  try {
+    const { error } = await supabase
+      .from('pulse_list_assignments')
+      .delete()
+      .eq('list_id', listId)
+      .eq('assignee_user_id', userId);
+    if (error) return { ok: false, code: classifyError(error), message: error.message };
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, code: classifyError(err), message: err?.message };
+  }
+}
+
+/** Who a list is currently assigned to (owner-visible), with display names. */
+export async function getListAssignees(listId) {
+  if (!listId) return { ok: false, rows: [] };
+  try {
+    const { data, error } = await supabase
+      .from('pulse_list_assignments')
+      .select('assignee_user_id, assigned_at')
+      .eq('list_id', listId);
+    if (error) return { ok: false, code: classifyError(error), message: error.message, rows: [] };
+    const ids = (data || []).map((r) => r.assignee_user_id).filter(Boolean);
+    const display = await fetchOwnerDisplay(ids);
+    const rows = (data || []).map((r) => ({
+      user_id: r.assignee_user_id,
+      assigned_at: r.assigned_at,
+      name: display[r.assignee_user_id]?.name || `User ${String(r.assignee_user_id).slice(0, 6)}`,
+      email: display[r.assignee_user_id]?.email || null,
+      avatar_url: display[r.assignee_user_id]?.avatar_url || null,
+    }));
+    return { ok: true, rows };
+  } catch (err) {
+    return { ok: false, code: classifyError(err), message: err?.message, rows: [] };
+  }
+}
+
 /** Create a new list. Returns { ok, list }. */
 export async function createPulseList({ name, description, queryText, filterRecipe }) {
   if (!name || !String(name).trim()) {

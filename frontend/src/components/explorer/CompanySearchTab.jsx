@@ -61,6 +61,7 @@ import useBreakpoint from '@/hooks/useBreakpoint';
 import { AnimatePresence } from 'framer-motion';
 import CompanyDetailPanel from './CompanyDetailPanel';
 import BulkSaveToListModal from '@/features/pulse/explore/BulkSaveToListModal';
+import SaveSearchModal from './SaveSearchModal';
 import { FolderPlus } from 'lucide-react';
 import { enrichCompanyLive } from '@/api/ai';
 import { looksLikeCompanyName, parseExploreQuery, localExtractFilters, parsedToFilters, hasAnyFilter } from '@/api/pulse-explore-parse';
@@ -140,6 +141,8 @@ export default function CompanySearchTab() {
   const [detailRow, setDetailRow] = useState(null);
   // Save-to-list: array of lit_companies ids to save (opens the modal), or null.
   const [saveModalIds, setSaveModalIds] = useState(null);
+  // Save-search-to-Library modal (saves the whole search + assigns to teammates).
+  const [saveSearchOpen, setSaveSearchOpen] = useState(false);
   // Search TYPE — 'companies' (name lookup) vs 'market' (Pulse universe browse
   // by location/industry). Auto-detected from the query, overridable via the
   // toggle. Both render in THIS same overlay/map/detail UI (the true merge).
@@ -831,6 +834,7 @@ export default function CompanySearchTab() {
               total={filteredResults.length}
               unmapped={unmappedCount}
               onCollapse={() => setPanelOpen(false)}
+              onSaveList={() => setSaveSearchOpen(true)}
             />
             {hasResults ? (
               <ResultFilters
@@ -882,6 +886,16 @@ export default function CompanySearchTab() {
           open={Array.isArray(saveModalIds) && saveModalIds.length > 0}
           companyIds={saveModalIds || []}
           onClose={() => setSaveModalIds(null)}
+        />
+
+        {/* Save-search-to-Library — saves the current query + filter recipe as a
+            live saved list and optionally assigns it to teammates. */}
+        <SaveSearchModal
+          open={saveSearchOpen}
+          onClose={() => setSaveSearchOpen(false)}
+          defaultName={submitted}
+          queryText={submitted}
+          filterRecipe={searchMode === 'market' ? marketFilters : (submitted ? { name: submitted } : null)}
         />
 
         {/* Degraded-search banner — the edge fn fell back to the saved
@@ -1012,10 +1026,10 @@ function PanelHeader({ total, unmapped, view, onViewChange, onCollapse, onSaveLi
           <button
             type="button"
             onClick={onSaveList}
-            title="Save these results to a list"
+            title="Save this search to your Library and assign it to teammates"
             className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 py-1.5 text-[11px] font-semibold text-blue-700 transition hover:bg-blue-100 active:scale-[0.96] motion-reduce:active:scale-100"
           >
-            <FolderPlus size={13} /> <span className="hidden sm:inline">Save to list</span>
+            <FolderPlus size={13} /> <span className="hidden sm:inline">Save to Library</span>
           </button>
         ) : null}
         <button
