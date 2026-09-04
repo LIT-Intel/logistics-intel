@@ -271,7 +271,7 @@ export default function CDPResearch({
             <button
               type="button"
               onClick={() => setExpanded(false)}
-              className="absolute right-6 top-2 z-10 inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-slate-600 shadow-md hover:bg-slate-50"
+              className="absolute right-6 top-2 z-10 inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-slate-600 shadow-md hover:bg-slate-50 active:scale-[0.94] motion-reduce:active:scale-100"
               aria-label="Close expanded brief"
             >
               <X className="h-4 w-4" />
@@ -453,7 +453,7 @@ function EmptyState({
       <button
         type="button"
         onClick={onPulse}
-        className="font-display inline-flex items-center gap-1.5 rounded-md bg-gradient-to-b from-blue-500 to-blue-600 px-3.5 py-1.5 text-[12px] font-semibold text-white shadow-sm"
+        className="font-display inline-flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 shadow-sm shadow-blue-600/25 px-3.5 py-1.5 text-[12px] font-semibold text-white active:scale-[0.97] motion-reduce:active:scale-100"
       >
         <Sparkles className="h-3 w-3" />
         Generate Pulse AI
@@ -500,7 +500,7 @@ function ErrorState({
         <button
           type="button"
           onClick={onRetry}
-          className="font-display mt-2 inline-flex items-center gap-1 rounded-md border border-rose-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-rose-700"
+          className="font-display mt-2 inline-flex items-center gap-1 rounded-md border border-rose-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-rose-700 active:scale-[0.97] motion-reduce:active:scale-100"
         >
           <RefreshCw className="h-3 w-3" />
           Try again
@@ -1588,7 +1588,7 @@ function OpenersCard({
                   navigator.clipboard.writeText(line).catch(() => undefined);
                 }
               }}
-              className="font-display mt-1 inline-flex items-center gap-1 text-[10px] font-semibold text-blue-700"
+              className="font-display mt-1 inline-flex items-center gap-1 text-[10px] font-semibold text-blue-700 active:scale-[0.94] motion-reduce:active:scale-100"
             >
               <Copy className="h-2 w-2" />
               Copy
@@ -1612,7 +1612,7 @@ function SimilarCompanyCard({
     <button
       type="button"
       onClick={() => onSelect(query)}
-      className="group flex w-full items-start gap-2 rounded-lg border border-slate-200 bg-white p-3 text-left hover:border-blue-300 hover:bg-blue-50/40"
+      className="group flex w-full items-start gap-2 rounded-xl border border-slate-200 bg-white p-3 text-left hover:border-blue-300 hover:bg-blue-50/40 active:scale-[0.98] motion-reduce:active:scale-100"
     >
       <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-blue-50 text-blue-700">
         <Building2 className="h-3.5 w-3.5" />
@@ -1713,14 +1713,14 @@ function FooterRow({ report }: { report: PulseReport }) {
           <button
             type="button"
             aria-label="Useful"
-            className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:text-slate-700"
+            className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:text-slate-700 active:scale-[0.94] motion-reduce:active:scale-100"
           >
             <ThumbsUp className="h-3 w-3" />
           </button>
           <button
             type="button"
             aria-label="Not useful"
-            className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:text-slate-700"
+            className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:text-slate-700 active:scale-[0.94] motion-reduce:active:scale-100"
           >
             <ThumbsDown className="h-3 w-3" />
           </button>
@@ -1979,7 +1979,7 @@ function BriefActionButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="font-display inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+      className="font-display inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-semibold disabled:cursor-not-allowed disabled:opacity-50 active:scale-[0.97] motion-reduce:active:scale-100"
       style={{
         background: highlight ? "#00E0FF" : "rgba(255,255,255,0.08)",
         borderColor: highlight ? "#00E0FF" : "rgba(255,255,255,0.15)",
@@ -2264,7 +2264,7 @@ function ShareBriefEmailModal({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-md p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+            className="rounded-md p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900 active:scale-[0.94] motion-reduce:active:scale-100"
           >
             <X className="h-4 w-4" />
           </button>
@@ -2369,7 +2369,7 @@ function ShareBriefEmailModal({
           <button
             type="button"
             onClick={onClose}
-            className="font-display rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-slate-700 hover:bg-slate-50"
+            className="font-display rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-slate-700 hover:bg-slate-50 active:scale-[0.97] motion-reduce:active:scale-100"
           >
             Cancel
           </button>
@@ -2377,7 +2377,7 @@ function ShareBriefEmailModal({
             type="button"
             onClick={handleSend}
             disabled={sendDisabled}
-            className="font-display inline-flex items-center gap-1.5 rounded-md bg-gradient-to-b from-blue-500 to-blue-600 px-3 py-1.5 text-[12px] font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+            className="font-display inline-flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 shadow-sm shadow-blue-600/25 px-3 py-1.5 text-[12px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 active:scale-[0.97] motion-reduce:active:scale-100"
           >
             {status === "sending" ? (
               <Loader2 className="h-3 w-3 animate-spin" />

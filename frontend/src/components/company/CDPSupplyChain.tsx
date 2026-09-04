@@ -370,7 +370,7 @@ function CDPSupplyChainBody({
               type="button"
               onClick={() => setSub(s.id)}
               className={[
-                "font-display whitespace-nowrap rounded-md px-3 py-1.5 text-[12px] font-semibold transition-colors min-h-[40px]",
+                "font-display whitespace-nowrap rounded-md px-3 py-1.5 text-[12px] font-semibold transition-colors min-h-[40px] active:scale-[0.97] motion-reduce:active:scale-100",
                 sub === s.id
                   ? "bg-blue-600 text-white shadow-sm"
                   : "text-slate-600 hover:bg-slate-50 hover:text-slate-900",
@@ -841,7 +841,7 @@ function CadenceAndModalMix({
               onClick={() => setYoyMode((v) => !v)}
               title={`Overlay ${priorYear} volumes and show the year-over-year change`}
               className={[
-                "font-display inline-flex h-6 shrink-0 items-center whitespace-nowrap rounded-full border px-2 text-[10px] font-semibold transition-colors",
+                "font-display inline-flex h-6 shrink-0 items-center whitespace-nowrap rounded-full border px-2 text-[10px] font-semibold transition-colors active:scale-[0.94] motion-reduce:active:scale-100",
                 yoyMode
                   ? "border-blue-600 bg-blue-600 text-white"
                   : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900",
@@ -1440,7 +1440,7 @@ export function SuppliersView({
             <button
               type="button"
               onClick={() => setVisibleCount((c) => c + 50)}
-              className="font-display w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-[11.5px] font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+              className="font-display w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-[11.5px] font-semibold text-slate-700 transition-colors hover:bg-slate-50 active:scale-[0.98] motion-reduce:active:scale-100"
             >
               Show more ({visibleCount} of {allSuppliers.length} visible)
             </button>
@@ -1487,7 +1487,7 @@ function SupplierRowFull({
     <button
       type="button"
       onClick={onOpen}
-      className="grid w-full items-center gap-2.5 border-b border-slate-100 px-3 py-2.5 text-left transition-colors last:border-b-0 hover:bg-slate-50/60 sm:px-4"
+      className="grid w-full items-center gap-2.5 border-b border-slate-100 px-3 py-2.5 text-left transition-colors last:border-b-0 hover:bg-slate-50/60 sm:px-4 active:scale-[0.98] motion-reduce:active:scale-100"
       style={{
         gridTemplateColumns: "20px 18px minmax(0,1fr) 70px 80px",
       }}
@@ -1666,7 +1666,7 @@ function SupplierDrawer({
           <button
             type="button"
             onClick={onClose}
-            className="font-display rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-500 transition-colors hover:bg-slate-50"
+            className="font-display rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-500 transition-colors hover:bg-slate-50 active:scale-[0.97] motion-reduce:active:scale-100"
             aria-label="Close supplier detail"
           >
             Close
@@ -1830,7 +1830,7 @@ function SupplierDrawer({
           <button
             type="button"
             onClick={onOpenFullProfile}
-            className="font-display w-full rounded-md bg-blue-600 px-3 py-2 text-[12px] font-semibold text-white shadow-sm transition-colors hover:bg-blue-700"
+            className="font-display w-full rounded-xl bg-blue-600 px-3 py-2 text-[12px] font-semibold text-white shadow-sm shadow-blue-600/25 transition-colors hover:bg-blue-700 active:scale-[0.98] motion-reduce:active:scale-100"
           >
             View full supplier profile →
           </button>
@@ -3031,7 +3031,7 @@ function MapScopeControls({
 }) {
   const chip = (active: boolean, disabled = false) =>
     [
-      "font-display inline-flex h-6 shrink-0 items-center whitespace-nowrap rounded-full border px-2 text-[10px] font-semibold transition-colors",
+      "font-display inline-flex h-6 shrink-0 items-center whitespace-nowrap rounded-full border px-2 text-[10px] font-semibold transition-colors active:scale-[0.94] motion-reduce:active:scale-100",
       disabled
         ? "cursor-default border-slate-100 bg-slate-50 text-slate-300"
         : active
@@ -3211,7 +3211,7 @@ function LaneRankRows({
               type="button"
               onClick={() => onRowClick(pair.pairKey)}
               className={[
-                "w-full min-h-[44px] px-3.5 py-2 text-left transition-colors",
+                "w-full min-h-[44px] px-3.5 py-2 text-left transition-colors active:scale-[0.98] motion-reduce:active:scale-100",
                 isSelected
                   ? "border-l-2 border-l-blue-600 bg-blue-50/80"
                   : "border-l-2 border-l-transparent hover:bg-slate-50/80",
@@ -3404,7 +3404,7 @@ function LaneRankRows({
                   <button
                     type="button"
                     onClick={() => onOpenLaneHistory(pairToHistoryFilter(pair))}
-                    className="font-display mb-1 mt-1 inline-flex min-h-[32px] items-center gap-1 text-[10.5px] font-semibold text-blue-600 hover:text-blue-700"
+                    className="font-display mb-1 mt-1 inline-flex min-h-[32px] items-center gap-1 text-[10.5px] font-semibold text-blue-600 hover:text-blue-700 active:scale-[0.97] motion-reduce:active:scale-100"
                   >
                     <History className="h-3 w-3" />
                     View monthly history →
@@ -4256,7 +4256,7 @@ function TopLanesCard({
           <button
             type="button"
             onClick={onOpenLanesTab}
-            className="font-body inline-flex min-h-[32px] items-center gap-1 text-[11.5px] font-medium text-blue-600 hover:text-blue-700"
+            className="font-body inline-flex min-h-[32px] items-center gap-1 text-[11.5px] font-medium text-blue-600 hover:text-blue-700 active:scale-[0.97] motion-reduce:active:scale-100"
           >
             View all {canonicalLanes.length.toLocaleString()} routes →
           </button>
@@ -4276,7 +4276,7 @@ function TopLanesCard({
             <button
               type="button"
               onClick={() => onOpenLaneHistory(null)}
-              className="font-display inline-flex min-h-[44px] shrink-0 items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 text-[10.5px] font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+              className="font-display inline-flex min-h-[44px] shrink-0 items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 text-[10.5px] font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900 active:scale-[0.97] motion-reduce:active:scale-100"
             >
               <History className="h-3 w-3" />
               Lane history
@@ -4375,7 +4375,7 @@ function TopLanesCard({
                   type="button"
                   onClick={() => onOpenLaneHistory(null)}
                   title="Lane history"
-                  className="font-display inline-flex h-7 items-center gap-1 rounded-md border border-slate-200 bg-white/80 px-2 text-[10px] font-semibold text-slate-600 hover:bg-white hover:text-slate-900"
+                  className="font-display inline-flex h-7 items-center gap-1 rounded-md border border-slate-200 bg-white/80 px-2 text-[10px] font-semibold text-slate-600 hover:bg-white hover:text-slate-900 active:scale-[0.94] motion-reduce:active:scale-100"
                 >
                   <History className="h-3 w-3" />
                   History
@@ -4386,7 +4386,7 @@ function TopLanesCard({
                 onClick={() => setMapDialogOpen(true)}
                 title="Expand map"
                 aria-label="Expand map to full screen"
-                className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white/80 text-slate-600 hover:bg-white hover:text-blue-600"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white/80 text-slate-600 hover:bg-white hover:text-blue-600 active:scale-[0.94] motion-reduce:active:scale-100"
               >
                 <Maximize2 className="h-3.5 w-3.5" />
               </button>
@@ -4429,7 +4429,7 @@ function TopLanesCard({
           onClick={() => setMapDialogOpen(true)}
           aria-label="Expand map to full screen"
           className={[
-            "absolute right-3 top-3 z-[700] inline-flex h-11 w-11 items-center justify-center text-slate-600 md:hidden",
+            "absolute right-3 top-3 z-[700] inline-flex h-11 w-11 items-center justify-center text-slate-600 md:hidden active:scale-[0.94] motion-reduce:active:scale-100",
             GLASS_PANEL,
           ].join(" ")}
         >
@@ -4596,7 +4596,7 @@ function ScopedEmptyState({
       <button
         type="button"
         onClick={onReset}
-        className="font-display mt-1.5 inline-flex min-h-[32px] items-center text-[10.5px] font-semibold text-blue-600 hover:text-blue-700"
+        className="font-display mt-1.5 inline-flex min-h-[32px] items-center text-[10.5px] font-semibold text-blue-600 hover:text-blue-700 active:scale-[0.97] motion-reduce:active:scale-100"
       >
         Reset filters →
       </button>
@@ -5299,7 +5299,7 @@ function TradeLanesMapDialog({
 
   const chipClass = (active: boolean) =>
     [
-      "inline-flex h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 text-[11px] font-semibold transition-colors md:h-7",
+      "inline-flex h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 text-[11px] font-semibold transition-colors md:h-7 active:scale-[0.94] motion-reduce:active:scale-100",
       active
         ? "border-blue-600 bg-blue-600 text-white"
         : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900",
@@ -5329,7 +5329,7 @@ function TradeLanesMapDialog({
             type="button"
             onClick={() => setDetailOpen(false)}
             aria-label="Close lane details"
-            className="-mr-1 -mt-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            className="-mr-1 -mt-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700 active:scale-[0.94] motion-reduce:active:scale-100"
           >
             <X className="h-3.5 w-3.5" />
           </button>
@@ -5387,7 +5387,7 @@ function TradeLanesMapDialog({
           <button
             type="button"
             onClick={() => onOpenLaneHistory(pairToHistoryFilter(selPair))}
-            className="font-display mt-1.5 inline-flex min-h-[32px] items-center gap-1 text-[10.5px] font-semibold text-blue-600 hover:text-blue-700"
+            className="font-display mt-1.5 inline-flex min-h-[32px] items-center gap-1 text-[10.5px] font-semibold text-blue-600 hover:text-blue-700 active:scale-[0.97] motion-reduce:active:scale-100"
           >
             <History className="h-3 w-3" />
             View monthly history →
@@ -5431,7 +5431,7 @@ function TradeLanesMapDialog({
                   onClick={() => setLaneChartView(t.id)}
                   title={t.enabled ? undefined : "Needs more shipment history"}
                   className={[
-                    "font-display rounded-md border px-2 py-0.5 text-[9.5px] font-semibold transition-colors",
+                    "font-display rounded-md border px-2 py-0.5 text-[9.5px] font-semibold transition-colors active:scale-[0.94] motion-reduce:active:scale-100",
                     !t.enabled
                       ? "cursor-not-allowed border-slate-100 bg-slate-50 text-slate-300"
                       : laneChartView === t.id
@@ -5537,7 +5537,7 @@ function TradeLanesMapDialog({
           type="button"
           onClick={onClose}
           aria-label="Close expanded map"
-          className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+          className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 active:scale-[0.94] motion-reduce:active:scale-100"
         >
           <X className="h-4 w-4" />
         </button>
@@ -5608,7 +5608,7 @@ function TradeLanesMapDialog({
               onClick={() => setFiltersCollapsed((v) => !v)}
               aria-expanded={!filtersCollapsed}
               aria-label={filtersCollapsed ? "Expand filters" : "Collapse filters"}
-              className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left hover:bg-slate-50/60"
+              className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left hover:bg-slate-50/60 active:scale-[0.98] motion-reduce:active:scale-100"
             >
               <span className="font-display flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-500">
                 <SlidersHorizontal className="h-3.5 w-3.5 text-blue-600" />

@@ -393,7 +393,7 @@ export default function InlandFreightCard({
             <button
               type="button"
               onClick={() => setShowLow((v) => !v)}
-              className="font-display inline-flex min-h-[28px] items-center text-[10.5px] font-semibold text-slate-500 hover:text-slate-800"
+              className="font-display inline-flex min-h-[28px] items-center text-[10.5px] font-semibold text-slate-500 hover:text-slate-800 active:scale-[0.97] motion-reduce:active:scale-100"
             >
               {showLow
                 ? "Hide lower-confidence"
@@ -404,7 +404,7 @@ export default function InlandFreightCard({
             <button
               type="button"
               onClick={() => setShowModeled((v) => !v)}
-              className="font-display inline-flex min-h-[28px] items-center text-[10.5px] font-semibold text-slate-500 hover:text-slate-800"
+              className="font-display inline-flex min-h-[28px] items-center text-[10.5px] font-semibold text-slate-500 hover:text-slate-800 active:scale-[0.97] motion-reduce:active:scale-100"
             >
               {showModeled
                 ? "Hide modeled flows"

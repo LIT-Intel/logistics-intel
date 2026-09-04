@@ -229,7 +229,7 @@ export default function CDPActivity({ companyId, ownerName }: CDPActivityProps) 
                 type="button"
                 onClick={() => setFilter(f.k)}
                 className={[
-                  "font-display whitespace-nowrap rounded-md border px-2 py-1 text-[10px] font-semibold",
+                  "font-display whitespace-nowrap rounded-md border px-2 py-1 text-[10px] font-semibold active:scale-[0.97] motion-reduce:active:scale-100",
                   filter === f.k
                     ? "border-blue-200 bg-blue-50 text-blue-700"
                     : "border-slate-200 bg-slate-50 text-slate-500 hover:text-slate-700",
@@ -374,7 +374,7 @@ export default function CDPActivity({ companyId, ownerName }: CDPActivityProps) 
             type="button"
             onClick={handleSaveNote}
             disabled={savingNote || !noteDraft.trim() || !resolvedCompanyUuid}
-            className="font-display mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-gradient-to-b from-blue-500 to-blue-600 px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+            className="font-display mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 shadow-sm shadow-blue-600/25 px-3 py-1.5 text-[11px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 active:scale-[0.98] motion-reduce:active:scale-100"
           >
             {savingNote && <Loader2 className="h-3 w-3 animate-spin" />}
             Save note

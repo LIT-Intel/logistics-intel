@@ -116,7 +116,7 @@ function SignalPill({
         type="button"
         onClick={onDismiss}
         aria-label="Dismiss signal"
-        className="text-slate-300 hover:text-slate-500"
+        className="text-slate-300 hover:text-slate-500 active:scale-[0.94] motion-reduce:active:scale-100"
       >
         <X className="w-3 h-3" />
       </button>

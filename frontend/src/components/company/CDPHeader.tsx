@@ -313,7 +313,7 @@ export default function CDPHeader({
           <button
             type="button"
             onClick={onBack}
-            className="font-body inline-flex items-center gap-1 truncate text-[12px] text-slate-500 hover:text-slate-700"
+            className="font-body inline-flex items-center gap-1 truncate text-[12px] text-slate-500 hover:text-slate-700 active:scale-[0.97] motion-reduce:active:scale-100"
           >
             <ArrowLeft className="h-3 w-3" />
             Command Center
@@ -381,7 +381,7 @@ export default function CDPHeader({
               type="button"
               onClick={onToggleStar}
               aria-label={starred ? "Unstar company" : "Star company"}
-              className="rounded p-0.5 transition-colors"
+              className="rounded p-0.5 transition-colors active:scale-[0.94] motion-reduce:active:scale-100"
               style={{ color: starred ? "#F59E0B" : "#CBD5E1" }}
             >
               <Star
@@ -396,7 +396,7 @@ export default function CDPHeader({
                 onClick={onEditCompany}
                 aria-label="Edit company"
                 title="Edit name, website, industry, headcount"
-                className="rounded p-0.5 text-slate-400 transition-colors hover:text-blue-600"
+                className="rounded p-0.5 text-slate-400 transition-colors hover:text-blue-600 active:scale-[0.94] motion-reduce:active:scale-100"
               >
                 <Pencil className="h-3.5 w-3.5" strokeWidth={1.8} />
               </button>
@@ -539,7 +539,7 @@ export default function CDPHeader({
           <button
             type="button"
             onClick={onAddToList}
-            className="font-display inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-slate-900 hover:bg-slate-50"
+            className="font-display inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-slate-900 hover:bg-slate-50 active:scale-[0.97] motion-reduce:active:scale-100"
           >
             <FolderPlus className="h-3 w-3" />
             Add to List
@@ -547,7 +547,7 @@ export default function CDPHeader({
           <button
             type="button"
             onClick={onStartOutreach}
-            className="font-display inline-flex items-center gap-1.5 whitespace-nowrap rounded-md bg-gradient-to-b from-blue-500 to-blue-600 px-3.5 py-1.5 text-[12px] font-semibold text-white shadow-[0_1px_3px_rgba(59,130,246,0.35),inset_0_1px_0_rgba(255,255,255,0.18)]"
+            className="font-display inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl bg-blue-600 hover:bg-blue-700 shadow-sm shadow-blue-600/25 px-3.5 py-1.5 text-[12px] font-semibold text-white active:scale-[0.97] motion-reduce:active:scale-100"
           >
             <Send className="h-3 w-3" />
             Start Outreach
@@ -674,7 +674,7 @@ function YearSelector({
               onClick={() => onSelect(year)}
               aria-pressed={active}
               className={[
-                "rounded px-1 transition-colors",
+                "rounded px-1 transition-colors active:scale-[0.94] motion-reduce:active:scale-100",
                 active
                   ? "font-semibold text-slate-900"
                   : "text-slate-400 hover:text-slate-700",

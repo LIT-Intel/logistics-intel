@@ -585,7 +585,7 @@ export default function CDPRateBenchmark({
                     <button
                       key={l.lane_code}
                       onClick={() => toggleComparison(l.lane_code)}
-                      className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border transition-colors ${
+                      className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border transition-colors active:scale-[0.94] motion-reduce:active:scale-100 ${
                         comparisonLanes.includes(l.lane_code)
                           ? "border-blue-500 bg-blue-50 text-blue-700"
                           : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"

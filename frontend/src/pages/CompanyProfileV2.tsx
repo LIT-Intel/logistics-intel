@@ -362,7 +362,7 @@ class V2ErrorBoundary extends Component<BoundaryProps, BoundaryState> {
               <button
                 type="button"
                 onClick={() => window.location.reload()}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-800"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 active:scale-[0.97] motion-reduce:active:scale-100"
               >
                 Reload page
               </button>
@@ -463,7 +463,7 @@ function CompanyTabsRow({
           aria-expanded={moreOpen}
           onClick={() => setMoreOpen((v) => !v)}
           className={[
-            "font-display -mb-px inline-flex items-center gap-1 whitespace-nowrap border-b-2 px-2.5 py-2.5 text-[12.5px] font-semibold transition-colors sm:px-3.5",
+            "font-display -mb-px inline-flex items-center gap-1 whitespace-nowrap border-b-2 px-2.5 py-2.5 text-[12.5px] font-semibold transition-colors sm:px-3.5 active:scale-[0.97] motion-reduce:active:scale-100",
             activeInOverflow
               ? "border-blue-500 text-blue-700"
               : "border-transparent text-slate-500 hover:text-slate-700",
@@ -543,7 +543,7 @@ function DirectoryOnlyEmptyState({
       <button
         onClick={onSave}
         disabled={saving}
-        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
+        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 shadow-sm shadow-blue-600/25 disabled:opacity-60 disabled:cursor-not-allowed active:scale-[0.97] motion-reduce:active:scale-100"
       >
         {saving ? (
           <Loader2 className="w-4 h-4 animate-spin" />
@@ -2207,7 +2207,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
           <button
             type="button"
             onClick={() => navigate("/app/command-center")}
-            className="font-display inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-slate-700 hover:bg-slate-50"
+            className="font-display inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-slate-700 hover:bg-slate-50 active:scale-[0.97] motion-reduce:active:scale-100"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
             Back to Command Center
@@ -2319,7 +2319,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
           <button
             type="button"
             onClick={() => setCreateDealOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-white px-3 py-1.5 text-[12.5px] font-semibold text-indigo-700 hover:bg-indigo-50"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-white px-3 py-1.5 text-[12.5px] font-semibold text-indigo-700 hover:bg-indigo-50 active:scale-[0.97] motion-reduce:active:scale-100"
             style={{ fontFamily: "'Space Grotesk', sans-serif" }}
           >
             <Plus className="h-3.5 w-3.5" />

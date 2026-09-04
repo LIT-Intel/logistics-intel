@@ -123,7 +123,7 @@ export default function AddCompanyModal({ open, onClose, onSaved, onLimitExceede
       <div className="w-[860px] max-w-[95vw] rounded-2xl bg-white shadow-2xl border">
         <div className="px-5 py-4 border-b flex items-center justify-between">
           <div className="text-sm font-semibold">Add Company</div>
-          <button onClick={onClose} className="text-sm text-gray-500">Close</button>
+          <button onClick={onClose} className="text-sm text-gray-500 active:scale-[0.97] motion-reduce:active:scale-100">Close</button>
         </div>
 
         {/* Tabs */}
@@ -149,7 +149,7 @@ export default function AddCompanyModal({ open, onClose, onSaved, onLimitExceede
                   onChange={(e)=>setQ(e.target.value)}
                   onKeyDown={(e)=> e.key==='Enter' && runLitSearch()}
                 />
-                <button onClick={runLitSearch} disabled={loading} className="px-3 py-2 rounded-lg border text-sm">
+                <button onClick={runLitSearch} disabled={loading} className="px-3 py-2 rounded-xl border text-sm active:scale-[0.97] motion-reduce:active:scale-100">
                   {loading ? "Searching…" : "Search"}
                 </button>
               </div>
@@ -181,7 +181,7 @@ export default function AddCompanyModal({ open, onClose, onSaved, onLimitExceede
                         </div>
                       </div>
                       <button
-                        className="px-3 py-1.5 text-sm rounded-lg border disabled:opacity-50"
+                        className="px-3 py-1.5 text-sm rounded-xl border disabled:opacity-50 active:scale-[0.97] motion-reduce:active:scale-100"
                         onClick={() => saveRow(row)}
                         disabled={isSaving}
                       >
@@ -263,7 +263,7 @@ function ManualAdd({
       </div>
       {err && <div className="text-sm text-red-600">{err}</div>}
       <button
-        className="px-3 py-2 rounded-lg border text-sm disabled:opacity-50"
+        className="px-3 py-2 rounded-xl border text-sm disabled:opacity-50 active:scale-[0.97] motion-reduce:active:scale-100"
         onClick={submit}
         disabled={busy || !name.trim()}
       >

@@ -263,7 +263,7 @@ export default function RelationshipIntelCard({
             type="button"
             disabled={research.isPending}
             onClick={() => research.mutate()}
-            className="font-display inline-flex min-h-[32px] items-center gap-1.5 rounded-lg bg-[#2563EB] px-3 py-1.5 text-[11.5px] font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-70"
+            className="font-display inline-flex min-h-[32px] items-center gap-1.5 rounded-xl bg-[#2563EB] px-3 py-1.5 text-[11.5px] font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-70 active:scale-[0.97] motion-reduce:active:scale-100"
           >
             {research.isPending ? (
               <>
@@ -322,7 +322,7 @@ export default function RelationshipIntelCard({
             type="button"
             disabled={research.isPending}
             onClick={() => research.mutate()}
-            className="font-display inline-flex min-h-[32px] items-center gap-1.5 rounded-lg bg-[#2563EB] px-3 py-1.5 text-[11.5px] font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-70"
+            className="font-display inline-flex min-h-[32px] items-center gap-1.5 rounded-xl bg-[#2563EB] px-3 py-1.5 text-[11.5px] font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-70 active:scale-[0.97] motion-reduce:active:scale-100"
           >
             {research.isPending ? (
               <>

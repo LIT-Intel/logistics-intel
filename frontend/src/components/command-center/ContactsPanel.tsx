@@ -175,7 +175,7 @@ export default function ContactsPanel() {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <EnrichmentCreditsBadge />
-              <button className="inline-flex h-9 items-center gap-2 rounded-lg border border-white/15 bg-white/10 px-3 text-sm font-semibold text-white transition hover:bg-white/15" onClick={handleExportCsv} disabled={!filteredRows.length}>
+              <button className="inline-flex h-9 items-center gap-2 rounded-lg border border-white/15 bg-white/10 px-3 text-sm font-semibold text-white transition hover:bg-white/15 active:scale-[0.97] motion-reduce:active:scale-100" onClick={handleExportCsv} disabled={!filteredRows.length}>
                 <Download className="h-4 w-4" /> Export CSV
               </button>
             </div>

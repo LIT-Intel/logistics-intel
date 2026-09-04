@@ -137,7 +137,7 @@ function ServiceLineCard({
             type="button"
             onClick={onComputeNow}
             disabled={computing}
-            className="inline-flex h-8 items-center rounded-lg bg-blue-600 px-3 text-[12px] font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex h-8 items-center rounded-xl bg-blue-600 px-3 text-[12px] font-semibold text-white shadow-sm shadow-blue-600/25 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 active:scale-[0.97] motion-reduce:active:scale-100"
           >
             {computing ? "Computing…" : "Compute now"}
           </button>

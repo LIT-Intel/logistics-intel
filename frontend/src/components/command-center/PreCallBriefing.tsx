@@ -52,7 +52,7 @@ export default function PreCallBriefing() {
       <div className="flex items-center justify-between mb-2">
         <div className="text-sm font-semibold">Pre-Call Summary</div>
         <button
-          className="px-2.5 py-1.5 text-xs rounded-lg border hover:bg-slate-50"
+          className="px-2.5 py-1.5 text-xs rounded-xl border hover:bg-slate-50 active:scale-[0.97] motion-reduce:active:scale-100"
           onClick={generate}
           disabled={loading}
         >

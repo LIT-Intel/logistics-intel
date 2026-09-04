@@ -1120,7 +1120,7 @@ export default function CDPContacts({
               type="button"
               onClick={() => setFilter(f.id)}
               className={[
-                "font-display whitespace-nowrap rounded-md border px-2.5 py-1 text-[11px] font-semibold",
+                "font-display whitespace-nowrap rounded-md border px-2.5 py-1 text-[11px] font-semibold active:scale-[0.97] motion-reduce:active:scale-100",
                 filter === f.id
                   ? "border-blue-200 bg-blue-50 text-blue-700"
                   : "border-slate-200 bg-slate-50 text-slate-500 hover:text-slate-700",
@@ -1143,7 +1143,7 @@ export default function CDPContacts({
               onClick={() => setView(v.k)}
               aria-label={v.k === "list" ? "List view" : "Card view"}
               className={[
-                "rounded px-2 py-1",
+                "rounded px-2 py-1 active:scale-[0.94] motion-reduce:active:scale-100",
                 view === v.k
                   ? "bg-white text-slate-900 shadow-sm"
                   : "text-slate-400 hover:text-slate-700",
@@ -1156,7 +1156,7 @@ export default function CDPContacts({
         <button
           type="button"
           onClick={() => setAddOpen(true)}
-          className="font-display inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+          className="font-display inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 active:scale-[0.97] motion-reduce:active:scale-100"
         >
           <UserPlus className="h-3 w-3" />
           Add contact
@@ -1165,7 +1165,7 @@ export default function CDPContacts({
           type="button"
           onClick={handleApolloSearch}
           disabled={apolloLoading}
-          className="font-display inline-flex items-center gap-1.5 whitespace-nowrap rounded-md bg-gradient-to-b from-violet-500 to-violet-600 px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm hover:from-violet-600 hover:to-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
+          className="font-display inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl bg-gradient-to-b from-violet-500 to-violet-600 px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm hover:from-violet-600 hover:to-violet-700 disabled:cursor-not-allowed disabled:opacity-60 active:scale-[0.97] motion-reduce:active:scale-100"
         >
           {apolloLoading ? (
             <Loader2 className="h-3 w-3 animate-spin" />
@@ -1356,14 +1356,14 @@ export default function CDPContacts({
             <button
               type="button"
               onClick={() => setAddOpen(true)}
-              className="font-display inline-flex items-center gap-1 text-[11px] font-semibold text-blue-500 hover:text-blue-700"
+              className="font-display inline-flex items-center gap-1 text-[11px] font-semibold text-blue-500 hover:text-blue-700 active:scale-[0.97] motion-reduce:active:scale-100"
             >
               <UserPlus className="h-3 w-3" />
               Add contact
             </button>
             <button
               type="button"
-              className="font-display inline-flex items-center gap-1 text-[11px] font-semibold text-blue-500 hover:text-blue-700"
+              className="font-display inline-flex items-center gap-1 text-[11px] font-semibold text-blue-500 hover:text-blue-700 active:scale-[0.97] motion-reduce:active:scale-100"
             >
               <Download className="h-3 w-3" />
               Export CSV
@@ -1420,7 +1420,7 @@ export default function CDPContacts({
               type="button"
               onClick={() => handleApolloSearch()}
               disabled={apolloLoading}
-              className="font-display inline-flex items-center gap-1.5 rounded-md bg-gradient-to-b from-violet-500 to-violet-600 px-3.5 py-1.5 text-[12px] font-semibold text-white shadow-sm hover:from-violet-600 hover:to-violet-700 disabled:opacity-60"
+              className="font-display inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-b from-violet-500 to-violet-600 px-3.5 py-1.5 text-[12px] font-semibold text-white shadow-sm hover:from-violet-600 hover:to-violet-700 disabled:opacity-60 active:scale-[0.97] motion-reduce:active:scale-100"
             >
               {apolloLoading ? (
                 <Loader2 className="h-3 w-3 animate-spin" />
@@ -1432,7 +1432,7 @@ export default function CDPContacts({
             <button
               type="button"
               onClick={() => setAddOpen(true)}
-              className="font-display inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3.5 py-1.5 text-[12px] font-semibold text-slate-700 hover:bg-slate-50"
+              className="font-display inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3.5 py-1.5 text-[12px] font-semibold text-slate-700 hover:bg-slate-50 active:scale-[0.97] motion-reduce:active:scale-100"
             >
               <UserPlus className="h-3 w-3" />
               Add manually
@@ -1605,7 +1605,7 @@ function ContactRow({
               <button
                 type="button"
                 onClick={() => handlers.onOpenDetail(contact)}
-                className="font-display truncate text-left text-[12px] font-semibold text-slate-900 hover:text-blue-700"
+                className="font-display truncate text-left text-[12px] font-semibold text-slate-900 hover:text-blue-700 active:scale-[0.97] motion-reduce:active:scale-100"
               >
                 {name}
               </button>
@@ -1660,7 +1660,7 @@ function ContactRow({
             type="button"
             onClick={() => handlers.onRevealPhone(contact)}
             title="Unlock direct dial (uses one enrichment credit)."
-            className="font-display inline-flex items-center gap-1 rounded-sm border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-blue-700 hover:bg-blue-100"
+            className="font-display inline-flex items-center gap-1 rounded-sm border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-blue-700 hover:bg-blue-100 active:scale-[0.94] motion-reduce:active:scale-100"
           >
             <Phone className="h-2.5 w-2.5" />
             Unlock
@@ -1980,7 +1980,7 @@ function ContactCard({
             <button
               type="button"
               onClick={() => onOpenDetail(contact)}
-              className="font-display truncate text-left text-[13px] font-bold text-slate-900 hover:text-blue-700"
+              className="font-display truncate text-left text-[13px] font-bold text-slate-900 hover:text-blue-700 active:scale-[0.97] motion-reduce:active:scale-100"
             >
               {name}
             </button>
@@ -2032,7 +2032,7 @@ function ContactCard({
         <button
           type="button"
           onClick={() => onOutreach(contact)}
-          className="font-display inline-flex flex-1 items-center justify-center gap-1 rounded-md bg-gradient-to-b from-blue-500 to-blue-600 px-2 py-1.5 text-[11px] font-semibold text-white shadow-sm hover:from-blue-600 hover:to-blue-700"
+          className="font-display inline-flex flex-1 items-center justify-center gap-1 rounded-xl bg-blue-600 hover:bg-blue-700 shadow-sm shadow-blue-600/25 px-2 py-1.5 text-[11px] font-semibold text-white active:scale-[0.97] motion-reduce:active:scale-100"
         >
           <Send className="h-2.5 w-2.5" />
           Outreach
@@ -2041,7 +2041,7 @@ function ContactCard({
           type="button"
           onClick={() => onEnrich(contact)}
           disabled={enriched}
-          className="font-display inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px] font-semibold text-slate-600 disabled:opacity-50"
+          className="font-display inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px] font-semibold text-slate-600 disabled:opacity-50 active:scale-[0.97] motion-reduce:active:scale-100"
         >
           <Zap className="h-2.5 w-2.5" />
           {enriched ? "Enriched" : "Enrich"}
@@ -2050,7 +2050,7 @@ function ContactCard({
           type="button"
           aria-label="View details"
           onClick={() => onOpenDetail(contact)}
-          className="rounded-md border border-slate-200 bg-slate-50 px-1.5 text-slate-600 hover:text-slate-900"
+          className="rounded-md border border-slate-200 bg-slate-50 px-1.5 text-slate-600 hover:text-slate-900 active:scale-[0.94] motion-reduce:active:scale-100"
         >
           <Bookmark className="h-2.5 w-2.5" />
         </button>
@@ -2110,7 +2110,7 @@ function RowEnrichButton({
       onClick={onClick}
       title="Enrich this contact with LIT (uses 1 credit)."
       aria-label="Enrich this contact"
-      className="font-display inline-flex h-6 items-center gap-1 whitespace-nowrap rounded-full border border-blue-200 bg-blue-50 px-2 text-[10px] font-semibold text-blue-700 hover:bg-blue-100"
+      className="font-display inline-flex h-6 items-center gap-1 whitespace-nowrap rounded-full border border-blue-200 bg-blue-50 px-2 text-[10px] font-semibold text-blue-700 hover:bg-blue-100 active:scale-[0.94] motion-reduce:active:scale-100"
     >
       <Zap className="h-3 w-3" />
       Enrich
@@ -2139,7 +2139,7 @@ function ActionButton({
       disabled={disabled}
       onClick={onClick}
       className={[
-        "flex h-6 w-6 items-center justify-center rounded border",
+        "flex h-6 w-6 items-center justify-center rounded border active:scale-[0.94] motion-reduce:active:scale-100",
         disabled
           ? "border-slate-200 bg-slate-100 text-slate-300"
           : primary
@@ -2419,7 +2419,7 @@ function ApolloResultsPanel({
                 <button
                   type="button"
                   onClick={onOpenModal}
-                  className="font-display inline-flex items-center gap-1 rounded-md border border-violet-200 bg-white px-2 py-1 text-[11px] font-semibold text-violet-700 hover:bg-violet-50"
+                  className="font-display inline-flex items-center gap-1 rounded-md border border-violet-200 bg-white px-2 py-1 text-[11px] font-semibold text-violet-700 hover:bg-violet-50 active:scale-[0.97] motion-reduce:active:scale-100"
                 >
                   <Maximize2 className="h-3 w-3" />
                   Open results
@@ -2435,7 +2435,7 @@ function ApolloResultsPanel({
                   onSelectVisible(selectableVisibleKeys);
                 }}
                 disabled={selectableVisibleKeys.length === 0}
-                className="font-display rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:text-slate-900"
+                className="font-display rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:text-slate-900 active:scale-[0.97] motion-reduce:active:scale-100"
               >
                 {allVisibleSelected ? "Clear all" : "Select shown"}
               </button>
@@ -2443,7 +2443,7 @@ function ApolloResultsPanel({
                 type="button"
                 onClick={onEnrichSelected}
                 disabled={enriching || selected.size === 0}
-                className="font-display inline-flex items-center gap-1.5 rounded-md bg-gradient-to-b from-violet-500 to-violet-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+                className="font-display inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-b from-violet-500 to-violet-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60 active:scale-[0.97] motion-reduce:active:scale-100"
               >
                 {enriching ? (
                   <Loader2 className="h-3 w-3 animate-spin" />
@@ -2458,7 +2458,7 @@ function ApolloResultsPanel({
             type="button"
             onClick={onClose}
             aria-label="Close contact search panel"
-            className="rounded-md border border-slate-200 bg-white p-1 text-slate-500 hover:text-slate-900"
+            className="rounded-md border border-slate-200 bg-white p-1 text-slate-500 hover:text-slate-900 active:scale-[0.94] motion-reduce:active:scale-100"
           >
             <X className="h-3 w-3" />
           </button>
@@ -2521,7 +2521,7 @@ function ApolloResultsPanel({
             type="button"
             onClick={onSaveCorrections}
             disabled={savingCorrections}
-            className="font-display inline-flex items-center gap-1 rounded-md border border-amber-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-amber-800 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+            className="font-display inline-flex items-center gap-1 rounded-md border border-amber-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-amber-800 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 active:scale-[0.97] motion-reduce:active:scale-100"
           >
             {savingCorrections ? (
               <Loader2 className="h-3 w-3 animate-spin" />
@@ -2550,7 +2550,7 @@ function ApolloResultsPanel({
                     key={t}
                     onClick={() => toggle(titles, t, onTitlesChange)}
                     className={[
-                      "font-display rounded-md border px-2 py-0.5 text-[10px] font-semibold",
+                      "font-display rounded-md border px-2 py-0.5 text-[10px] font-semibold active:scale-[0.94] motion-reduce:active:scale-100",
                       on
                         ? "border-violet-300 bg-violet-50 text-violet-700"
                         : "border-slate-200 bg-white text-slate-500 hover:text-slate-700",
@@ -2575,7 +2575,7 @@ function ApolloResultsPanel({
                     key={s}
                     onClick={() => toggle(seniorities, s, onSenioritiesChange)}
                     className={[
-                      "font-display rounded-md border px-2 py-0.5 text-[10px] font-semibold capitalize",
+                      "font-display rounded-md border px-2 py-0.5 text-[10px] font-semibold capitalize active:scale-[0.94] motion-reduce:active:scale-100",
                       on
                         ? "border-violet-300 bg-violet-50 text-violet-700"
                         : "border-slate-200 bg-white text-slate-500 hover:text-slate-700",
@@ -2598,7 +2598,7 @@ function ApolloResultsPanel({
                     key={d}
                     onClick={() => toggle(departments, d, onDepartmentsChange)}
                     className={[
-                      "font-display rounded-md border px-2 py-0.5 text-[10px] font-semibold",
+                      "font-display rounded-md border px-2 py-0.5 text-[10px] font-semibold active:scale-[0.94] motion-reduce:active:scale-100",
                       on
                         ? "border-violet-300 bg-violet-50 text-violet-700"
                         : "border-slate-200 bg-white text-slate-500 hover:text-slate-700",
@@ -2663,7 +2663,7 @@ function ApolloResultsPanel({
               type="button"
               onClick={onRetry}
               disabled={loading}
-              className="font-display mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-violet-200 bg-violet-50 px-2 py-1 text-[11px] font-semibold text-violet-700 hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-60"
+              className="font-display mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-violet-200 bg-violet-50 px-2 py-1 text-[11px] font-semibold text-violet-700 hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-60 active:scale-[0.98] motion-reduce:active:scale-100"
             >
               {loading ? (
                 <Loader2 className="h-3 w-3 animate-spin" />
@@ -2719,7 +2719,7 @@ function ApolloResultsPanel({
             <button
               type="button"
               onClick={onRetry}
-              className="font-display rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+              className="font-display rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 active:scale-[0.97] motion-reduce:active:scale-100"
             >
               Retry search
             </button>
@@ -2755,7 +2755,7 @@ function ApolloResultsPanel({
               <button
                 type="button"
                 onClick={onBroaden}
-                className="font-display inline-flex items-center gap-1.5 rounded-md bg-gradient-to-b from-violet-500 to-violet-600 px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm hover:from-violet-600 hover:to-violet-700"
+                className="font-display inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-b from-violet-500 to-violet-600 px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm hover:from-violet-600 hover:to-violet-700 active:scale-[0.97] motion-reduce:active:scale-100"
               >
                 <SlidersHorizontal className="h-3 w-3" />
                 Broaden filters &amp; retry
@@ -2764,7 +2764,7 @@ function ApolloResultsPanel({
             <button
               type="button"
               onClick={onRetry}
-              className="font-display rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+              className="font-display rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 active:scale-[0.97] motion-reduce:active:scale-100"
             >
               Re-run search
             </button>
@@ -2808,7 +2808,7 @@ function ApolloResultsPanel({
                   type="button"
                   onClick={() => setResultStatus(value as typeof resultStatus)}
                   className={[
-                    "font-display rounded-md border px-2 py-1 text-[11px] font-semibold",
+                    "font-display rounded-md border px-2 py-1 text-[11px] font-semibold active:scale-[0.97] motion-reduce:active:scale-100",
                     resultStatus === value
                       ? "border-violet-300 bg-violet-50 text-violet-700"
                       : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
@@ -3039,7 +3039,7 @@ function ApolloResultsPanel({
                             onClick={() => onEnrichOne(k)}
                             disabled={rowEnriching}
                             title="Enrich this contact — uses 1 credit"
-                            className="font-display inline-flex items-center gap-1 rounded-full bg-gradient-to-b from-violet-500 to-violet-600 px-2.5 py-1 text-[10px] font-semibold text-white shadow-sm hover:from-violet-600 hover:to-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
+                            className="font-display inline-flex items-center gap-1 rounded-full bg-gradient-to-b from-violet-500 to-violet-600 px-2.5 py-1 text-[10px] font-semibold text-white shadow-sm hover:from-violet-600 hover:to-violet-700 disabled:cursor-not-allowed disabled:opacity-60 active:scale-[0.94] motion-reduce:active:scale-100"
                           >
                             <Zap className="h-3 w-3" />
                             Enrich
@@ -3065,7 +3065,7 @@ function ApolloResultsPanel({
                 type="button"
                 onClick={onRetry}
                 disabled={loading || loadingMore}
-                className="font-display inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                className="font-display inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 active:scale-[0.97] motion-reduce:active:scale-100"
                 title="Re-run the search with current filters"
               >
                 <RefreshCw className={["h-3 w-3", loading ? "animate-spin" : ""].join(" ")} />
@@ -3076,7 +3076,7 @@ function ApolloResultsPanel({
                   type="button"
                   onClick={onLoadMore}
                   disabled={loadingMore || loading}
-                  className="font-display inline-flex items-center gap-1 rounded-md border border-blue-300 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+                  className="font-display inline-flex items-center gap-1 rounded-md border border-blue-300 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50 active:scale-[0.97] motion-reduce:active:scale-100"
                   title="Load more contacts"
                 >
                   {loadingMore ? "Loading…" : "Load more"}
@@ -3229,7 +3229,7 @@ function AddContactModal({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-md p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+            className="rounded-md p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900 active:scale-[0.94] motion-reduce:active:scale-100"
           >
             <X className="h-4 w-4" />
           </button>
@@ -3305,7 +3305,7 @@ function AddContactModal({
           <button
             type="button"
             onClick={onClose}
-            className="font-display rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-slate-700 hover:bg-slate-50"
+            className="font-display rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-slate-700 hover:bg-slate-50 active:scale-[0.97] motion-reduce:active:scale-100"
           >
             Cancel
           </button>
@@ -3313,7 +3313,7 @@ function AddContactModal({
             type="button"
             onClick={() => valid && onSave(form)}
             disabled={!valid || saving || !companyId}
-            className="font-display inline-flex items-center gap-1.5 rounded-md bg-gradient-to-b from-blue-500 to-blue-600 px-3 py-1.5 text-[12px] font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+            className="font-display inline-flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 shadow-sm shadow-blue-600/25 px-3 py-1.5 text-[12px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 active:scale-[0.97] motion-reduce:active:scale-100"
           >
             {saving ? (
               <Loader2 className="h-3 w-3 animate-spin" />
@@ -3453,7 +3453,7 @@ function ContactDetailDrawer({
             type="button"
             onClick={onClose}
             aria-label="Close detail drawer"
-            className="rounded-md p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+            className="rounded-md p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900 active:scale-[0.94] motion-reduce:active:scale-100"
           >
             <X className="h-4 w-4" />
           </button>
@@ -3586,7 +3586,7 @@ function ContactDetailDrawer({
           <button
             type="button"
             onClick={() => onOutreach(contact)}
-            className="font-display inline-flex flex-1 items-center justify-center gap-1.5 rounded-md bg-gradient-to-b from-blue-500 to-blue-600 px-3 py-1.5 text-[12px] font-semibold text-white shadow-sm hover:from-blue-600 hover:to-blue-700"
+            className="font-display inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 shadow-sm shadow-blue-600/25 px-3 py-1.5 text-[12px] font-semibold text-white active:scale-[0.97] motion-reduce:active:scale-100"
           >
             <Send className="h-3 w-3" />
             Add to campaign
@@ -3595,7 +3595,7 @@ function ContactDetailDrawer({
             type="button"
             onClick={() => onEnrich(contact)}
             disabled={enriched}
-            className="font-display inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-[12px] font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+            className="font-display inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-[12px] font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50 active:scale-[0.97] motion-reduce:active:scale-100"
           >
             <Zap className="h-3 w-3" />
             {enriched ? "Enriched" : "Enrich"}
@@ -3672,7 +3672,7 @@ function ContactMethodRow({
         <button
           type="button"
           onClick={onAction}
-          className="font-display rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600 hover:text-slate-900"
+          className="font-display rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600 hover:text-slate-900 active:scale-[0.94] motion-reduce:active:scale-100"
         >
           {actionLabel}
         </button>
@@ -3884,7 +3884,7 @@ function OutreachContactModal({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-md p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+            className="rounded-md p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900 active:scale-[0.94] motion-reduce:active:scale-100"
           >
             <X className="h-4 w-4" />
           </button>
@@ -3950,7 +3950,7 @@ function OutreachContactModal({
           <button
             type="button"
             onClick={onClose}
-            className="font-display rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-slate-700 hover:bg-slate-50"
+            className="font-display rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-slate-700 hover:bg-slate-50 active:scale-[0.97] motion-reduce:active:scale-100"
           >
             Cancel
           </button>
@@ -3965,7 +3965,7 @@ function OutreachContactModal({
               campaigns.length === 0 ||
               !companyId
             }
-            className="font-display inline-flex items-center gap-1.5 rounded-md bg-gradient-to-b from-blue-500 to-blue-600 px-3 py-1.5 text-[12px] font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+            className="font-display inline-flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 shadow-sm shadow-blue-600/25 px-3 py-1.5 text-[12px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 active:scale-[0.97] motion-reduce:active:scale-100"
           >
             {submitting ? (
               <Loader2 className="h-3 w-3 animate-spin" />

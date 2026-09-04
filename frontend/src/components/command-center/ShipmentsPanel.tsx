@@ -201,7 +201,7 @@ export default function ShipmentsPanel() {
             <div className="flex items-center gap-1 border border-slate-200 rounded-lg p-1">
               <button
                 onClick={() => setFilterMode("all")}
-                className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
+                className={`px-3 py-1 text-xs font-medium rounded transition-colors active:scale-[0.97] motion-reduce:active:scale-100 ${
                   filterMode === "all"
                     ? "bg-blue-600 text-white"
                     : "text-slate-600 hover:bg-slate-100"
@@ -211,7 +211,7 @@ export default function ShipmentsPanel() {
               </button>
               <button
                 onClick={() => setFilterMode("ocean")}
-                className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
+                className={`px-3 py-1 text-xs font-medium rounded transition-colors active:scale-[0.97] motion-reduce:active:scale-100 ${
                   filterMode === "ocean"
                     ? "bg-blue-600 text-white"
                     : "text-slate-600 hover:bg-slate-100"
@@ -221,7 +221,7 @@ export default function ShipmentsPanel() {
               </button>
               <button
                 onClick={() => setFilterMode("air")}
-                className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
+                className={`px-3 py-1 text-xs font-medium rounded transition-colors active:scale-[0.97] motion-reduce:active:scale-100 ${
                   filterMode === "air"
                     ? "bg-blue-600 text-white"
                     : "text-slate-600 hover:bg-slate-100"

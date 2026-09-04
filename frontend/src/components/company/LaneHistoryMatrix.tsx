@@ -431,7 +431,7 @@ export default function LaneHistoryMatrix({
           <button
             type="button"
             onClick={exportCsv}
-            className="font-display inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[10.5px] font-semibold text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-900"
+            className="font-display inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[10.5px] font-semibold text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-900 active:scale-[0.97] motion-reduce:active:scale-100"
           >
             <Download className="h-3 w-3" />
             CSV
@@ -518,7 +518,7 @@ export default function LaneHistoryMatrix({
                 type="button"
                 onClick={() => setWindowMonths(w)}
                 className={[
-                  "font-display px-2 py-1 text-[10.5px] font-semibold",
+                  "font-display px-2 py-1 text-[10.5px] font-semibold active:scale-[0.94] motion-reduce:active:scale-100",
                   windowMonths === w
                     ? "bg-blue-600 text-white"
                     : "bg-white text-slate-500 hover:bg-slate-50",
@@ -536,7 +536,7 @@ export default function LaneHistoryMatrix({
               type="button"
               aria-label="Clear lane filter"
               onClick={clearFilters}
-              className="text-blue-400 hover:text-blue-700"
+              className="text-blue-400 hover:text-blue-700 active:scale-[0.94] motion-reduce:active:scale-100"
             >
               <X className="h-3 w-3" />
             </button>
@@ -546,7 +546,7 @@ export default function LaneHistoryMatrix({
           <button
             type="button"
             onClick={clearFilters}
-            className="font-display text-[10.5px] font-semibold text-slate-400 hover:text-slate-600"
+            className="font-display text-[10.5px] font-semibold text-slate-400 hover:text-slate-600 active:scale-[0.97] motion-reduce:active:scale-100"
           >
             Clear
           </button>

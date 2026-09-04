@@ -26,10 +26,11 @@ export default function LitHeaderIconBtn({
       title={label}
       aria-label={label}
       className={cn(
-        "relative inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 transition-colors duration-150",
-        "hover:border-slate-300 hover:bg-slate-50",
+        "relative inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition",
+        "hover:border-slate-300 hover:bg-slate-50 hover:text-blue-600",
+        "active:scale-[0.94] motion-reduce:active:scale-100",
         "focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1",
-        "disabled:cursor-not-allowed disabled:opacity-50",
+        "disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100",
         className,
       )}
     >

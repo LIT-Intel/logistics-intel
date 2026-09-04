@@ -558,7 +558,7 @@ export default function CDPDetailsPanel({
               <button
                 type="button"
                 onClick={() => onOpenSuppliersTab?.()}
-                className="flex w-full items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left transition hover:border-blue-300 hover:bg-slate-50"
+                className="flex w-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-left transition hover:border-blue-300 hover:bg-slate-50 active:scale-[0.98] motion-reduce:active:scale-100"
               >
                 <div className="min-w-0">
                   <div className="font-display text-[10px] font-semibold uppercase tracking-wider text-slate-500">
@@ -634,7 +634,7 @@ export default function CDPDetailsPanel({
             type="button"
             onClick={handleRefreshClick}
             disabled={refreshing}
-            className="font-display inline-flex w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-[11px] font-semibold text-slate-600 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+            className="font-display inline-flex w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-[11px] font-semibold text-slate-600 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 active:scale-[0.98] motion-reduce:active:scale-100"
           >
             {refreshing ? (
               <Loader2 className="h-3 w-3 animate-spin" />
@@ -673,7 +673,7 @@ function Section({
         type="button"
         onClick={onToggle}
         aria-expanded={open}
-        className="flex w-full items-center justify-between bg-[#FAFBFC] px-3.5 py-2.5"
+        className="flex w-full items-center justify-between bg-[#FAFBFC] px-3.5 py-2.5 active:scale-[0.98] motion-reduce:active:scale-100"
       >
         <span className="font-display whitespace-nowrap text-[11px] font-bold uppercase tracking-[0.06em] text-slate-900">
           {title}
@@ -892,7 +892,7 @@ function VerifiedContactsBlock({
           <button
             type="button"
             onClick={onOpenContactsTab}
-            className="font-display font-semibold text-blue-600 hover:text-blue-800"
+            className="font-display font-semibold text-blue-600 hover:text-blue-800 active:scale-[0.97] motion-reduce:active:scale-100"
           >
             Find contacts with LIT
           </button>{" "}
@@ -943,14 +943,14 @@ function VerifiedContactsBlock({
         <button
           type="button"
           onClick={onOpenContactsTab}
-          className="font-display inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+          className="font-display inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 active:scale-[0.97] motion-reduce:active:scale-100"
         >
           View contacts
         </button>
         <button
           type="button"
           onClick={onOpenContactsTab}
-          className="font-display inline-flex items-center justify-center gap-1.5 rounded-md bg-gradient-to-b from-violet-500 to-violet-600 px-2 py-1 text-[11px] font-semibold text-white shadow-sm hover:from-violet-600 hover:to-violet-700"
+          className="font-display inline-flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-b from-violet-500 to-violet-600 px-2 py-1 text-[11px] font-semibold text-white shadow-sm hover:from-violet-600 hover:to-violet-700 active:scale-[0.97] motion-reduce:active:scale-100"
         >
           Find contacts with LIT
         </button>
@@ -1175,7 +1175,7 @@ function CrmStageSelector({
         aria-haspopup="listbox"
         aria-expanded={open}
         className={[
-          "inline-flex items-center gap-1 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-300/60",
+          "inline-flex items-center gap-1 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-300/60 active:scale-[0.97] motion-reduce:active:scale-100",
           canEdit ? "cursor-pointer hover:opacity-90" : "cursor-default",
           saving ? "opacity-70" : "",
         ].join(" ")}

@@ -74,7 +74,7 @@ export default function AddToCampaignModal({
       <div className="w-[600px] max-w-[95vw] rounded-2xl bg-white shadow-2xl border">
         <div className="px-5 py-4 border-b flex items-center justify-between">
           <div className="text-sm font-semibold">Add to Campaign</div>
-          <button onClick={onClose} className="text-sm text-gray-500">
+          <button onClick={onClose} className="text-sm text-gray-500 active:scale-[0.97] motion-reduce:active:scale-100">
             Close
           </button>
         </div>
@@ -91,7 +91,7 @@ export default function AddToCampaignModal({
               >
                 <div className="text-sm">{c.name}</div>
                 <button
-                  className="px-3 py-1.5 text-sm rounded-lg border disabled:cursor-wait disabled:opacity-60"
+                  className="px-3 py-1.5 text-sm rounded-xl border disabled:cursor-wait disabled:opacity-60 active:scale-[0.97] motion-reduce:active:scale-100"
                   onClick={() => add(c.id)}
                   disabled={adding !== null}
                 >

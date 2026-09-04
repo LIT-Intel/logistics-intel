@@ -141,7 +141,7 @@ export default function SavedCompaniesPanel({
                 <button
                   type="button"
                   onClick={() => onSelect(key)}
-                  className={`flex w-full items-start gap-3 px-4 py-4 text-left transition-all relative ${
+                  className={`flex w-full items-start gap-3 px-4 py-4 text-left transition-all relative active:scale-[0.98] motion-reduce:active:scale-100 ${
                     active
                       ? "bg-gradient-to-r from-blue-50 to-transparent"
                       : "hover:bg-slate-50"
