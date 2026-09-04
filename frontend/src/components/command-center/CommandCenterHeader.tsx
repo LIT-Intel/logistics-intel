@@ -26,58 +26,44 @@ export default function CommandCenterHeader({
       className="mb-6"
     >
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-900 mb-1 flex items-center gap-2">
-            Command Center
-            <motion.span
-              initial={{ rotate: 0 }}
-              animate={{ rotate: [0, -10, 10, -5, 5, 0] }}
-              transition={{
-                duration: 0.6,
-                delay: 0.3,
-                ease: 'easeInOut',
-              }}
-            >
-              <Briefcase className="w-7 h-7 text-blue-500" />
-            </motion.span>
-          </h1>
-          {/*
-            Only show an onboarding message when no companies are saved. Otherwise
-            keep the header clean – this avoids showing the "Save from LIT Search"
-            banner on every page. You can adjust the copy here if you wish to
-            provide a different call‑to‑action for users with zero saved companies.
-          */}
-          <p className="text-slate-600">
-            {companiesCount > 0 ? '' : 'Save companies from search to get started'}
-          </p>
+        <div className="flex items-center gap-3">
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-sm shadow-blue-600/25 ring-1 ring-white/40">
+            <Briefcase className="h-5 w-5" />
+          </span>
+          <div>
+            <h1 className="font-display text-[26px] font-bold leading-tight tracking-tight text-slate-900">
+              Command Center
+            </h1>
+            {/* Only show an onboarding nudge when nothing is saved yet. */}
+            <p className="font-body text-[13px] text-slate-500">
+              {companiesCount > 0
+                ? `${companiesCount.toLocaleString()} saved compan${companiesCount === 1 ? 'y' : 'ies'}`
+                : 'Save companies from search to get started'}
+            </p>
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
           {onExportPDF && (
-            <motion.button
+            <button
+              type="button"
               onClick={onExportPDF}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-slate-300 transition-all group"
+              className="group inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white/80 px-3.5 py-2.5 text-[13px] font-semibold text-slate-700 backdrop-blur transition hover:border-slate-300 hover:bg-white active:scale-[0.97] motion-reduce:active:scale-100"
             >
-              <FileText className="w-4 h-4 text-slate-600 group-hover:text-blue-600 transition-colors" />
-              <span className="text-sm font-medium text-slate-700">Export PDF</span>
-            </motion.button>
+              <FileText className="h-4 w-4 text-slate-500 transition-colors group-hover:text-blue-600" />
+              Export PDF
+            </button>
           )}
 
           {onGenerateBrief && (
-            <motion.button
+            <button
+              type="button"
               onClick={onGenerateBrief}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ ...springs.snappy, delay: 0.2 }}
-              className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:shadow-md transition-all"
+              className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-3.5 py-2.5 text-[13px] font-semibold text-white shadow-sm shadow-blue-600/25 transition hover:bg-blue-700 active:scale-[0.97] motion-reduce:active:scale-100"
             >
-              <Command className="w-4 h-4" />
-              <span className="text-sm font-medium">Generate Brief</span>
-            </motion.button>
+              <Command className="h-4 w-4" />
+              Generate Brief
+            </button>
           )}
         </div>
       </div>

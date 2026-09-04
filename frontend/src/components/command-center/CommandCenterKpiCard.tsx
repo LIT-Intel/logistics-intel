@@ -75,14 +75,14 @@ export default function CommandCenterKpiCard({
     >
       <Component
         onClick={onClick}
-        className={`w-full text-left bg-gradient-to-br ${colors.bg} rounded-xl border ${colors.border} ${colors.hover} shadow-sm hover:shadow-md transition-all duration-200 p-5`}
+        className={`w-full text-left bg-gradient-to-br ${colors.bg} rounded-2xl border ${colors.border} ${colors.hover} shadow-sm hover:shadow-md transition-all duration-200 p-5 ${onClick ? 'active:scale-[0.98] motion-reduce:active:scale-100' : ''}`}
       >
         <div className="flex items-start justify-between mb-3">
           <motion.div
-            whileHover={{ scale: 1.05, rotate: 5 }}
-            className={`w-10 h-10 rounded-lg ${colors.iconBg} backdrop-blur-sm flex items-center justify-center ${colors.icon}`}
+            whileHover={{ scale: 1.06 }}
+            className={`h-10 w-10 rounded-xl ${colors.iconBg} flex items-center justify-center ring-1 ring-black/5 backdrop-blur-sm ${colors.icon}`}
           >
-            <Icon className="w-5 h-5" />
+            <Icon className="h-5 w-5" />
           </motion.div>
         </div>
 
@@ -91,12 +91,12 @@ export default function CommandCenterKpiCard({
           animate={{ opacity: 1 }}
           transition={{ delay: 0.1 + index * 0.05 }}
         >
-          <div className="text-2xl font-bold text-slate-900 mb-1 group-hover:text-blue-600 transition-colors">
+          <div className="font-display mb-1 text-[26px] font-bold leading-none tracking-tight text-slate-900 transition-colors group-hover:text-blue-600">
             {value}
           </div>
-          <div className="text-sm font-medium text-slate-600">{label}</div>
+          <div className="font-body text-[13px] font-semibold text-slate-600">{label}</div>
           {subtitle && (
-            <div className="text-xs text-slate-500 mt-1">{subtitle}</div>
+            <div className="font-body mt-1 text-[11.5px] text-slate-500">{subtitle}</div>
           )}
         </motion.div>
       </Component>
