@@ -52,10 +52,13 @@ export function looksLikeCompanyName(query) {
 // produce real results. Region keys mirror the server's region_presets.ts so
 // the edge fn expands them identically.
 // ─────────────────────────────────────────────────────────────────────────
+// A phrase may map to ONE region key or SEVERAL (e.g. "east coast" spans the
+// northeast + southeast presets — the server has no single east_coast key).
 const REGION_PHRASES = [
+  [/\b(east[\s-]?coast|eastern seaboard|atlantic coast|eastern us)\b/, ['northeast', 'southeast']],
   [/\b(south[\s-]?east(ern)?|se us)\b/, 'southeast'],
-  [/\b(west[\s-]?coast|pacific( coast)?)\b/, 'west_coast'],
-  [/\b(north[\s-]?east(ern)?|new england)\b/, 'northeast'],
+  [/\b(west[\s-]?coast|pacific( coast)?|western us)\b/, 'west_coast'],
+  [/\b(north[\s-]?east(ern)?|new england|tri[\s-]?state)\b/, 'northeast'],
   [/\b(mid[\s-]?west(ern)?|great lakes)\b/, 'midwest'],
   [/\b(south[\s-]?west(ern)?)\b/, 'southwest'],
   [/\b(mountain( west)?|rock(y|ies)|rocky mountain)\b/, 'mountain'],
@@ -116,7 +119,10 @@ export function localExtractFilters(query) {
 
   const regions = [];
   for (const [re, key] of REGION_PHRASES) {
-    if (re.test(lower) && !regions.includes(key)) regions.push(key);
+    if (!re.test(lower)) continue;
+    for (const k of (Array.isArray(key) ? key : [key])) {
+      if (!regions.includes(k)) regions.push(k);
+    }
   }
   if (regions.length) geo.regions = regions;
 
