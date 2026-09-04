@@ -7,64 +7,83 @@
 
 import { useEffect, useState } from 'react';
 import {
-  X, Loader2, Users, Bookmark, Search as SearchIcon, ArrowUpRight, FolderOpen, RefreshCw,
+  X, Loader2, Users, Bookmark, Search as SearchIcon, ArrowUpRight, FolderOpen, RefreshCw, UserPlus,
 } from 'lucide-react';
 import { listPulseLists } from '@/features/pulse/pulseListsApi';
+import AssignListModal from './AssignListModal';
 
-function ListCard({ list, onOpen }) {
+function ListCard({ list, onOpen, onAssign }) {
   const runnable = Boolean(list.query_text?.trim());
   return (
-    <button
-      type="button"
-      onClick={() => onOpen(list)}
-      className="group w-full rounded-xl border border-slate-200 bg-white p-3 text-left transition hover:border-blue-300 hover:bg-blue-50/40 active:scale-[0.99] motion-reduce:active:scale-100"
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="font-display truncate text-[13px] font-bold text-slate-900">{list.name}</div>
-          {list.query_text ? (
-            <div className="font-body mt-0.5 flex items-center gap-1 truncate text-[11px] text-slate-500">
-              <SearchIcon size={10} className="shrink-0" /> <span className="truncate">{list.query_text}</span>
-            </div>
-          ) : (
-            <div className="font-body mt-0.5 text-[11px] text-slate-400">Saved company list</div>
-          )}
+    <div className="group relative rounded-xl border border-slate-200 bg-white p-3 transition hover:border-blue-300 hover:bg-blue-50/40">
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => onOpen(list)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(list); } }}
+        className="cursor-pointer"
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="font-display truncate pr-16 text-[13px] font-bold text-slate-900">{list.name}</div>
+            {list.query_text ? (
+              <div className="font-body mt-0.5 flex items-center gap-1 truncate text-[11px] text-slate-500">
+                <SearchIcon size={10} className="shrink-0" /> <span className="truncate">{list.query_text}</span>
+              </div>
+            ) : (
+              <div className="font-body mt-0.5 text-[11px] text-slate-400">Saved company list</div>
+            )}
+          </div>
         </div>
-        <span className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-blue-600 px-2 py-1 text-[11px] font-semibold text-white opacity-0 transition group-hover:opacity-100">
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <span className="font-mono inline-flex items-center gap-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">
+            {(list.company_count ?? 0).toLocaleString()} compan{(list.company_count ?? 0) === 1 ? 'y' : 'ies'}
+          </span>
+          {list.is_shared ? (
+            <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">
+              <Users size={9} /> Team
+            </span>
+          ) : null}
+          {!list.is_owner && list.owner ? (
+            <span className="inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700" title={list.owner.email || list.owner.name}>
+              Shared by {list.owner.name}
+            </span>
+          ) : null}
+        </div>
+      </div>
+      {/* Actions (corner) — Run/Open on hover, Assign for owned lists. */}
+      <div className="absolute right-2 top-2 flex items-center gap-1">
+        {list.is_owner ? (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onAssign(list); }}
+            title="Assign to teammates"
+            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-1.5 py-1 text-[10.5px] font-semibold text-slate-600 transition hover:border-blue-300 hover:text-blue-700"
+          >
+            <UserPlus size={11} /> Assign
+          </button>
+        ) : null}
+        <span className="hidden items-center gap-1 rounded-lg bg-blue-600 px-2 py-1 text-[11px] font-semibold text-white group-hover:inline-flex">
           {runnable ? <><RefreshCw size={11} /> Run</> : <><ArrowUpRight size={11} /> Open</>}
         </span>
       </div>
-      <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        <span className="font-mono inline-flex items-center gap-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">
-          {(list.company_count ?? 0).toLocaleString()} compan{(list.company_count ?? 0) === 1 ? 'y' : 'ies'}
-        </span>
-        {list.is_shared ? (
-          <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">
-            <Users size={9} /> Team
-          </span>
-        ) : null}
-        {!list.is_owner && list.owner ? (
-          <span className="inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700" title={list.owner.email || list.owner.name}>
-            Assigned by {list.owner.name}
-          </span>
-        ) : null}
-      </div>
-    </button>
+    </div>
   );
 }
 
 export default function SearchLibraryPanel({ open, onClose, onOpenList }) {
   const [lists, setLists] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [assignTarget, setAssignTarget] = useState(null);
 
-  useEffect(() => {
-    if (!open) return;
+  const load = () => {
     setLoading(true);
     listPulseLists()
       .then((res) => setLists(res?.ok ? res.rows : []))
       .catch(() => setLists([]))
       .finally(() => setLoading(false));
-  }, [open]);
+  };
+  useEffect(() => { if (open) load(); }, [open]);
 
   if (!open) return null;
 
@@ -102,7 +121,7 @@ export default function SearchLibraryPanel({ open, onClose, onOpenList }) {
             {assigned.length > 0 ? (
               <section className="space-y-1.5">
                 <h4 className="font-display px-1 text-[10px] font-bold uppercase tracking-wide text-violet-500">Assigned to you · {assigned.length}</h4>
-                {assigned.map((l) => <ListCard key={l.id} list={l} onOpen={onOpenList} />)}
+                {assigned.map((l) => <ListCard key={l.id} list={l} onOpen={onOpenList} onAssign={setAssignTarget} />)}
               </section>
             ) : null}
             <section className="space-y-1.5">
@@ -110,12 +129,18 @@ export default function SearchLibraryPanel({ open, onClose, onOpenList }) {
               {mine.length === 0 ? (
                 <p className="px-1 text-[11.5px] text-slate-400">Nothing saved yet.</p>
               ) : (
-                mine.map((l) => <ListCard key={l.id} list={l} onOpen={onOpenList} />)
+                mine.map((l) => <ListCard key={l.id} list={l} onOpen={onOpenList} onAssign={setAssignTarget} />)
               )}
             </section>
           </div>
         )}
       </div>
+
+      <AssignListModal
+        open={Boolean(assignTarget)}
+        list={assignTarget}
+        onClose={(changed) => { setAssignTarget(null); if (changed) load(); }}
+      />
     </div>
   );
 }
