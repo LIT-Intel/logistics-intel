@@ -27,6 +27,7 @@ import {
   X,
   Zap,
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/auth/AuthProvider';
 import { CompanyAvatar } from '@/components/CompanyAvatar';
 import { extractDomain } from '@/lib/logo';
@@ -557,6 +558,15 @@ function ListDetailView({ list, listRows, listRowsLoading, onCloseList, onSelect
 
   const isOwner = list?.is_owner ?? true;
   const isShared = Boolean(list?.is_shared);
+  const navigate = useNavigate();
+  // A saved list is a saved SEARCH — re-run its query in the full Search UI
+  // (map + list + detail) instead of only showing the explicit member rows.
+  // This is how an assignee opens "their" target accounts, live.
+  const openInSearch = () => {
+    const q = list?.query_text?.trim();
+    if (!q) return;
+    navigate(`/app/search?q=${encodeURIComponent(q)}`);
+  };
 
   useEffect(() => {
     setCadence(list?.auto_refresh_cadence || 'off');
@@ -769,6 +779,19 @@ function ListDetailView({ list, listRows, listRowsLoading, onCloseList, onSelect
           <span className="font-body text-[10px] text-slate-400">
             Refreshed {formatRelativeAgo(lastRefreshAt)}
           </span>
+        ) : null}
+
+        {/* Open in Search — re-runs the saved query live in the full Search UI.
+            Available to owner AND assignee (the whole point of an assigned list). */}
+        {list?.query_text ? (
+          <button
+            type="button"
+            onClick={openInSearch}
+            title="Open this saved search on the map"
+            className="font-display inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-[11px] font-semibold text-blue-700 transition hover:bg-blue-100"
+          >
+            <SearchIcon className="h-3 w-3" /> Open in Search
+          </button>
         ) : null}
 
         {/* Share toggle — owner only */}
