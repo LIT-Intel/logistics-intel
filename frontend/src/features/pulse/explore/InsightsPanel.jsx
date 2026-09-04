@@ -391,7 +391,7 @@ export default function InsightsPanel({ rows, insights, filters, requireCoach, r
     // server. Server-side `pulse_ai` gate is the real boundary.
     if (requireCoach && !requireCoach()) return;
     if (!rows.length) {
-      toast.error('Run a search first — the coach needs data to ground its answer.');
+      toast.error('Run a search first — Harvey needs data to ground its answer.');
       return;
     }
     setInput('');
@@ -418,9 +418,9 @@ export default function InsightsPanel({ rows, insights, filters, requireCoach, r
     <div className="flex flex-col h-full overflow-hidden">
       <header className="border-b border-slate-200 px-4 py-3 shrink-0">
         <h3 className="font-semibold text-slate-900 inline-flex items-center gap-2">
-          <Sparkles size={16} className="text-cyan-600" /> Insights · Coach
+          <Sparkles size={16} className="text-blue-600" /> Ask Harvey
         </h3>
-        <p className="text-xs text-slate-500 mt-0.5">Ask anything about the accounts on your map.</p>
+        <p className="text-xs text-slate-500 mt-0.5">Your AI analyst — ask about these accounts, or generate &amp; send a report.</p>
       </header>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -456,7 +456,7 @@ export default function InsightsPanel({ rows, insights, filters, requireCoach, r
           <div className="grid place-items-center h-full text-slate-400 text-sm p-6 text-center">
             <div>
               <Sparkles size={24} className="mx-auto mb-2 text-slate-300" />
-              Run a search first — the coach answers based on the accounts on your map.
+              Run a search first — Harvey answers based on the accounts on your map.
             </div>
           </div>
         )}

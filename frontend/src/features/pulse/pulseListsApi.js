@@ -96,28 +96,43 @@ export async function listPulseLists() {
   }
 }
 
-// Best-effort owner display — reads `profiles` table if present,
-// falls back to user_id slice. Failures degrade silently.
+// Best-effort user display for owner/assignee names. Primary source is
+// org_members (email + full_name, most complete); falls back to profiles, then
+// a user_id slug. Failures degrade silently.
 async function fetchOwnerDisplay(userIds) {
-  if (!userIds.length) return {};
+  const ids = Array.from(new Set((userIds || []).filter(Boolean)));
+  if (!ids.length) return {};
+  const map = {};
+  const slug = (id) => `User ${String(id).slice(0, 6)}`;
+
   try {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('id, full_name, email, avatar_url')
-      .in('id', userIds);
-    if (error || !Array.isArray(data)) return {};
-    const map = {};
-    for (const p of data) {
-      map[p.id] = {
-        name: p.full_name || (p.email ? p.email.split('@')[0] : `User ${String(p.id).slice(0, 6)}`),
-        email: p.email || null,
-        avatar_url: p.avatar_url || null,
+    const { data } = await supabase
+      .from('org_members').select('user_id, full_name, email').in('user_id', ids);
+    for (const r of data || []) {
+      if (!r.user_id || map[r.user_id]) continue;
+      map[r.user_id] = {
+        name: (r.full_name && r.full_name.trim()) || (r.email ? r.email.split('@')[0] : slug(r.user_id)),
+        email: r.email || null,
+        avatar_url: null,
       };
     }
-    return map;
-  } catch {
-    return {};
+  } catch { /* ignore */ }
+
+  const missing = ids.filter((id) => !map[id]);
+  if (missing.length) {
+    try {
+      const { data } = await supabase
+        .from('profiles').select('id, full_name, email').in('id', missing);
+      for (const p of data || []) {
+        map[p.id] = {
+          name: (p.full_name && p.full_name.trim()) || (p.email ? p.email.split('@')[0] : slug(p.id)),
+          email: p.email || null,
+          avatar_url: null,
+        };
+      }
+    } catch { /* ignore */ }
   }
+  return map;
 }
 
 /**
@@ -233,21 +248,23 @@ export async function listOrgMembers() {
     const orgId = mine?.[0]?.org_id || null;
     if (!orgId) return { ok: true, orgId: null, members: [] };
 
+    // org_members carries email + full_name directly (more complete than the
+    // profiles mirror — 119 vs 76 rows), so read display straight from it.
     const { data: rows, error } = await supabase
-      .from('org_members').select('user_id, role').eq('org_id', orgId);
+      .from('org_members').select('user_id, role, email, full_name').eq('org_id', orgId);
     if (error) return { ok: false, code: classifyError(error), message: error.message, orgId, members: [] };
 
-    const ids = (rows || []).map((r) => r.user_id).filter((id) => id && id !== uid);
-    const display = await fetchOwnerDisplay(ids);
     const members = (rows || [])
       .filter((r) => r.user_id && r.user_id !== uid)
-      .map((r) => ({
-        user_id: r.user_id,
-        role: r.role || 'member',
-        name: display[r.user_id]?.name || `User ${String(r.user_id).slice(0, 6)}`,
-        email: display[r.user_id]?.email || null,
-        avatar_url: display[r.user_id]?.avatar_url || null,
-      }));
+      .map((r) => {
+        const email = r.email || null;
+        const name = (r.full_name && r.full_name.trim())
+          || (email ? email.split('@')[0] : null)
+          || `User ${String(r.user_id).slice(0, 6)}`;
+        return { user_id: r.user_id, role: r.role || 'member', name, email, avatar_url: null };
+      })
+      // Prefer named/emailed members first so the picker reads cleanly.
+      .sort((a, b) => Number(Boolean(b.email)) - Number(Boolean(a.email)) || a.name.localeCompare(b.name));
     return { ok: true, orgId, members };
   } catch (err) {
     return { ok: false, code: classifyError(err), message: err?.message, orgId: null, members: [] };

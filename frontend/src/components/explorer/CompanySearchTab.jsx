@@ -62,7 +62,8 @@ import { AnimatePresence } from 'framer-motion';
 import CompanyDetailPanel from './CompanyDetailPanel';
 import BulkSaveToListModal from '@/features/pulse/explore/BulkSaveToListModal';
 import SaveSearchModal from './SaveSearchModal';
-import { FolderPlus } from 'lucide-react';
+import InsightsPanel from '@/features/pulse/explore/InsightsPanel';
+import { FolderPlus, Sparkles as SparklesIcon } from 'lucide-react';
 import { enrichCompanyLive } from '@/api/ai';
 import { looksLikeCompanyName, parseExploreQuery, localExtractFilters, parsedToFilters, hasAnyFilter } from '@/api/pulse-explore-parse';
 import { useExploreAccounts } from '@/features/pulse/explore/useExploreAccounts';
@@ -143,6 +144,8 @@ export default function CompanySearchTab() {
   const [saveModalIds, setSaveModalIds] = useState(null);
   // Save-search-to-Library modal (saves the whole search + assigns to teammates).
   const [saveSearchOpen, setSaveSearchOpen] = useState(false);
+  // Ask Harvey — AI analyst panel over the current results (Q&A + report + email).
+  const [harveyOpen, setHarveyOpen] = useState(false);
   // Search TYPE — 'companies' (name lookup) vs 'market' (Pulse universe browse
   // by location/industry). Auto-detected from the query, overridable via the
   // toggle. Both render in THIS same overlay/map/detail UI (the true merge).
@@ -897,6 +900,37 @@ export default function CompanySearchTab() {
           queryText={submitted}
           filterRecipe={searchMode === 'market' ? marketFilters : (submitted ? { name: submitted } : null)}
         />
+
+        {/* Ask Harvey — floating trigger + right-side AI analyst panel over the
+            current results (Q&A · generate report · email/share to a teammate). */}
+        {hasResults && !harveyOpen ? (
+          <button
+            type="button"
+            onClick={() => setHarveyOpen(true)}
+            className="font-display absolute bottom-4 right-4 z-30 inline-flex items-center gap-1.5 rounded-full bg-blue-600 px-3.5 py-2.5 text-[12.5px] font-semibold text-white shadow-lg shadow-blue-600/25 transition hover:bg-blue-700 active:scale-[0.96] motion-reduce:active:scale-100"
+          >
+            <SparklesIcon size={15} /> Ask Harvey
+          </button>
+        ) : null}
+        {harveyOpen ? (
+          <div className="absolute z-30 flex flex-col overflow-hidden border-slate-200 bg-white shadow-2xl inset-x-0 bottom-0 top-[38%] rounded-t-2xl border-t sm:inset-y-3 sm:left-auto sm:right-3 sm:top-3 sm:w-[380px] sm:rounded-2xl sm:border">
+            <button
+              type="button"
+              onClick={() => setHarveyOpen(false)}
+              aria-label="Close Harvey"
+              className="absolute right-2 top-2.5 z-10 rounded-md p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+            >
+              <X size={16} />
+            </button>
+            <InsightsPanel
+              rows={filteredResults}
+              insights={{}}
+              filters={searchMode === 'market' ? marketFilters : { name: submitted }}
+              requireCoach={() => true}
+              requirePdf={() => true}
+            />
+          </div>
+        ) : null}
 
         {/* Degraded-search banner — the edge fn fell back to the saved
             local index (quota / kill-switch / upstream outage), so these

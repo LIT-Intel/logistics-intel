@@ -789,7 +789,7 @@ function renderToolPanel({ toolPanel, rows, insights, filters, onLoadSelection, 
 const MOBILE_TOOLS = [
   { id: 'filter', icon: Filter, label: 'Filters' },
   { id: 'analytics', icon: BarChart3, label: 'Analytics' },
-  { id: 'insights', icon: SparklesIcon, label: 'Coach' },
+  { id: 'insights', icon: SparklesIcon, label: 'Harvey' },
   { id: 'library', icon: LibraryIcon, label: 'Library' },
   { id: 'layers', icon: LayersIcon, label: 'Layers' },
   { id: 'bookmark', icon: Bookmark, label: 'Save view' },
