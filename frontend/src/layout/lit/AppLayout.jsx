@@ -88,8 +88,11 @@ export default function AppLayout({ children }) {
       {/* Floating Pulse Coach pill — the single Coach surface. Follows
           the user across every AppLayout-wrapped page and hovers over
           the dashboard's trade-lane map. (The old inline dashboard
-          panel was removed 2026-08-13 — CEO: Coach appeared twice.) */}
-      <PulseCoachFloating />
+          panel was removed 2026-08-13 — CEO: Coach appeared twice.)
+          HIDDEN on /app/search: that page has its own contextual
+          "Ask Harvey" panel grounded in the current results, so the
+          global pill would be a duplicate Harvey (owner-flagged). */}
+      {pageContext !== "search" ? <PulseCoachFloating /> : null}
     </PulseCoachProvider>
   );
 }
