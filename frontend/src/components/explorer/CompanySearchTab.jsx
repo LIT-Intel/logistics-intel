@@ -62,6 +62,8 @@ import { AnimatePresence } from 'framer-motion';
 import CompanyDetailPanel from './CompanyDetailPanel';
 import BulkSaveToListModal from '@/features/pulse/explore/BulkSaveToListModal';
 import SaveSearchModal from './SaveSearchModal';
+import SearchLibraryPanel from './SearchLibraryPanel';
+import { getListCompanies } from '@/features/pulse/pulseListsApi';
 import InsightsPanel from '@/features/pulse/explore/InsightsPanel';
 import { FolderPlus, Sparkles as SparklesIcon } from 'lucide-react';
 import { enrichCompanyLive } from '@/api/ai';
@@ -146,6 +148,8 @@ export default function CompanySearchTab() {
   const [saveSearchOpen, setSaveSearchOpen] = useState(false);
   // Ask Harvey — AI analyst panel over the current results (Q&A + report + email).
   const [harveyOpen, setHarveyOpen] = useState(false);
+  // In-search Library — saved + assigned lists; opening one runs it in place.
+  const [libraryOpen, setLibraryOpen] = useState(false);
   // Search TYPE — 'companies' (name lookup) vs 'market' (Pulse universe browse
   // by location/industry). Auto-detected from the query, overridable via the
   // toggle. Both render in THIS same overlay/map/detail UI (the true merge).
@@ -379,6 +383,53 @@ export default function CompanySearchTab() {
       setSavingListRow(false);
     }
   }, []);
+
+  // Open a Library list IN PLACE. A saved search (has query_text) re-runs on
+  // this surface; an explicit company list loads its members into the results.
+  const onOpenLibraryList = useCallback(async (list) => {
+    setLibraryOpen(false);
+    const q = list?.query_text?.trim();
+    if (q) {
+      setQuery(q);
+      modeTouched.current = false; // let the query auto-detect Companies vs Market
+      runSearch(q);
+      return;
+    }
+    // Explicit company list — load its members into the results view.
+    try {
+      setSearching(true);
+      setError('');
+      const res = await getListCompanies(list.id);
+      if (!res?.ok) { toast.error(res?.message || 'Could not open this list.'); return; }
+      const rows = (res.rows || []).map((c) => ({
+        id: c.id,
+        company_id: c.id,
+        company_name: c.name,
+        domain: c.domain || '',
+        city: c.city || '',
+        state: c.state || '',
+        country: c.country || '',
+        shipments: c.kpis?.shipments_12m ?? null,
+        teu: c.kpis?.teu_12m ?? null,
+        is_saved: true,
+        source: c.source,
+        raw: c,
+      }));
+      modeTouched.current = true;
+      setSearchMode('companies');
+      setResults(rows);
+      setMapPoints([]); // explicit lists may lack coordinates; the list still renders
+      setUnmappedCount(0);
+      setAnalytics(null);
+      setSubmitted(list.name || 'Saved list');
+      setPanelOpen(true);
+      if (rows.length === 0) setError('This list has no companies yet.');
+    } catch (err) {
+      toast.error(err?.message || 'Could not open this list.');
+    } finally {
+      setSearching(false);
+    }
+  }, [runSearch]);
 
   const onSave = useCallback(async (row, e) => {
     e?.stopPropagation?.();
@@ -671,8 +722,8 @@ export default function CompanySearchTab() {
           </span>
           <button
             type="button"
-            onClick={() => navigate('/app/lists')}
-            title="Your saved lists + lists assigned to you"
+            onClick={() => setLibraryOpen(true)}
+            title="Your saved lists + lists assigned to you — opens here"
             className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/10 px-2.5 py-1 text-[11.5px] font-semibold text-slate-100 transition hover:bg-white/20 hover:text-white active:scale-[0.97] motion-reduce:active:scale-100"
           >
             <FolderPlus size={13} /> Library
@@ -907,6 +958,13 @@ export default function CompanySearchTab() {
           defaultName={submitted}
           queryText={submitted}
           filterRecipe={searchMode === 'market' ? marketFilters : (submitted ? { name: submitted } : null)}
+        />
+
+        {/* In-search Library — saved + assigned lists; click one to run it here. */}
+        <SearchLibraryPanel
+          open={libraryOpen}
+          onClose={() => setLibraryOpen(false)}
+          onOpenList={onOpenLibraryList}
         />
 
         {/* Ask Harvey — floating trigger + right-side AI analyst panel over the
