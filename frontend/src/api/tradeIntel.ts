@@ -86,23 +86,6 @@ export function useCompanyTradeGraph(
   });
 }
 
-export interface FmcsaMatch {
-  dot_number: string;
-  legal_name: string;
-  dba_name: string | null;
-  phy_city: string | null;
-  phy_state: string | null;
-  phy_zip: string | null;
-  power_units: number | null;
-  drivers: number | null;
-  recent_mileage: number | null;
-  recent_mileage_year: string | null;
-  carrier_operation: string | null;
-  authorized_for_hire: boolean;
-  private_fleet: boolean;
-  hazmat: boolean;
-}
-
 export interface SupplierCustomer {
   company_id: string;
   company_name: string;
@@ -132,82 +115,6 @@ export function useSupplierCustomers(
       });
       if (error) return [];
       return (data ?? []) as SupplierCustomer[];
-    },
-  });
-}
-
-/* ─── FMCSA identity gating ───
- * The edge fn prefix-searches for recall; DISPLAY requires a verified same-
- * company match. Without this, a profile named "Company" (directory fallback)
- * matched "Company Wrench Ltd" etc. on every profile — garbage. Rules:
- *  - the profile name must be specific: ≥2 meaningful tokens, and not a
- *    generic word (company, international, logistics, …)
- *  - a candidate's normalized legal/dba name must EQUAL the profile name, or
- *    differ only by trailing corporate/fleet descriptor tokens
- *    (…STORE / TRANSPORTATION / LOGISTICS / TRUCKING / FLEET / etc.)
- */
-const FMCSA_SUFFIX_STRIP = /\s+(LLC|INC|CORP|CORPORATION|CO|LTD|LIMITED|COMPANY|USA)\.?$/g;
-const GENERIC_NAME_TOKENS = new Set([
-  "COMPANY", "COMPANIES", "INTERNATIONAL", "LOGISTICS", "GROUP", "GLOBAL",
-  "INDUSTRIES", "ENTERPRISES", "HOLDINGS", "SERVICES", "TRADING", "IMPORT",
-  "EXPORT", "IMPORTS", "EXPORTS", "USA", "AMERICA", "CORPORATION", "INC", "LLC",
-]);
-const FLEET_DESCRIPTOR_TOKENS = new Set([
-  "STORE", "STORES", "TRANSPORT", "TRANSPORTATION", "LOGISTICS", "TRUCKING",
-  "FLEET", "DISTRIBUTION", "DELIVERY", "EXPRESS", "CARRIER", "CARRIERS",
-  "SERVICES", "SERVICE", "US", "USA", "NORTH", "AMERICA", "GROUP", "HOLDINGS",
-]);
-
-function fmcsaNorm(v: string): string {
-  return v.toUpperCase().replace(/[.,'&]/g, " ").replace(FMCSA_SUFFIX_STRIP, "").replace(/\s+/g, " ").trim();
-}
-
-/** True when the profile name is specific enough to identity-match on. */
-export function fmcsaNameIsSpecific(name: string | null | undefined): boolean {
-  const norm = fmcsaNorm(String(name ?? ""));
-  if (norm.length < 6) return false;
-  const tokens = norm.split(" ").filter(Boolean);
-  const meaningful = tokens.filter((t) => !GENERIC_NAME_TOKENS.has(t));
-  return tokens.length >= 2 && meaningful.length >= 1;
-}
-
-/** True when a census candidate is verifiably the SAME company, not a
- *  lookalike: equal after normalization, or equal plus ≤2 trailing fleet
- *  descriptor tokens ("GORDON FOOD SERVICE STORE" for "Gordon Food Service"). */
-export function fmcsaIsSameCompany(companyName: string, candidate: FmcsaMatch): boolean {
-  const target = fmcsaNorm(companyName);
-  if (!target) return false;
-  for (const raw of [candidate.legal_name, candidate.dba_name]) {
-    if (!raw) continue;
-    const cand = fmcsaNorm(raw);
-    if (cand === target) return true;
-    if (cand.startsWith(target + " ")) {
-      const rest = cand.slice(target.length).trim().split(" ").filter(Boolean);
-      if (rest.length <= 2 && rest.every((t) => FLEET_DESCRIPTOR_TOKENS.has(t))) return true;
-    }
-  }
-  return false;
-}
-
-/** VERIFIED FMCSA motor-carrier registrations for this exact company — real
- *  federal fleet data (power units, drivers, mileage, private-fleet flag).
- *  Resolves [] unless the name is specific AND a candidate passes the
- *  same-company gate; lookalikes and generic-name matches never render. */
-export function useFmcsaFleet(
-  companyName: string | null | undefined,
-): UseQueryResult<FmcsaMatch[]> {
-  const specific = fmcsaNameIsSpecific(companyName);
-  return useQuery({
-    queryKey: ["fmcsa-fleet", (companyName ?? "").toLowerCase()],
-    enabled: Boolean(companyName) && specific,
-    staleTime: 24 * 60 * 60 * 1000, // server caches 30d; a day client-side is plenty
-    queryFn: async () => {
-      const { data, error } = await supabase.functions.invoke("fmcsa-carrier-lookup", {
-        body: { name: companyName },
-      });
-      if (error || !data?.ok) return [];
-      const all = (data.matches ?? []) as FmcsaMatch[];
-      return all.filter((m) => fmcsaIsSameCompany(String(companyName), m));
     },
   });
 }
