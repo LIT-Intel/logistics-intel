@@ -91,5 +91,22 @@ Deno.serve(async (req) => {
     logo_url: (org.logo_url as string) ?? null,
     apollo_organization_id: org.id ? String(org.id) : null,
   };
+
+  // Persist the resolved domain back to the market-search directory row so the
+  // logo + website render on every FUTURE search (market or company) without
+  // re-enriching. Fill-only (never overwrites an existing domain); best-effort.
+  const directoryId = typeof body?.directory_id === "string" ? body.directory_id : null;
+  if (directoryId && data.website) {
+    try {
+      await auth.admin
+        .from("lit_company_directory")
+        .update({ canonical_domain: data.website })
+        .eq("id", directoryId)
+        .is("canonical_domain", null);
+    } catch (e) {
+      log.warn("directory_domain_persist_failed", { err: String(e) });
+    }
+  }
+
   return json({ ok: true, data, enriched: true });
 });

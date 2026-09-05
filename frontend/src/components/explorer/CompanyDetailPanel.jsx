@@ -46,7 +46,7 @@ export default function CompanyDetailPanel({ row, onClose, onOpenFull, onSave, o
     let cancelled = false;
     setLive(null);
     setEnriching(true);
-    enrichCompanyLive({ name: row.company_name, domain: row.domain })
+    enrichCompanyLive({ name: row.company_name, domain: row.domain, directory_id: row.source_company_key ? null : (row.id || null) })
       .then((res) => { if (!cancelled) setLive(res?.enriched ? res.data : null); })
       .catch(() => { /* non-fatal */ })
       .finally(() => { if (!cancelled) setEnriching(false); });

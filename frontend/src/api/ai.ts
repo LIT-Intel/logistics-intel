@@ -125,7 +125,7 @@ export interface CompanyLiveEnrichResponse {
  * open. Resolves to { enriched:false } cleanly when Apollo is unset or no match.
  */
 export async function enrichCompanyLive(
-  req: { name?: string; domain?: string | null },
+  req: { name?: string; domain?: string | null; directory_id?: string | null },
 ): Promise<CompanyLiveEnrichResponse> {
   return invokeEdge<CompanyLiveEnrichResponse>("company-live-enrich", req);
 }

@@ -471,7 +471,22 @@ export default function CompanySearchTab() {
     // for the name — that resolves the real ImportYeti company + its shipment
     // volume, and opening THAT result lands on a working profile.
     if (!row.source_company_key) {
-      toast(`Pulling live shipment data for ${row.company_name}…`);
+      // Resolve the live company SILENTLY and go straight to its profile —
+      // dropping the user into a second search was double work (owner-flagged,
+      // Lintech). Fallback: if the live lookup finds nothing, run the visible
+      // Companies search so they at least see why.
+      const tid = toast.loading(`Opening ${row.company_name}…`);
+      try {
+        const resp = await searchShippers({ q: row.company_name, page: 1, pageSize: 3 });
+        const hit = (resp?.results || []).find((h) => h.key);
+        if (hit?.key) {
+          toast.dismiss(tid);
+          getIyCompanyProfile({ companyKey: hit.key }).catch(() => {});
+          navigate(`/app/companies/${encodeURIComponent(hit.key)}`);
+          return;
+        }
+      } catch { /* fall through to visible search */ }
+      toast.dismiss(tid);
       modeTouched.current = true;
       setSearchMode('companies');
       setQuery(row.company_name);

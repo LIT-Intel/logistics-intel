@@ -820,30 +820,30 @@ function ProfilePanel({ rawId }: { rawId: string }) {
         if (bareKey && !UUID_RE.test(bareKey)) {
           try {
             await getIyCompanyProfile({ companyKey: bareKey });
-            if (cancelled) return;
-            cached = await getSavedCompanyShellOnly(companyId);
-            // The snapshot write behind getIyCompanyProfile is eventually
-            // consistent, so a SINGLE immediate re-read frequently still races
-            // it and returns empty — which is exactly why the page looked blank
-            // until a manual hard refresh (by then the write had landed). Poll
-            // the cache-only read a few times so the profile fills in on its own
-            // as soon as the snapshot is durable. Bounded + cancel-aware so a
-            // fast nav away or a genuinely snapshot-less company can't hang it.
-            for (let i = 0; i < 5 && !(cached.profile || cached.routeKpis); i++) {
-              await new Promise((r) => setTimeout(r, 1500));
-              if (cancelled) return;
-              try {
-                cached = await getSavedCompanyShellOnly(companyId);
-              } catch {
-                /* transient — keep polling */
-              }
-            }
           } catch (liveErr) {
-            if (cancelled) return;
+            // The fetch often kicks off the server-side snapshot write even
+            // when the client call times out — so DON'T give up here; the
+            // poll below may still find the snapshot landing.
             console.warn(
               "[CompanyProfileV2] cache-miss live profile fetch failed",
               liveErr,
             );
+          }
+          if (cancelled) return;
+          try { cached = await getSavedCompanyShellOnly(companyId); } catch { /* poll below */ }
+          // The snapshot write behind getIyCompanyProfile is eventually
+          // consistent and can take 10-20s — the old 5×1.5s poll (7.5s) often
+          // expired first, which is exactly the "blank until hard refresh"
+          // report. Poll longer (10×2s = 20s), bounded + cancel-aware, and
+          // ALWAYS (even after a fetch error, since the write may still land).
+          for (let i = 0; i < 10 && !(cached.profile || cached.routeKpis); i++) {
+            await new Promise((r) => setTimeout(r, 2000));
+            if (cancelled) return;
+            try {
+              cached = await getSavedCompanyShellOnly(companyId);
+            } catch {
+              /* transient — keep polling */
+            }
           }
           if (cancelled) return;
         }
