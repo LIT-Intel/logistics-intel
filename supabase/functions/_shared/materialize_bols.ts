@@ -144,6 +144,18 @@ function buildRow(companyId: string, b: any, prior: Map<string, any>): any | nul
     dest_city: finalDestCity, dest_state: finalDestState, dest_zip: finalDestZip,
     hs_code: b.HS_Code || null,
     product_description: b.Product_Description || null,
+    // Hidden-field extraction (2026-09): facility addresses, the notify party
+    // (importer's forwarder/customs broker — sales intel), house BOL chain,
+    // route tags, and carton quantity. Backfilled for historic rows by
+    // migration 20260905090000; populated here for every new ingest.
+    consignee_address: b.Consignee_Address || null,
+    shipper_address: b.Shipper_Address || null,
+    notify_party_name: b.Notify_Party_Name || null,
+    notify_party_address: b.Notify_Party_Address || null,
+    house_bol: b.house_bill_of_lading || b.houseBillOfLading || null,
+    shipping_route: typeof b.shipping_route === "string" ? b.shipping_route : null,
+    quantity: num(b.Quantity) ?? num(b.quantity),
+    quantity_unit: b.Quantity_Unit || null,
     container_count: containerCount, teu,
     container_type: containerTypeResult.type,
     container_type_confidence: containerTypeResult.confidence,

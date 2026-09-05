@@ -70,6 +70,7 @@ import {
   dominantEntryPort,
   formatEntryPortLabel,
 } from "@/api/portLanes";
+import CDPForwarders from "@/components/company/CDPForwarders";
 import InlandFreightCard from "@/components/company/InlandFreightCard";
 import RelationshipIntelCard from "@/components/company/RelationshipIntelCard";
 import { laneRegionColor } from "@/lib/laneRegions";
@@ -629,6 +630,10 @@ function SummaryView({
         donutCounts={donutCounts}
         selectedYear={selectedYear}
       />
+      {/* Forwarders & Brokers — observed notify-party relationships from this
+          company's BOLs (who moves their freight = incumbent 3PL intel).
+          Self-hiding when the company has no notify-party rows. */}
+      <CDPForwarders companyId={sourceCompanyKey ?? null} />
       {/* Domestic Freight (estimated) — modeled inland TL picture from
           lit_company_inland_freight, keyed on the same source_company_key
           as lane history. Self-hiding when the RPC has no data. */}
