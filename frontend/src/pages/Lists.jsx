@@ -84,7 +84,7 @@ function ListsIndex() {
         <header className="mb-4 flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1
-              className="text-[20px] font-bold tracking-tight text-[#0F172A]"
+              className="font-display text-[20px] font-bold tracking-tight text-[#0F172A]"
               style={{ fontFamily: fontDisplay }}
             >
               Lists
@@ -160,7 +160,7 @@ function ListsIndex() {
                 key={list.id}
                 type="button"
                 onClick={() => navigate(`/app/lists/${list.id}`)}
-                className="group rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-blue-300 hover:shadow-md"
+                className="group rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-blue-300 hover:shadow-md active:scale-[0.98] motion-reduce:active:scale-100"
               >
                 <div className="mb-2 flex items-center gap-2">
                   <div className="flex h-8 w-8 items-center justify-center rounded-md bg-blue-50 text-blue-600">
@@ -263,7 +263,7 @@ function ListDetail({ listId }) {
         <button
           type="button"
           onClick={() => navigate("/app/lists")}
-          className="mb-3 inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+          className="mb-3 inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50 active:scale-[0.97] motion-reduce:active:scale-100"
           style={{ fontFamily: fontDisplay }}
         >
           <ArrowLeft className="h-3 w-3" /> All Lists
@@ -281,7 +281,7 @@ function ListDetail({ listId }) {
             <header className="mb-4 flex flex-wrap items-end justify-between gap-3">
               <div className="min-w-0">
                 <h1
-                  className="truncate text-[20px] font-bold tracking-tight text-[#0F172A]"
+                  className="font-display truncate text-[20px] font-bold tracking-tight text-[#0F172A]"
                   style={{ fontFamily: fontDisplay }}
                 >
                   {list.name}
@@ -295,7 +295,7 @@ function ListDetail({ listId }) {
               <div className="flex items-center gap-2">
                 <Link
                   to={`/app/campaigns/new?audience_list=${list.id}`}
-                  className="inline-flex items-center gap-1.5 rounded-md bg-gradient-to-b from-blue-500 to-blue-600 px-3 py-1.5 text-[12px] font-semibold text-white shadow-sm hover:from-blue-600 hover:to-blue-700"
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 px-3 py-1.5 text-[12px] font-semibold text-white shadow-sm shadow-blue-600/25"
                   style={{ fontFamily: fontDisplay }}
                   title="Use this list as the audience in a new campaign"
                 >
@@ -305,7 +305,7 @@ function ListDetail({ listId }) {
                   type="button"
                   onClick={handleDelete}
                   disabled={deleting}
-                  className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-white px-2.5 py-1.5 text-[12px] font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                  className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-white px-2.5 py-1.5 text-[12px] font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50 active:scale-[0.97] motion-reduce:active:scale-100"
                   style={{ fontFamily: fontDisplay }}
                 >
                   {deleting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
@@ -413,7 +413,7 @@ function ListDetail({ listId }) {
                     <button
                       type="button"
                       onClick={() => handleRemoveContact(c.id)}
-                      className="ml-1 inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-600 hover:bg-slate-50"
+                      className="ml-1 inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-600 hover:bg-slate-50 active:scale-[0.97] motion-reduce:active:scale-100"
                       style={{ fontFamily: fontDisplay }}
                       title="Remove from this list"
                     >

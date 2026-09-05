@@ -357,7 +357,7 @@ export default function ContactsPage() {
               </Link>
               <Link
                 to="/app/search"
-                className="font-display inline-flex items-center gap-1.5 whitespace-nowrap rounded-md bg-gradient-to-b from-blue-500 to-blue-600 px-3.5 py-1.5 text-[12px] font-semibold text-white shadow-[0_1px_3px_rgba(59,130,246,0.35),inset_0_1px_0_rgba(255,255,255,0.18)]"
+                className="font-display inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl bg-blue-600 px-3.5 py-1.5 text-[12px] font-semibold text-white shadow-sm shadow-blue-600/25 hover:bg-blue-700"
               >
                 <Search className="h-3 w-3" />
                 Discover
@@ -461,7 +461,7 @@ export default function ContactsPage() {
                     type="button"
                     onClick={() => setStatusFilter(f.id)}
                     className={[
-                      "font-display whitespace-nowrap rounded-md border px-2.5 py-1 text-[11px] font-semibold",
+                      "font-display whitespace-nowrap rounded-md border px-2.5 py-1 text-[11px] font-semibold active:scale-[0.97] motion-reduce:active:scale-100",
                       statusFilter === f.id
                         ? "border-blue-200 bg-blue-50 text-blue-700"
                         : "border-slate-200 bg-slate-50 text-slate-500 hover:text-slate-700",
@@ -627,7 +627,7 @@ function ContactRow({ contact, memberships = [], onOpenCompany, onRemoveFromList
               <button
                 type="button"
                 onClick={onOpenCompany}
-                className="font-display truncate text-left text-[12px] font-semibold text-slate-900 hover:text-blue-700"
+                className="font-display truncate text-left text-[12px] font-semibold text-slate-900 hover:text-blue-700 active:scale-[0.97] motion-reduce:active:scale-100"
               >
                 {name}
               </button>
@@ -656,7 +656,7 @@ function ContactRow({ contact, memberships = [], onOpenCompany, onRemoveFromList
         <button
           type="button"
           onClick={onOpenCompany}
-          className="font-display truncate text-[11.5px] font-semibold text-slate-700 hover:text-blue-700"
+          className="font-display truncate text-[11.5px] font-semibold text-slate-700 hover:text-blue-700 active:scale-[0.97] motion-reduce:active:scale-100"
         >
           {contact.company?.name || "—"}
         </button>
@@ -694,7 +694,7 @@ function ContactRow({ contact, memberships = [], onOpenCompany, onRemoveFromList
                     onRemoveFromList?.(m.id);
                   }}
                   title={`Remove from ${m.name}`}
-                  className="ml-0.5 flex h-3 w-3 shrink-0 items-center justify-center rounded-full opacity-60 transition hover:bg-slate-900/10 hover:opacity-100"
+                  className="ml-0.5 flex h-3 w-3 shrink-0 items-center justify-center rounded-full opacity-60 transition hover:bg-slate-900/10 hover:opacity-100 active:scale-[0.94] motion-reduce:active:scale-100"
                 >
                   <X className="h-2.5 w-2.5" />
                 </button>
@@ -705,7 +705,7 @@ function ContactRow({ contact, memberships = [], onOpenCompany, onRemoveFromList
             type="button"
             onClick={onAddToList}
             title="Add to list"
-            className="font-display inline-flex h-5 items-center gap-0.5 rounded-full border border-dashed border-slate-300 px-1.5 text-[10px] font-semibold text-slate-500 hover:border-blue-300 hover:text-blue-700"
+            className="font-display inline-flex h-5 items-center gap-0.5 rounded-full border border-dashed border-slate-300 px-1.5 text-[10px] font-semibold text-slate-500 hover:border-blue-300 hover:text-blue-700 active:scale-[0.97] motion-reduce:active:scale-100"
           >
             <Plus className="h-2.5 w-2.5" />
             Add
@@ -738,7 +738,7 @@ function ContactRow({ contact, memberships = [], onOpenCompany, onRemoveFromList
             type="button"
             onClick={onOpenCompany}
             title="Open in company Contacts tab"
-            className="flex h-6 w-6 items-center justify-center rounded border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
+            className="flex h-6 w-6 items-center justify-center rounded border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 active:scale-[0.94] motion-reduce:active:scale-100"
           >
             <Send className="h-3 w-3" />
           </button>

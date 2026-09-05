@@ -855,7 +855,7 @@ export default function Billing() {
               <button
                 type="button"
                 onClick={() => setCancelModalOpen(true)}
-                className="font-display inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-4 text-[12px] font-semibold text-rose-700 transition hover:bg-rose-100"
+                className="font-display inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-4 text-[12px] font-semibold text-rose-700 transition hover:bg-rose-100 active:scale-[0.97] motion-reduce:active:scale-100"
               >
                 Cancel subscription
               </button>
@@ -937,7 +937,7 @@ function CollapsibleSection({
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex w-full items-center justify-between gap-3 rounded-t-2xl px-5 py-3 transition hover:bg-slate-50"
+        className="flex w-full items-center justify-between gap-3 rounded-t-2xl px-5 py-3 transition hover:bg-slate-50 active:scale-[0.98] motion-reduce:active:scale-100"
       >
         <div className="min-w-0 text-left">
           <div className="font-display text-[13px] font-bold text-slate-900">
@@ -1037,7 +1037,7 @@ function SpendSummaryCard({
         <button
           type="button"
           onClick={onOpenPortal}
-          className="font-display inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/10 px-3 text-[11.5px] font-semibold text-white shadow-[0_4px_14px_rgba(15,23,42,0.35)] transition hover:shadow-[0_8px_22px_rgba(15,23,42,0.45)]"
+          className="font-display inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/10 px-3 text-[11.5px] font-semibold text-white shadow-[0_4px_14px_rgba(15,23,42,0.35)] transition hover:shadow-[0_8px_22px_rgba(15,23,42,0.45)] active:scale-[0.97] motion-reduce:active:scale-100"
           style={{ background: 'linear-gradient(180deg,#0F172A 0%,#0B1220 100%)' }}
         >
           View invoices
@@ -1208,14 +1208,14 @@ function TrialCountdownCard({
           <button
             type="button"
             onClick={onCompare}
-            className="font-display inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 text-[11.5px] font-semibold text-slate-200 transition hover:bg-white/10"
+            className="font-display inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 text-[11.5px] font-semibold text-slate-200 transition hover:bg-white/10 active:scale-[0.97] motion-reduce:active:scale-100"
           >
             Compare plans
           </button>
           <button
             type="button"
             onClick={onUpgrade}
-            className="font-display inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/10 px-3 text-[11.5px] font-semibold text-white shadow-[0_4px_14px_rgba(15,23,42,0.35)] transition hover:shadow-[0_8px_22px_rgba(15,23,42,0.45)]"
+            className="font-display inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/10 px-3 text-[11.5px] font-semibold text-white shadow-[0_4px_14px_rgba(15,23,42,0.35)] transition hover:shadow-[0_8px_22px_rgba(15,23,42,0.45)] active:scale-[0.97] motion-reduce:active:scale-100"
             style={{ background: 'linear-gradient(180deg,#0F172A 0%,#0B1220 100%)' }}
           >
             Upgrade now

@@ -1252,7 +1252,7 @@ export default function CampaignBuilder() {
         <button
           type="button"
           onClick={() => navigate("/app/campaigns")}
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50 active:scale-[0.94] motion-reduce:active:scale-100"
           aria-label="Back to Outbound"
         >
           <ArrowLeft className="h-3 w-3" />
@@ -1475,7 +1475,7 @@ export default function CampaignBuilder() {
               setAudiencePulseListId(null);
               setAudiencePulseListName("");
             }}
-            className="ml-auto inline-flex items-center gap-1 rounded-md border border-blue-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-blue-800 hover:bg-blue-50"
+            className="ml-auto inline-flex items-center gap-1 rounded-md border border-blue-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-blue-800 hover:bg-blue-50 active:scale-[0.97] motion-reduce:active:scale-100"
             style={{ fontFamily: fontDisplay }}
             title="Detach this list — campaign will only use the manual recipients/companies you've set"
           >
@@ -1695,7 +1695,7 @@ export default function CampaignBuilder() {
               <button
                 type="button"
                 onClick={() => setLaunchConfirmOpen(false)}
-                className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+                className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 active:scale-[0.97] motion-reduce:active:scale-100"
                 style={{ fontFamily: fontDisplay }}
               >
                 Cancel
@@ -1703,7 +1703,7 @@ export default function CampaignBuilder() {
               <button
                 type="button"
                 onClick={confirmLaunch}
-                className="inline-flex items-center gap-1 rounded-md bg-gradient-to-b from-[#10B981] to-[#059669] px-3.5 py-1.5 text-[11px] font-semibold text-white shadow-[0_1px_4px_rgba(16,185,129,0.3)]"
+                className="inline-flex items-center gap-1 rounded-xl bg-gradient-to-b from-[#10B981] to-[#059669] px-3.5 py-1.5 text-[11px] font-semibold text-white shadow-[0_1px_4px_rgba(16,185,129,0.3)] active:scale-[0.97] motion-reduce:active:scale-100"
                 style={{ fontFamily: fontDisplay }}
               >
                 <Rocket className="h-2.5 w-2.5" />

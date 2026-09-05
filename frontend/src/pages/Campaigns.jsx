@@ -74,7 +74,7 @@ function PageHeader({ onNewCampaign, onOpenAnalytics, onOpenInbox }) {
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-1.5">
           <h1
-            className="text-[20px] font-bold leading-tight tracking-tight text-[#0F172A]"
+            className="font-display text-[20px] font-bold leading-tight tracking-tight text-[#0F172A]"
             style={{ fontFamily: fontDisplay }}
           >
             Outbound Engine
@@ -97,7 +97,7 @@ function PageHeader({ onNewCampaign, onOpenAnalytics, onOpenInbox }) {
         <button
           type="button"
           onClick={onOpenInbox}
-          className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
+          className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[0.97] motion-reduce:active:scale-100"
           style={{ fontFamily: fontDisplay }}
           title="Open the campaign inbox to read replies and continue conversations"
         >
@@ -107,7 +107,7 @@ function PageHeader({ onNewCampaign, onOpenAnalytics, onOpenInbox }) {
         <button
           type="button"
           onClick={onOpenAnalytics}
-          className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
+          className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[0.97] motion-reduce:active:scale-100"
           style={{ fontFamily: fontDisplay }}
         >
           <Grid className="h-2.5 w-2.5" />
@@ -116,7 +116,7 @@ function PageHeader({ onNewCampaign, onOpenAnalytics, onOpenInbox }) {
         <button
           type="button"
           onClick={onNewCampaign}
-          className="inline-flex items-center gap-1 rounded-md bg-gradient-to-b from-[#3B82F6] to-[#2563EB] px-3 py-1 text-[11px] font-semibold text-white shadow-[0_1px_4px_rgba(59,130,246,0.3)] transition hover:brightness-110"
+          className="inline-flex items-center gap-1 rounded-xl bg-blue-600 px-3 py-1 text-[11px] font-semibold text-white shadow-sm shadow-blue-600/25 transition hover:bg-blue-700 active:scale-[0.97] motion-reduce:active:scale-100"
           style={{ fontFamily: fontDisplay }}
         >
           <Plus className="h-2.5 w-2.5" />
@@ -167,7 +167,7 @@ function LoadingSkeleton() {
 
 function ErrorCard({ message, onRetry }) {
   return (
-    <div className="rounded-lg border border-rose-200 bg-rose-50/60 p-4">
+    <div className="rounded-xl border border-rose-200 bg-rose-50/60 p-4">
       <div className="flex items-start gap-2.5">
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-rose-100 text-rose-600 ring-1 ring-rose-200">
           <AlertTriangle className="h-4 w-4" />
@@ -188,7 +188,7 @@ function ErrorCard({ message, onRetry }) {
           <button
             type="button"
             onClick={onRetry}
-            className="mt-2 inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
+            className="mt-2 inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[0.97] motion-reduce:active:scale-100"
             style={{ fontFamily: fontDisplay }}
           >
             <RefreshCw className="h-2.5 w-2.5" />
@@ -202,7 +202,7 @@ function ErrorCard({ message, onRetry }) {
 
 function EmptyCampaigns({ onNewCampaign }) {
   return (
-    <div className="rounded-lg border border-dashed border-slate-300 bg-white">
+    <div className="rounded-xl border border-dashed border-slate-300 bg-white">
       <LitEmptyState
         icon={<Send className="h-5 w-5" />}
         title="No campaigns yet"
@@ -382,7 +382,7 @@ export default function CampaignsPage() {
                         key={f.k}
                         type="button"
                         onClick={() => setFilter(f.k)}
-                        className="rounded-full px-2.5 py-1 text-[11px] font-semibold transition hover:border-[#BFDBFE]"
+                        className="rounded-full px-2.5 py-1 text-[11px] font-semibold transition hover:border-[#BFDBFE] active:scale-[0.97] motion-reduce:active:scale-100"
                         style={{
                           background: isActive ? "#EFF6FF" : "#FFFFFF",
                           color: isActive ? "#1D4ED8" : "#64748B",
@@ -400,7 +400,7 @@ export default function CampaignsPage() {
                     type="button"
                     disabled
                     title="Filter by owner — coming soon"
-                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-400"
+                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-400 active:scale-[0.97] motion-reduce:active:scale-100"
                     style={{ fontFamily: fontDisplay }}
                   >
                     <Filter className="h-2 w-2" />
@@ -413,7 +413,7 @@ export default function CampaignsPage() {
                 <EmptyCampaigns onNewCampaign={() => handleNewCampaign(null)} />
               ) : visible.length === 0 ? (
                 <div
-                  className="rounded-lg border border-dashed border-slate-200 bg-white px-4 py-6 text-center text-[12px] text-slate-500"
+                  className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-6 text-center text-[12px] text-slate-500"
                   style={{ fontFamily: fontBody }}
                 >
                   No campaigns match this filter.
