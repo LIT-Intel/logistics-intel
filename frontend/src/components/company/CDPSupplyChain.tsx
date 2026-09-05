@@ -71,6 +71,7 @@ import {
   formatEntryPortLabel,
 } from "@/api/portLanes";
 import CDPForwarders from "@/components/company/CDPForwarders";
+import DomesticFleetCard from "@/components/company/DomesticFleetCard";
 import InlandFreightCard from "@/components/company/InlandFreightCard";
 import RelationshipIntelCard from "@/components/company/RelationshipIntelCard";
 import { laneRegionColor } from "@/lib/laneRegions";
@@ -634,6 +635,10 @@ function SummaryView({
           company's BOLs (who moves their freight = incumbent 3PL intel).
           Self-hiding when the company has no notify-party rows. */}
       <CDPForwarders companyId={sourceCompanyKey ?? null} />
+      {/* Domestic Fleet (FMCSA) — REAL federal motor-carrier registration for
+          this company (private fleet / for-hire, trucks, drivers, mileage).
+          Self-hiding when no census registration matches the name. */}
+      <DomesticFleetCard companyName={companyName || null} />
       {/* Domestic Freight (estimated) — modeled inland TL picture from
           lit_company_inland_freight, keyed on the same source_company_key
           as lane history. Self-hiding when the RPC has no data. */}

@@ -86,6 +86,44 @@ export function useCompanyTradeGraph(
   });
 }
 
+export interface FmcsaMatch {
+  dot_number: string;
+  legal_name: string;
+  dba_name: string | null;
+  phy_city: string | null;
+  phy_state: string | null;
+  phy_zip: string | null;
+  power_units: number | null;
+  drivers: number | null;
+  recent_mileage: number | null;
+  recent_mileage_year: string | null;
+  carrier_operation: string | null;
+  authorized_for_hire: boolean;
+  private_fleet: boolean;
+  hazmat: boolean;
+}
+
+/** FMCSA motor-carrier registrations matching a company name — REAL domestic
+ *  fleet data (power units, drivers, annual mileage, private-fleet flag) from
+ *  the free federal census, via the fmcsa-carrier-lookup edge fn (30-day
+ *  server cache). Resolves [] when no registration matches. */
+export function useFmcsaFleet(
+  companyName: string | null | undefined,
+): UseQueryResult<FmcsaMatch[]> {
+  return useQuery({
+    queryKey: ["fmcsa-fleet", (companyName ?? "").toLowerCase()],
+    enabled: Boolean(companyName && companyName.trim().length >= 3),
+    staleTime: 24 * 60 * 60 * 1000, // server caches 30d; a day client-side is plenty
+    queryFn: async () => {
+      const { data, error } = await supabase.functions.invoke("fmcsa-carrier-lookup", {
+        body: { name: companyName },
+      });
+      if (error || !data?.ok) return [];
+      return (data.matches ?? []) as FmcsaMatch[];
+    },
+  });
+}
+
 /** Forwarders/brokers this company ships with, by BOL notify-party volume.
  *  `slug` is the ImportYeti company key ("gordon-food-service" or
  *  "company/gordon-food-service" — the RPC strips the prefix). Resolves to []
