@@ -81,10 +81,7 @@ import OrgSaveCollisionCard from "@/components/company/OrgSaveCollisionCard";
 import CDPDetailsPanel from "@/components/company/CDPDetailsPanel";
 import PulseCoachQuotaCard from "@/components/company/PulseCoachQuotaCard";
 import LockedAccountPreview from "@/components/company/LockedAccountPreview";
-import CDPSupplyChain, {
-  SuppliersView,
-  deriveRecentBols,
-} from "@/components/company/CDPSupplyChain";
+import CDPSupplyChain from "@/components/company/CDPSupplyChain";
 import CDPContacts from "@/components/company/CDPContacts";
 import EditCompanyModal from "@/components/company/EditCompanyModal";
 import CDPResearch from "@/components/company/CDPResearch";
@@ -318,10 +315,9 @@ const VISIBLE_TABS = [
   // per the Sept-2026 roadmap; the tab row scrolls horizontally on mobile so
   // a 7th visible tab stays reachable.
   { id: "graph", label: "Trade Graph", Icon: Network },
-  // T4: dedicated top-level Suppliers tab. Suppliers are trade intelligence
-  // (evidence behind freight opportunities), so they sit beside Supply Chain
-  // — not buried under Contacts (sales execution) or a Supply-Chain sub-tab.
-  { id: "suppliers", label: "Suppliers", Icon: Factory },
+  // Suppliers tab REMOVED 2026-09-05 (owner: duplicate of Trade Graph). The
+  // graph is now the supplier surface, with the supplier→other-importers
+  // pivot the old tab never had. ?tab=suppliers deep links remap to graph.
   { id: "live", label: "Pulse LIVE", Icon: Radio },
   { id: "contacts", label: "Contacts", Icon: Users },
   { id: "activity", label: "Activity", Icon: Activity },
@@ -687,8 +683,9 @@ function ProfilePanel({ rawId }: { rawId: string }) {
 
   const [searchParams] = useSearchParams();
   const initialTab: TabId = (() => {
-    const t = String(searchParams?.get("tab") || "").toLowerCase();
-    return (["supply", "graph", "suppliers", "live", "rates", "contacts", "research", "activity", "inbox", "quotes"] as const).includes(
+    const t0 = String(searchParams?.get("tab") || "").toLowerCase();
+    const t = t0 === "suppliers" ? "graph" : t0; // legacy Suppliers tab → Trade Graph
+    return (["supply", "graph", "live", "rates", "contacts", "research", "activity", "inbox", "quotes"] as const).includes(
       t as TabId,
     )
       ? (t as TabId)
@@ -696,9 +693,10 @@ function ProfilePanel({ rawId }: { rawId: string }) {
   })();
   const [tab, setTab] = useState<TabId>(initialTab);
   useEffect(() => {
-    const t = String(searchParams?.get("tab") || "").toLowerCase();
+    const t0 = String(searchParams?.get("tab") || "").toLowerCase();
+    const t = t0 === "suppliers" ? "graph" : t0; // legacy Suppliers tab → Trade Graph
     if (
-      (["supply", "graph", "suppliers", "live", "rates", "contacts", "research", "activity", "inbox", "quotes"] as const).includes(
+      (["supply", "graph", "live", "rates", "contacts", "research", "activity", "inbox", "quotes"] as const).includes(
         t as TabId,
       )
     ) {
@@ -2467,13 +2465,6 @@ function ProfilePanel({ rawId }: { rawId: string }) {
                 companyId ??
                 null
               }
-              companyName={companyName}
-            />
-          )}
-          {tab === "suppliers" && (
-            <SuppliersView
-              profile={activeProfile as any}
-              recentBols={deriveRecentBols(activeProfile)}
               companyName={companyName}
             />
           )}

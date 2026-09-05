@@ -97,6 +97,20 @@ const LS_PANEL_KEY = 'lit.explorer.companySearch.panelOpen';
 // list. Market rows (DB-backed) always do; fresh ImportYeti rows may not until
 // they've been ingested/opened once. We filter to saveable ids + report the gap
 // rather than FK-failing silently.
+// Build a save-company payload from any result row. Market/directory rows keep
+// their display name in row.company_name (raw has no title/name field), which
+// made saveCompanyDirectToSupabase fall back to "Unknown" — polluting Command
+// Center with nameless shells (owner-reported; 8 purged 2026-09-05). Always
+// thread the resolved name + location through.
+const toShipper = (row) => ({
+  ...(row.raw || {}),
+  name: row.raw?.name ?? row.raw?.title ?? row.company_name,
+  title: row.raw?.title ?? row.company_name,
+  city: row.raw?.city ?? row.city ?? null,
+  state: row.raw?.state ?? row.state ?? null,
+  domain: row.raw?.domain ?? row.domain ?? null,
+});
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isUuid = (v) => typeof v === 'string' && UUID_RE.test(v);
 
@@ -366,7 +380,7 @@ export default function CompanySearchTab() {
     setSavingListRow(true);
     try {
       const res = await saveCompanyToCommandCenter({
-        shipper: row.raw,
+        shipper: toShipper(row),
         profile: null,
         stage: 'prospect',
         source: row.source || 'importyeti',
@@ -434,7 +448,7 @@ export default function CompanySearchTab() {
   const onSave = useCallback(async (row, e) => {
     e?.stopPropagation?.();
     try {
-      const shipper = row.raw;
+      const shipper = toShipper(row);
       await saveCompanyToCommandCenter({
         shipper,
         profile: null,
@@ -450,6 +464,22 @@ export default function CompanySearchTab() {
   const onOpenDetails = useCallback(async (row, e) => {
     e?.stopPropagation?.();
 
+    // Market/directory rows carry a lit_company_directory id, which the profile
+    // system does NOT know (zero overlap with lit_companies — measured). The old
+    // path navigated to /app/companies/<directory-uuid> → a dead/blank profile
+    // (owner-reported: Avanos Medical). Instead, run the LIVE Companies lookup
+    // for the name — that resolves the real ImportYeti company + its shipment
+    // volume, and opening THAT result lands on a working profile.
+    if (!row.source_company_key) {
+      toast(`Pulling live shipment data for ${row.company_name}…`);
+      modeTouched.current = true;
+      setSearchMode('companies');
+      setQuery(row.company_name);
+      setDetailRow(null);
+      runSearch(row.company_name, { mode: 'companies' });
+      return;
+    }
+
     const proceed = () => {
       // Pre-warm the profile snapshot in the BACKGROUND. Never await it — it's a
       // 10-15s importyeti-proxy call, and awaiting it before navigating made the
@@ -460,7 +490,7 @@ export default function CompanySearchTab() {
       // navigation (cap-reached / network errors are non-fatal here).
       if (!row.is_saved) {
         saveCompanyToCommandCenter({
-          shipper: row.raw,
+          shipper: toShipper(row),
           profile: null,
           stage: 'prospect',
           source: 'importyeti',
@@ -492,7 +522,7 @@ export default function CompanySearchTab() {
         action: { label: 'Add credits', onClick: () => navigate('/app/billing/credits') },
       });
     }
-  }, [navigate]);
+  }, [navigate, runSearch]);
 
   const onRowClick = useCallback((row) => {
     setSelectedCompany({
