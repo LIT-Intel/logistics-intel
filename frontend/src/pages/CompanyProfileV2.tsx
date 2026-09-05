@@ -35,6 +35,7 @@ import {
   Sparkles,
   Users,
   Workflow,
+  Network,
   Factory,
   Activity,
   Inbox,
@@ -74,6 +75,7 @@ import { capFutureDate } from "@/lib/dateUtils";
 import { supabase } from "@/lib/supabase";
 
 import CDPHeader from "@/components/company/CDPHeader";
+import CDPTradeGraph from "@/components/company/CDPTradeGraph";
 import CompanySignalsStrip from "@/components/company/CompanySignalsStrip";
 import OrgSaveCollisionCard from "@/components/company/OrgSaveCollisionCard";
 import CDPDetailsPanel from "@/components/company/CDPDetailsPanel";
@@ -311,6 +313,11 @@ function buildShellCompany(companyId: string | null, stored: any): any {
 // they're high-signal but low-frequency on a typical demo path.
 const VISIBLE_TABS = [
   { id: "supply", label: "Supply Chain", Icon: Workflow },
+  // Trade Graph — the relationship view (suppliers ↔ competitors ↔ forwarders
+  // ↔ commodities ↔ lanes ↔ facilities) from the company's own BOLs. Flagship
+  // per the Sept-2026 roadmap; the tab row scrolls horizontally on mobile so
+  // a 7th visible tab stays reachable.
+  { id: "graph", label: "Trade Graph", Icon: Network },
   // T4: dedicated top-level Suppliers tab. Suppliers are trade intelligence
   // (evidence behind freight opportunities), so they sit beside Supply Chain
   // — not buried under Contacts (sales execution) or a Supply-Chain sub-tab.
@@ -681,7 +688,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
   const [searchParams] = useSearchParams();
   const initialTab: TabId = (() => {
     const t = String(searchParams?.get("tab") || "").toLowerCase();
-    return (["supply", "suppliers", "live", "rates", "contacts", "research", "activity", "inbox", "quotes"] as const).includes(
+    return (["supply", "graph", "suppliers", "live", "rates", "contacts", "research", "activity", "inbox", "quotes"] as const).includes(
       t as TabId,
     )
       ? (t as TabId)
@@ -691,7 +698,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
   useEffect(() => {
     const t = String(searchParams?.get("tab") || "").toLowerCase();
     if (
-      (["supply", "suppliers", "live", "rates", "contacts", "research", "activity", "inbox", "quotes"] as const).includes(
+      (["supply", "graph", "suppliers", "live", "rates", "contacts", "research", "activity", "inbox", "quotes"] as const).includes(
         t as TabId,
       )
     ) {
@@ -2444,6 +2451,24 @@ function ProfilePanel({ rawId }: { rawId: string }) {
                 }
               />
             )
+          )}
+          {tab === "graph" && (
+            <CDPTradeGraph
+              // Same broadened key-fallback chain as Pulse LIVE so the graph
+              // resolves whenever ANY company key is available.
+              companyId={
+                (bundle?.identity as any)?.source_company_key ??
+                (bundle?.identity as any)?.sourceCompanyKey ??
+                bundle?.identity?.key ??
+                (activeProfile as any)?.identity?.key ??
+                (activeProfile as any)?.source_company_key ??
+                (activeProfile as any)?.sourceCompanyKey ??
+                (activeProfile as any)?.key ??
+                companyId ??
+                null
+              }
+              companyName={companyName}
+            />
           )}
           {tab === "suppliers" && (
             <SuppliersView
