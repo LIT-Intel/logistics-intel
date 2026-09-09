@@ -35,7 +35,7 @@ function fmtMoney(n) {
   return `$${v.toLocaleString()}`;
 }
 
-export default function CompanyDetailPanel({ row, onClose, onOpenFull, onSave, onSaveToList, savingToList }) {
+export default function CompanyDetailPanel({ row, onClose, onOpenFull, onSave, onSaveToList, savingToList, mxIntel }) {
   const reduce = useReducedMotion();
   // Live enrichment (Apollo org data) fired on open — website / phone / HQ /
   // firmographics. Non-fatal: on failure the panel keeps its shipment-intel view.
@@ -158,6 +158,29 @@ export default function CompanyDetailPanel({ row, onClose, onOpenFull, onSave, o
             </button>
           ) : null}
         </div>
+
+        {/* Cross-Border Intelligence — pedimento pull result, rendered in-panel
+            (toasts don't render on this route; this must be visible UI). */}
+        {mxIntel ? (
+          <div className="mx-4 mt-3 rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
+            <div className="font-display mb-1 text-[11px] font-bold uppercase tracking-wide text-emerald-700">Cross-Border Intelligence</div>
+            {mxIntel.loading ? (
+              <div className="flex items-center gap-2 text-[12px] text-emerald-800">
+                <Loader2 size={12} className="animate-spin" /> Pulling customs declarations…
+              </div>
+            ) : mxIntel.error ? (
+              <p className="text-[12px] text-rose-600">Could not pull declarations. Try again.</p>
+            ) : (
+              <div className="space-y-1 text-[12px] text-slate-700">
+                <div><span className="font-semibold">{mxIntel.data.imports ?? 0}</span> import · <span className="font-semibold">{mxIntel.data.exports ?? 0}</span> export declarations cached</div>
+                {mxIntel.data.modes?.length ? <div>Modes: {mxIntel.data.modes.map((m) => `${m.v} (${m.n})`).join(', ')}</div> : null}
+                {mxIntel.data.gateways?.length ? <div>Gateways: {mxIntel.data.gateways.map((g) => `${g.v} (${g.n})`).join(', ')}</div> : null}
+                {mxIntel.data.counterparties?.length ? <div>Counterparties: {mxIntel.data.counterparties.map((c) => `${c.v} (${c.n})`).join(', ')}</div> : null}
+                {mxIntel.data.total_value_usd > 0 ? <div>Declared value: <span className="font-semibold">${Math.round(mxIntel.data.total_value_usd).toLocaleString()}</span></div> : null}
+              </div>
+            )}
+          </div>
+        ) : null}
 
         {/* Contact & location — from live Apollo enrichment (on open). */}
         {(phone || addr || website || linkedin) ? (

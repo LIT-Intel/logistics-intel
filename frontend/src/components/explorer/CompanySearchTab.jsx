@@ -159,6 +159,9 @@ export default function CompanySearchTab() {
   const [detailRow, setDetailRow] = useState(null);
   // Save-to-list: array of lit_companies ids to save (opens the modal), or null.
   const [saveModalIds, setSaveModalIds] = useState(null);
+  // Cross-border intel for the open MX company — rendered IN the detail panel
+  // (toasts don't render on this page; DB proved clicks worked invisibly).
+  const [mxIntel, setMxIntel] = useState(null);
   // Save-search-to-Library modal (saves the whole search + assigns to teammates).
   const [saveSearchOpen, setSaveSearchOpen] = useState(false);
   // Ask Harvey — AI analyst panel over the current results (Q&A + report + email).
@@ -544,24 +547,16 @@ export default function CompanySearchTab() {
       // MX companies live in the detail panel (pedimento-backed); no US profile
       // exists yet. "Open" pulls + caches the line-level declarations and gives
       // visible feedback (owner-flagged: the old silent warm read as broken).
-      toast.info(`Opening ${row.company_name}…`);
-      const tid = toast.loading(`Pulling customs declarations for ${row.company_name}…`);
+      setDetailRow(row); // keep/ensure the panel is open
+      setMxIntel({ loading: true, name: row.company_name });
       try {
         const { data } = await supabase.functions.invoke('mx-company-search', {
           body: { q: row.company_name, mode: 'declarations' },
         });
-        toast.dismiss(tid);
-        if (data?.ok) {
-          const mode = data.modes?.[0]?.v ? ` · top mode ${data.modes[0].v}` : '';
-          const gate = data.gateways?.[0]?.v ? ` · via ${data.gateways[0].v}` : '';
-          const val = data.total_value_usd > 0 ? ` · $${Math.round(data.total_value_usd).toLocaleString()} declared` : '';
-          toast.success(`${row.company_name}: ${data.imports ?? 0} import + ${data.exports ?? 0} export declarations cached${mode}${gate}${val}.`, { duration: 8000 });
-        } else {
-          toast.error('Could not pull declarations for this company.');
-        }
+        if (data?.ok) setMxIntel({ loading: false, name: row.company_name, data });
+        else setMxIntel({ loading: false, name: row.company_name, error: true });
       } catch {
-        toast.dismiss(tid);
-        toast.error('Could not pull declarations for this company.');
+        setMxIntel({ loading: false, name: row.company_name, error: true });
       }
       return;
     }
@@ -1085,7 +1080,8 @@ export default function CompanySearchTab() {
           {detailRow ? (
             <CompanyDetailPanel
               row={detailRow}
-              onClose={() => setDetailRow(null)}
+              mxIntel={mxIntel && detailRow && String(detailRow.id||'').startsWith('mx:') ? mxIntel : null}
+              onClose={() => { setDetailRow(null); setMxIntel(null); }}
               onOpenFull={onOpenDetails}
               onSave={onSave}
               onSaveToList={() => onSaveRowToList(detailRow)}
