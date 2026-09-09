@@ -554,7 +554,14 @@ export default function CompanySearchTab() {
       // MX companies live in the detail panel (pedimento-backed); no US profile
       // exists yet. "Open" pulls + caches the line-level declarations and gives
       // visible feedback (owner-flagged: the old silent warm read as broken).
-      setDetailRow(row); // keep/ensure the panel is open
+      // Warm/refresh the cache in the background, then land on the FULL MX
+      // profile page (owner: panel-only was not enough).
+      supabase.functions.invoke('mx-company-search', { body: { q: row.company_name, mode: 'declarations' } }).catch(() => {});
+      navigate(`/app/mx/${encodeURIComponent(row.company_name)}`);
+      return;
+    }
+    if (false) { // retired in-panel-only MX path (kept structure for diff clarity)
+      setDetailRow(row);
       setMxIntel({ loading: true, name: row.company_name });
       try {
         const { data } = await supabase.functions.invoke('mx-company-search', {

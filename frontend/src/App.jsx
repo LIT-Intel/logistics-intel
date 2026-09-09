@@ -65,6 +65,7 @@ const SearchPanel = lazy(() => import("@/pages/SearchPanel"));
 const Transactions = lazy(() => import("@/pages/Transactions"));
 const Widgets = lazy(() => import("@/pages/Widgets"));
 const CompanyProfileV2 = lazy(() => import("@/pages/CompanyProfileV2"));
+const MxCompanyProfile = lazy(() => import("@/pages/MxCompanyProfile"));
 const SupplierProfile = lazy(() => import("@/pages/SupplierProfile"));
 const CommandCenterPage = lazy(() => import("@/components/command-center/CommandCenter"));
 const PreCallBriefing = lazy(() => import("@/pages/PreCallBriefing"));
@@ -480,6 +481,17 @@ export default function App() {
             <RequireAuth>
               <LITPage>
                 <CompanyProfileV2 />
+              </LITPage>
+            </RequireAuth>
+          }
+        />
+        {/* Mexico company profile — cached-pedimento view (zero IY spend). */}
+        <Route
+          path="/app/mx/:name"
+          element={
+            <RequireAuth>
+              <LITPage>
+                <MxCompanyProfile />
               </LITPage>
             </RequireAuth>
           }
