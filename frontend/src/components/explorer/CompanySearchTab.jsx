@@ -551,12 +551,39 @@ export default function CompanySearchTab() {
     // for the name — that resolves the real ImportYeti company + its shipment
     // volume, and opening THAT result lands on a working profile.
     if (String(row.id || '').startsWith('mx:')) {
-      // MX companies live in the detail panel (pedimento-backed); no US profile
-      // exists yet. "Open" pulls + caches the line-level declarations and gives
-      // visible feedback (owner-flagged: the old silent warm read as broken).
-      // Warm/refresh the cache in the background, then land on the FULL MX
-      // profile page (owner: panel-only was not enough).
+      // MX companies are FIRST-CLASS citizens of the normal company profile
+      // (owner: the parallel MxCompanyProfile page was rejected). "Open"
+      // MATERIALIZES a real lit_companies record via the blessed save-company
+      // path (idempotent — dedups by source_company_key) tagged
+      // source='mx-pedimento' + country_code='MX', then lands on the standard
+      // CompanyProfileV2 URL, whose Supply Chain tab renders the pedimento
+      // intel (MxTradePanel) for MX identities.
+      // Warm/refresh the declarations cache in the background first.
       supabase.functions.invoke('mx-company-search', { body: { q: row.company_name, mode: 'declarations' } }).catch(() => {});
+      // Toasts may not render on this route — navigation is the real feedback.
+      const tid = toast.loading(`Opening ${row.company_name}…`);
+      try {
+        const res = await saveCompanyToCommandCenter({
+          shipper: {
+            name: row.company_name,
+            title: row.company_name,
+            source_company_key: 'mx:' + row.company_name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+            city: row.city ?? null,
+            state: row.state ?? null,
+            countryCode: 'MX',
+          },
+          profile: null,
+          stage: 'prospect',
+          source: 'mx-pedimento',
+        });
+        const cid = res?.company?.id;
+        if (cid) {
+          toast.dismiss(tid);
+          navigate(`/app/companies/${cid}`);
+          return;
+        }
+      } catch { /* fall through to the legacy mx: route */ }
+      toast.dismiss(tid);
       navigate(`/app/companies/${encodeURIComponent('mx:' + row.company_name)}`);
       return;
     }

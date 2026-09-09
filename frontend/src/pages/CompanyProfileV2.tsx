@@ -82,6 +82,7 @@ import CDPDetailsPanel from "@/components/company/CDPDetailsPanel";
 import PulseCoachQuotaCard from "@/components/company/PulseCoachQuotaCard";
 import LockedAccountPreview from "@/components/company/LockedAccountPreview";
 import CDPSupplyChain from "@/components/company/CDPSupplyChain";
+import MxTradePanel from "@/components/company/MxTradePanel";
 import CDPContacts from "@/components/company/CDPContacts";
 import EditCompanyModal from "@/components/company/EditCompanyModal";
 import CDPResearch from "@/components/company/CDPResearch";
@@ -904,17 +905,21 @@ function ProfilePanel({ rawId }: { rawId: string }) {
           /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
             String(companyId),
           );
+        // `source` + `country_code` ride along so MX pedimento-materialized
+        // rows (source='mx-pedimento', country_code='MX') are detectable —
+        // their Supply Chain tab renders MxTradePanel instead of the
+        // ImportYeti tree.
         const lookup = isUuid
           ? supabase
               .from("lit_companies")
               .select(
-                "source_company_key, enrichment_params, industry, revenue, headcount, website, domain",
+                "source_company_key, source, country_code, enrichment_params, industry, revenue, headcount, website, domain",
               )
               .eq("id", companyId)
           : supabase
               .from("lit_companies")
               .select(
-                "source_company_key, enrichment_params, industry, revenue, headcount, website, domain",
+                "source_company_key, source, country_code, enrichment_params, industry, revenue, headcount, website, domain",
               )
               .eq("source_company_key", companyId);
         const { data: company } = await lookup.maybeSingle();
@@ -944,6 +949,9 @@ function ProfilePanel({ rawId }: { rawId: string }) {
           industry: (company as any).industry ?? null,
           revenue: (company as any).revenue ?? null,
           headcount: (company as any).headcount ?? null,
+          source: (company as any).source ?? null,
+          country_code: (company as any).country_code ?? null,
+          source_company_key: sck ?? null,
         });
       } catch (e) {
         console.warn(
@@ -1125,6 +1133,41 @@ function ProfilePanel({ rawId }: { rawId: string }) {
     shellCompany?.domain ||
     bundle?.identity?.display?.domain ||
     null;
+
+  // ── MX pedimento identity detection ─────────────────────────────────────
+  // MX companies are first-class lit_companies rows (materialized from MX
+  // search via save-company with source='mx-pedimento' + country_code='MX').
+  // Detection swaps ONLY the Supply Chain tab body for MxTradePanel —
+  // header, tabs, contacts, CRM, right rail stay identical. Checked
+  // defensively across every record object that can carry the identity:
+  // note ensureCompanyKey normalizes 'mx:<slug>' to 'company/mx<slug>' on
+  // save, so the persisted source/country pair is the reliable signal; the
+  // 'mx:' prefix check covers un-materialized legacy route ids.
+  const mxCountryCode =
+    (companyEnrichment as any)?.country_code ||
+    bundle?.identity?.display?.address?.country_code ||
+    activeProfile?.countryCode ||
+    shellCompany?.countryCode ||
+    null;
+  const isMxCompany =
+    [
+      (bundle?.identity as any)?.source_company_key,
+      (bundle?.identity as any)?.sourceCompanyKey,
+      bundle?.identity?.key,
+      (activeProfile as any)?.source_company_key,
+      (companyEnrichment as any)?.source_company_key,
+      storedSelectedCompany?.source_company_key,
+      decodedRouteId,
+    ].some((k) => String(k || "").startsWith("mx:")) ||
+    (mxCountryCode === "MX" &&
+      (companyEnrichment as any)?.source === "mx-pedimento");
+  // Legacy fallback route (/app/companies/mx:<name>) carries the human name
+  // in the id itself — nothing resolves in lit_companies for it, so derive
+  // the display name for the pedimento RPC straight from the route.
+  const mxRouteName =
+    decodedRouteId && String(decodedRouteId).startsWith("mx:")
+      ? String(decodedRouteId).slice(3)
+      : null;
 
   const harveyCompanyId = bundle?.identity?.id ?? null;
   const harveySourceCompanyKey =
@@ -2413,7 +2456,12 @@ function ProfilePanel({ rawId }: { rawId: string }) {
       <div className="flex flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
         <div className="min-w-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4 sm:py-4 md:px-6">
           {tab === "supply" && (
-            isDirectoryOnly ? (
+            isMxCompany ? (
+              // MX identity — pedimento-backed trade intel replaces the
+              // ImportYeti supply-chain tree. Everything else on the page
+              // (header, tabs, contacts, CRM, right rail) is unchanged.
+              <MxTradePanel companyName={mxRouteName || companyName} />
+            ) : isDirectoryOnly ? (
               <DirectoryOnlyEmptyState
                 companyName={companyName}
                 onSave={handleSaveCompany}

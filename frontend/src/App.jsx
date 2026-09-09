@@ -65,18 +65,10 @@ const SearchPanel = lazy(() => import("@/pages/SearchPanel"));
 const Transactions = lazy(() => import("@/pages/Transactions"));
 const Widgets = lazy(() => import("@/pages/Widgets"));
 const CompanyProfileV2 = lazy(() => import("@/pages/CompanyProfileV2"));
-const MxCompanyProfile = lazy(() => import("@/pages/MxCompanyProfile"));
-
 // ONE profile surface (owner: no separate MX page — inconsistent branding).
-// /app/companies/:id renders the Mexico pedimento profile when the id is
-// "mx:<name>", else the standard CompanyProfileV2. Branching at the route
-// level keeps hook order stable in both components.
-function CompanyProfileSwitch() {
-  const { id } = useParams();
-  let decoded = String(id || "");
-  try { decoded = decodeURIComponent(decoded); } catch { /* keep raw */ }
-  return decoded.startsWith("mx:") ? <MxCompanyProfile /> : <CompanyProfileV2 />;
-}
+// MX companies are materialized into lit_companies on open (source=
+// 'mx-pedimento') and render through the standard CompanyProfileV2, whose
+// Supply Chain tab swaps to MxTradePanel for MX identities.
 const SupplierProfile = lazy(() => import("@/pages/SupplierProfile"));
 const CommandCenterPage = lazy(() => import("@/components/command-center/CommandCenter"));
 const PreCallBriefing = lazy(() => import("@/pages/PreCallBriefing"));
@@ -491,7 +483,7 @@ export default function App() {
           element={
             <RequireAuth>
               <LITPage>
-                <CompanyProfileSwitch />
+                <CompanyProfileV2 />
               </LITPage>
             </RequireAuth>
           }
