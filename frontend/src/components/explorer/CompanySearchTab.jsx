@@ -63,6 +63,7 @@ import CompanyDetailPanel from './CompanyDetailPanel';
 import BulkSaveToListModal from '@/features/pulse/explore/BulkSaveToListModal';
 import SaveSearchModal from './SaveSearchModal';
 import SearchLibraryPanel from './SearchLibraryPanel';
+import { supabase } from '@/lib/supabase';
 import { getListCompanies } from '@/features/pulse/pulseListsApi';
 import InsightsPanel from '@/features/pulse/explore/InsightsPanel';
 import { FolderPlus, Sparkles as SparklesIcon } from 'lucide-react';
@@ -168,6 +169,9 @@ export default function CompanySearchTab() {
   // by location/industry). Auto-detected from the query, overridable via the
   // toggle. Both render in THIS same overlay/map/detail UI (the true merge).
   const [searchMode, setSearchMode] = useState('companies');
+  // Search region: 'us' (ImportYeti US BOLs) | 'mx' (Mexico pedimentos via
+  // PowerQuery, live search-and-cache). MX is Companies-mode only.
+  const [region, setRegion] = useState('us');
   const modeTouched = useRef(false); // stop auto-detect once the user toggles
   const [marketFilters, setMarketFilters] = useState({});
 
@@ -280,6 +284,50 @@ export default function CompanySearchTab() {
     // Mark this q handled so the ?q= effect (which fires when runSearch writes
     // the param below) doesn't kick off a duplicate search.
     handledQRef.current = q;
+
+    // ── Mexico region: live PowerQuery company search (same on-demand model as
+    //    US — results are cached server-side as they come back). Geocoded rows
+    //    render on the same map/list/detail surface. ──
+    if (region === 'mx') {
+      setSearching(true);
+      setError('');
+      setSubmitted(q);
+      setDetailRow(null);
+      setSp((prev) => { const next = new URLSearchParams(prev); next.set('q', q); return next; }, { replace: true });
+      try {
+        const { data, error: fnErr } = await supabase.functions.invoke('mx-company-search', { body: { q } });
+        if (fnErr || !data?.ok) throw new Error(data?.error || fnErr?.message || 'Mexico search failed.');
+        const rows = (data.results || []).map((r) => ({
+          id: `mx:${r.name}`,
+          company_name: r.name,
+          city: null,
+          state: r.state || null,
+          country: 'Mexico',
+          domain: null,
+          shipments: r.shipments ?? null,
+          teu: null,
+          industry: r.direction === 'both' ? 'Importer & Exporter' : (r.direction === 'export' ? 'Exporter' : 'Importer'),
+          opportunity_composite_score: null,
+          source_company_key: null,
+          is_saved: false,
+          latitude: r.latitude ?? null,
+          longitude: r.longitude ?? null,
+          raw: r.raw || r,
+        }));
+        setResults(rows);
+        setMapPoints(rows.filter((x) => x.latitude != null && x.longitude != null));
+        setUnmappedCount(rows.filter((x) => x.latitude == null).length);
+        setAnalytics(null);
+        if (rows.length > 0) setPanelOpen(true);
+        if (rows.length === 0) setError(`No Mexican companies found matching "${q}".`);
+      } catch (err) {
+        setError(err?.message || 'Mexico search failed.');
+        setResults([]); setMapPoints([]); setUnmappedCount(0);
+      } finally {
+        setSearching(false);
+      }
+      return;
+    }
     const forceRefresh = opts?.forceRefresh === true;
     setSearching(true);
     setError('');
@@ -357,7 +405,7 @@ export default function CompanySearchTab() {
     } finally {
       setSearching(false);
     }
-  }, [query, setSp, searchMode]);
+  }, [query, setSp, searchMode, region]);
 
   const onSubmit = useCallback((e) => {
     e?.preventDefault?.();
@@ -470,6 +518,14 @@ export default function CompanySearchTab() {
     // (owner-reported: Avanos Medical). Instead, run the LIVE Companies lookup
     // for the name — that resolves the real ImportYeti company + its shipment
     // volume, and opening THAT result lands on a working profile.
+    if (String(row.id || '').startsWith('mx:')) {
+      // MX companies live in the detail panel (pedimento-backed); no US profile
+      // exists for them. Warm the declarations cache so profile cards + future
+      // opens have the line-level data.
+      toast('Mexico company details live in this panel — full MX profiles are next.');
+      supabase.functions.invoke('mx-company-search', { body: { q: row.company_name, mode: 'declarations' } }).catch(() => {});
+      return;
+    }
     if (!row.source_company_key) {
       // Resolve the live company SILENTLY and go straight to its profile —
       // dropping the user into a second search was double work (owner-flagged,
@@ -751,7 +807,7 @@ export default function CompanySearchTab() {
             same map + overlay + detail UI. */}
         <div className="mt-2 flex items-center gap-2">
           <div className="inline-flex items-center rounded-lg border border-white/10 bg-white/5 p-0.5 text-[11.5px]">
-            {[['companies', 'Companies'], ['market', 'Market']].map(([m, label]) => (
+            {(region === 'mx' ? [['companies', 'Companies']] : [['companies', 'Companies'], ['market', 'Market']]).map(([m, label]) => (
               <button
                 key={m}
                 type="button"
@@ -762,8 +818,21 @@ export default function CompanySearchTab() {
               </button>
             ))}
           </div>
+          <div className="inline-flex items-center rounded-lg border border-white/10 bg-white/5 p-0.5 text-[11.5px]">
+            {[['us', 'US'], ['mx', 'MX']].map(([rg, label]) => (
+              <button
+                key={rg}
+                type="button"
+                title={rg === 'mx' ? 'Search Mexican importers & exporters (customs declarations)' : 'Search US import data'}
+                onClick={() => { setRegion(rg); if (rg === 'mx') { modeTouched.current = true; setSearchMode('companies'); } }}
+                className={`rounded-md px-2 py-1 font-semibold transition active:scale-[0.96] motion-reduce:active:scale-100 ${region === rg ? 'bg-emerald-400 text-slate-900' : 'text-slate-300 hover:text-white'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <span className="hidden text-[10.5px] text-cyan-200/60 sm:inline">
-            {searchMode === 'market' ? 'Browse companies by location / industry' : 'Find a company by name'}
+            {region === 'mx' ? 'Mexico trade — importers & exporters from customs declarations' : searchMode === 'market' ? 'Browse companies by location / industry' : 'Find a company by name'}
           </span>
           <button
             type="button"
