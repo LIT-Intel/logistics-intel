@@ -62,10 +62,11 @@ function Card({ icon, tone, title, count, children }) {
 }
 
 export default function MxCompanyProfile() {
-  const { name } = useParams();
+  const params = useParams();
+  const name = params.name ?? params.id; // mounted inside /app/companies/:id too
   const navigate = useNavigate();
   const reduce = useReducedMotion();
-  const companyName = useMemo(() => { try { return decodeURIComponent(name || ''); } catch { return name || ''; } }, [name]);
+  const companyName = useMemo(() => { try { return decodeURIComponent(name || '').replace(/^mx:/, ''); } catch { return String(name || '').replace(/^mx:/, ''); } }, [name]);
 
   const { data, isLoading } = useQuery({
     queryKey: ['mx-company-profile', companyName],

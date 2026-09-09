@@ -557,7 +557,7 @@ export default function CompanySearchTab() {
       // Warm/refresh the cache in the background, then land on the FULL MX
       // profile page (owner: panel-only was not enough).
       supabase.functions.invoke('mx-company-search', { body: { q: row.company_name, mode: 'declarations' } }).catch(() => {});
-      navigate(`/app/mx/${encodeURIComponent(row.company_name)}`);
+      navigate(`/app/companies/${encodeURIComponent('mx:' + row.company_name)}`);
       return;
     }
     if (false) { // retired in-panel-only MX path (kept structure for diff clarity)

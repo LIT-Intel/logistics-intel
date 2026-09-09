@@ -66,6 +66,17 @@ const Transactions = lazy(() => import("@/pages/Transactions"));
 const Widgets = lazy(() => import("@/pages/Widgets"));
 const CompanyProfileV2 = lazy(() => import("@/pages/CompanyProfileV2"));
 const MxCompanyProfile = lazy(() => import("@/pages/MxCompanyProfile"));
+
+// ONE profile surface (owner: no separate MX page — inconsistent branding).
+// /app/companies/:id renders the Mexico pedimento profile when the id is
+// "mx:<name>", else the standard CompanyProfileV2. Branching at the route
+// level keeps hook order stable in both components.
+function CompanyProfileSwitch() {
+  const { id } = useParams();
+  let decoded = String(id || "");
+  try { decoded = decodeURIComponent(decoded); } catch { /* keep raw */ }
+  return decoded.startsWith("mx:") ? <MxCompanyProfile /> : <CompanyProfileV2 />;
+}
 const SupplierProfile = lazy(() => import("@/pages/SupplierProfile"));
 const CommandCenterPage = lazy(() => import("@/components/command-center/CommandCenter"));
 const PreCallBriefing = lazy(() => import("@/pages/PreCallBriefing"));
@@ -480,22 +491,12 @@ export default function App() {
           element={
             <RequireAuth>
               <LITPage>
-                <CompanyProfileV2 />
+                <CompanyProfileSwitch />
               </LITPage>
             </RequireAuth>
           }
         />
-        {/* Mexico company profile — cached-pedimento view (zero IY spend). */}
-        <Route
-          path="/app/mx/:name"
-          element={
-            <RequireAuth>
-              <LITPage>
-                <MxCompanyProfile />
-              </LITPage>
-            </RequireAuth>
-          }
-        />
+
 
         {/* Supplier Profile (T1c) — `/app/suppliers/:slug` inverts the
             CompanyProfileV2 lens. Reads location.state from the supplier
