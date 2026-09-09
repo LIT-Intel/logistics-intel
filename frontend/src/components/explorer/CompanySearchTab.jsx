@@ -318,13 +318,17 @@ export default function CompanySearchTab() {
         const rows = (data.results || []).map((r) => ({
           id: `mx:${r.name}`,
           company_name: r.name,
-          city: null,
+          city: r.city || null,
           state: r.state || null,
           country: 'Mexico',
           domain: null,
           shipments: r.shipments ?? null,
           teu: null,
-          industry: r.direction === 'both' ? 'Importer & Exporter' : (r.direction === 'export' ? 'Exporter' : 'Importer'),
+          industry: [
+            r.direction === 'both' ? 'Importer & Exporter' : (r.direction === 'export' ? 'Exporter' : 'Importer'),
+            (r.transport_types || [])[0] ? String(r.transport_types[0]) : null,
+            (r.counterparty_countries || []).includes('US') ? 'US lane' : null,
+          ].filter(Boolean).join(' · '),
           opportunity_composite_score: null,
           source_company_key: null,
           is_saved: false,
@@ -540,6 +544,7 @@ export default function CompanySearchTab() {
       // MX companies live in the detail panel (pedimento-backed); no US profile
       // exists yet. "Open" pulls + caches the line-level declarations and gives
       // visible feedback (owner-flagged: the old silent warm read as broken).
+      toast.info(`Opening ${row.company_name}…`);
       const tid = toast.loading(`Pulling customs declarations for ${row.company_name}…`);
       try {
         const { data } = await supabase.functions.invoke('mx-company-search', {
@@ -547,7 +552,10 @@ export default function CompanySearchTab() {
         });
         toast.dismiss(tid);
         if (data?.ok) {
-          toast.success(`Cached ${data.imports ?? 0} import + ${data.exports ?? 0} export declarations for ${row.company_name}. Full MX profiles are next — details live in this panel.`);
+          const mode = data.modes?.[0]?.v ? ` · top mode ${data.modes[0].v}` : '';
+          const gate = data.gateways?.[0]?.v ? ` · via ${data.gateways[0].v}` : '';
+          const val = data.total_value_usd > 0 ? ` · $${Math.round(data.total_value_usd).toLocaleString()} declared` : '';
+          toast.success(`${row.company_name}: ${data.imports ?? 0} import + ${data.exports ?? 0} export declarations cached${mode}${gate}${val}.`, { duration: 8000 });
         } else {
           toast.error('Could not pull declarations for this company.');
         }
