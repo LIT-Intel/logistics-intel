@@ -57,6 +57,28 @@ Deno.serve(async (req) => {
   const apiKey = Deno.env.get("IMPORTYETI_API_KEY") || "";
   if (!apiKey) return json({ ok: true, results: [], reason: "iy_unconfigured" });
 
+  // PAID-ONLY gate (owner ruling: PowerQuery credits are expensive; trial users
+  // cannot run MX searches). Server-side = the security boundary. A user
+  // qualifies with ANY org subscription row in a live status, or platform admin.
+  const [{ data: om }, { data: pa }] = await Promise.all([
+    auth.admin.from("org_members").select("org_id").eq("user_id", auth.user.id).limit(5),
+    auth.admin.from("platform_admins").select("user_id").eq("user_id", auth.user.id).maybeSingle(),
+  ]);
+  let paid = Boolean(pa);
+  if (!paid && om && om.length) {
+    const orgIds = om.map((r: any) => r.org_id).filter(Boolean);
+    const { data: subs } = await auth.admin
+      .from("subscriptions").select("id")
+      .in("organization_id", orgIds)
+      .in("status", ["active", "trialing", "past_due"])
+      .limit(1);
+    paid = Boolean(subs && subs.length);
+  }
+  if (!paid) {
+    return json({ ok: false, code: "mx_requires_paid",
+      message: "Mexico trade search is available on paid plans. Upgrade to unlock cross-border intelligence." });
+  }
+
   let body: { q?: string; mode?: string } = {};
   try { body = await req.json(); } catch { /* validated below */ }
   const q = String(body.q ?? "").trim().slice(0, 120);

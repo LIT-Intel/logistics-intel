@@ -317,6 +317,11 @@ export default function CompanySearchTab() {
       setSp((prev) => { const next = new URLSearchParams(prev); next.set('q', q); return next; }, { replace: true });
       try {
         const { data, error: fnErr } = await supabase.functions.invoke('mx-company-search', { body: { q } });
+        if (data?.code === 'mx_requires_paid') {
+          setError(data.message || 'Mexico trade search is available on paid plans.');
+          setResults([]); setMapPoints([]); setUnmappedCount(0); setSearching(false);
+          return;
+        }
         if (fnErr || !data?.ok) throw new Error(data?.error || fnErr?.message || 'Mexico search failed.');
         const rows = (data.results || []).map((r) => ({
           id: `mx:${r.name}`,
