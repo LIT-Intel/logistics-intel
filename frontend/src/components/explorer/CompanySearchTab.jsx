@@ -289,6 +289,24 @@ export default function CompanySearchTab() {
     //    US — results are cached server-side as they come back). Geocoded rows
     //    render on the same map/list/detail surface. ──
     if (region === 'mx') {
+      // Ranking endpoints don't return the geocode that declarations carry, so
+      // fall back to state centroids (else a jittered country centroid) — every
+      // MX result gets a map pin. Declarations later refine to real addresses.
+      const MX_STATE_C = {
+        'ciudad de mexico': [19.43, -99.13], 'distrito federal': [19.43, -99.13],
+        'nuevo leon': [25.67, -100.31], 'jalisco': [20.67, -103.35],
+        'estado de mexico': [19.29, -99.65], 'mexico': [19.29, -99.65],
+        'baja california': [32.52, -117.02], 'chihuahua': [28.63, -106.08],
+        'coahuila': [25.54, -103.41], 'tamaulipas': [25.87, -97.5],
+        'guanajuato': [20.92, -101.26], 'queretaro': [20.59, -100.39],
+        'sonora': [29.07, -110.95], 'puebla': [19.04, -98.2],
+        'san luis potosi': [22.15, -100.98], 'yucatan': [20.97, -89.62],
+      };
+      const mxCoords = (state, i) => {
+        const c = state ? MX_STATE_C[String(state).trim().toLowerCase()] : null;
+        if (c) return { latitude: c[0] + (i % 5) * 0.04, longitude: c[1] + Math.floor(i / 5) * 0.04 };
+        return { latitude: 23.6 + (i % 6) * 0.5, longitude: -102.5 + Math.floor(i / 6) * 0.5 };
+      };
       setSearching(true);
       setError('');
       setSubmitted(q);
@@ -313,7 +331,7 @@ export default function CompanySearchTab() {
           latitude: r.latitude ?? null,
           longitude: r.longitude ?? null,
           raw: r.raw || r,
-        }));
+        })).map((row, i) => (row.latitude != null ? row : { ...row, ...mxCoords(row.state, i), approx_location: true }));
         setResults(rows);
         setMapPoints(rows.filter((x) => x.latitude != null && x.longitude != null));
         setUnmappedCount(rows.filter((x) => x.latitude == null).length);
@@ -520,10 +538,23 @@ export default function CompanySearchTab() {
     // volume, and opening THAT result lands on a working profile.
     if (String(row.id || '').startsWith('mx:')) {
       // MX companies live in the detail panel (pedimento-backed); no US profile
-      // exists for them. Warm the declarations cache so profile cards + future
-      // opens have the line-level data.
-      toast('Mexico company details live in this panel — full MX profiles are next.');
-      supabase.functions.invoke('mx-company-search', { body: { q: row.company_name, mode: 'declarations' } }).catch(() => {});
+      // exists yet. "Open" pulls + caches the line-level declarations and gives
+      // visible feedback (owner-flagged: the old silent warm read as broken).
+      const tid = toast.loading(`Pulling customs declarations for ${row.company_name}…`);
+      try {
+        const { data } = await supabase.functions.invoke('mx-company-search', {
+          body: { q: row.company_name, mode: 'declarations' },
+        });
+        toast.dismiss(tid);
+        if (data?.ok) {
+          toast.success(`Cached ${data.imports ?? 0} import + ${data.exports ?? 0} export declarations for ${row.company_name}. Full MX profiles are next — details live in this panel.`);
+        } else {
+          toast.error('Could not pull declarations for this company.');
+        }
+      } catch {
+        toast.dismiss(tid);
+        toast.error('Could not pull declarations for this company.');
+      }
       return;
     }
     if (!row.source_company_key) {
