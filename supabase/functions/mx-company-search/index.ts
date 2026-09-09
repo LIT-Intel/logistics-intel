@@ -87,22 +87,30 @@ Deno.serve(async (req) => {
   if (body.mode === "declarations") {
     // DB-first: if we pulled this company within 7 days, build the summary from
     // our own cache — zero ImportYeti charge on repeat opens.
-    const { data: prior } = await auth.admin
-      .from("lit_mx_import_declarations")
-      .select("transport_type, customs_office, supplier_country, value_usd")
-      .ilike("importer_name", q + "%")
-      .gte("fetched_at", new Date(Date.now() - 7 * 864e5).toISOString())
-      .limit(200);
-    if (prior && prior.length > 0) {
+    const since = new Date(Date.now() - 7 * 864e5).toISOString();
+    const [{ data: priorImp }, { data: priorExp }] = await Promise.all([
+      auth.admin.from("lit_mx_import_declarations")
+        .select("transport_type, customs_office, supplier_country, value_usd")
+        .ilike("importer_name", q + "%").gte("fetched_at", since).limit(200),
+      auth.admin.from("lit_mx_export_declarations")
+        .select("transport_type, customs_office, consignee_country, value_usd")
+        .ilike("exporter_name", q + "%").gte("fetched_at", since).limit(200),
+    ]);
+    const priorAll = [
+      ...((priorImp ?? []) as any[]),
+      ...((priorExp ?? []) as any[]).map((r) => ({ ...r, supplier_country: r.consignee_country })),
+    ];
+    if (priorAll.length > 0) {
       const cnt = (k: string) => {
         const m = new Map<string, number>();
-        for (const r of prior as any[]) { const v = r[k]; if (v) m.set(v, (m.get(v) ?? 0) + 1); }
+        for (const r of priorAll) { const v = r[k]; if (v) m.set(v, (m.get(v) ?? 0) + 1); }
         return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([v, n]) => ({ v, n }));
       };
-      return json({ ok: true, cached: true, imports: prior.length, exports: 0,
+      return json({ ok: true, cached: true,
+        imports: (priorImp ?? []).length, exports: (priorExp ?? []).length,
         modes: cnt("transport_type"), gateways: cnt("customs_office"),
         counterparties: cnt("supplier_country"),
-        total_value_usd: (prior as any[]).reduce((a, r) => a + (Number(r.value_usd) || 0), 0),
+        total_value_usd: priorAll.reduce((a, r) => a + (Number(r.value_usd) || 0), 0),
         credits: null });
     }
     const [imp, exp] = await Promise.all([
@@ -126,8 +134,28 @@ Deno.serve(async (req) => {
       origin_country: r.origin_country_code || r.origin_country || null,
       raw_payload: r,
     });
+    // Export table uses exporter_name/consignee_* columns — writing importer_*
+    // failed silently and NOTHING cached for exporter companies (owner-reported
+    // recharge). Dedicated mapper fixes the save.
+    const mapExpDecl = (r: any) => ({
+      declaration_id: r.declaration_id || r.pedimento_number || null,
+      declaration_date: r.declaration_date || r.export_date || null,
+      exporter_name: r.company_name || null,
+      exporter_rfc: r.rfc_number || null,
+      consignee_name: r.consignee_name || r.counterparty_name || r.supplier_name || null,
+      consignee_country: r.consignee_country_code || r.consignee_country || r.supplier_country_code || r.supplier_country || null,
+      customs_broker_name: r.customs_broker || r.customs_broker_name || null,
+      customs_office: r.customs_office || null,
+      transport_type: r.transportation_type || r.transport_type || null,
+      hs_code: r.hs_code || null,
+      product_description: r.hs_code_description || r.product_description || null,
+      value_usd: num(r.value_usd ?? r.customs_value_usd),
+      weight_kg: num(r.weight_kg ?? r.gross_weight),
+      destination_country: r.destination_country_code || r.destination_country || null,
+      raw_payload: r,
+    });
     const impRows = imp.rows.map(mapDecl).filter((x) => x.declaration_id);
-    const expRows = exp.rows.map(mapDecl).filter((x) => x.declaration_id);
+    const expRows = exp.rows.map(mapExpDecl).filter((x) => x.declaration_id);
     for (const [table, rows] of [["lit_mx_import_declarations", impRows], ["lit_mx_export_declarations", expRows]] as const) {
       if (!rows.length) continue;
       try {
@@ -147,7 +175,7 @@ Deno.serve(async (req) => {
     return json({
       ok: true, imports: impRows.length, exports: expRows.length,
       modes: count((r) => r.transport_type), gateways: count((r) => r.customs_office),
-      counterparties: count((r) => r.supplier_country),
+      counterparties: count((r) => r.supplier_country ?? r.consignee_country),
       total_value_usd: all.reduce((a, r) => a + (r.value_usd ?? 0), 0),
       credits: imp.credits ?? exp.credits,
     });
