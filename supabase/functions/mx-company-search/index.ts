@@ -63,6 +63,26 @@ Deno.serve(async (req) => {
   if (q.length < 2) return json({ ok: false, error: "q_required" }, 400);
 
   if (body.mode === "declarations") {
+    // DB-first: if we pulled this company within 7 days, build the summary from
+    // our own cache — zero ImportYeti charge on repeat opens.
+    const { data: prior } = await auth.admin
+      .from("lit_mx_import_declarations")
+      .select("transport_type, customs_office, supplier_country, value_usd")
+      .ilike("importer_name", q + "%")
+      .gte("fetched_at", new Date(Date.now() - 7 * 864e5).toISOString())
+      .limit(200);
+    if (prior && prior.length > 0) {
+      const cnt = (k: string) => {
+        const m = new Map<string, number>();
+        for (const r of prior as any[]) { const v = r[k]; if (v) m.set(v, (m.get(v) ?? 0) + 1); }
+        return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([v, n]) => ({ v, n }));
+      };
+      return json({ ok: true, cached: true, imports: prior.length, exports: 0,
+        modes: cnt("transport_type"), gateways: cnt("customs_office"),
+        counterparties: cnt("supplier_country"),
+        total_value_usd: (prior as any[]).reduce((a, r) => a + (Number(r.value_usd) || 0), 0),
+        credits: null });
+    }
     const [imp, exp] = await Promise.all([
       iy("/powerquery/mx-import/declarations", q, apiKey, 20),
       iy("/powerquery/mx-export/declarations", q, apiKey, 20),
@@ -111,6 +131,13 @@ Deno.serve(async (req) => {
     });
   }
 
+  // Query-level cache: repeat searches are FREE for 7 days.
+  const qkey = q.toLowerCase();
+  const { data: hit } = await auth.admin
+    .from("lit_mx_search_cache").select("payload, fetched_at").eq("q", qkey).maybeSingle();
+  if (hit && Date.now() - new Date(hit.fetched_at).getTime() < 7 * 864e5) {
+    return json({ ok: true, cached: true, results: hit.payload, credits: null });
+  }
   const [imp, exp] = await Promise.all([
     iy("/powerquery/mx-import/companies", q, apiKey, 10),
     iy("/powerquery/mx-export/companies", q, apiKey, 10),
@@ -125,6 +152,9 @@ Deno.serve(async (req) => {
     else byName.set(k, r);
   }
   const results = [...byName.values()].sort((a, b) => (b.shipments ?? 0) - (a.shipments ?? 0));
+  await auth.admin.from("lit_mx_search_cache")
+    .upsert({ q: qkey, payload: results, fetched_at: new Date().toISOString() })
+    .then(() => {}, () => {});
   log.info("mx_search_ok", { rid, q, n: results.length });
   return json({ ok: true, results, credits: imp.credits ?? exp.credits });
 });
