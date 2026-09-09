@@ -168,6 +168,8 @@ export default function CompanySearchTab() {
   const [harveyOpen, setHarveyOpen] = useState(false);
   // In-search Library — saved + assigned lists; opening one runs it in place.
   const [libraryOpen, setLibraryOpen] = useState(false);
+  // Upgrade prompt when a trial user hits the paid-only MX gate.
+  const [mxUpgradeOpen, setMxUpgradeOpen] = useState(false);
   // Search TYPE — 'companies' (name lookup) vs 'market' (Pulse universe browse
   // by location/industry). Auto-detected from the query, overridable via the
   // toggle. Both render in THIS same overlay/map/detail UI (the true merge).
@@ -318,7 +320,7 @@ export default function CompanySearchTab() {
       try {
         const { data, error: fnErr } = await supabase.functions.invoke('mx-company-search', { body: { q } });
         if (data?.code === 'mx_requires_paid') {
-          setError(data.message || 'Mexico trade search is available on paid plans.');
+          setMxUpgradeOpen(true);
           setResults([]); setMapPoints([]); setUnmappedCount(0); setSearching(false);
           return;
         }
@@ -1113,6 +1115,37 @@ export default function CompanySearchTab() {
           queryText={submitted}
           filterRecipe={searchMode === 'market' ? marketFilters : (submitted ? { name: submitted } : null)}
         />
+
+        {/* MX paid-plan upgrade prompt — modal, matching the credits-purchase
+            pattern (owner: banner wasn't enough). */}
+        {mxUpgradeOpen ? (
+          <div className="fixed inset-0 z-[70] grid place-items-center bg-slate-900/40 p-4 backdrop-blur-sm" onMouseDown={() => setMxUpgradeOpen(false)}>
+            <div className="w-full max-w-[400px] overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 text-center shadow-2xl" onMouseDown={(e) => e.stopPropagation()}>
+              <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-sm">
+                <Globe2 size={22} />
+              </div>
+              <h3 className="font-display mt-3 text-[16px] font-bold tracking-tight text-slate-900">Unlock Mexico Trade Intelligence</h3>
+              <p className="font-body mt-1 text-[12.5px] leading-snug text-slate-500">
+                Search Mexican importers &amp; exporters, cross-border truck lanes, customs gateways and
+                declared values — sourced from line-level customs declarations. Available on paid plans.
+              </p>
+              <button
+                type="button"
+                onClick={() => navigate('/app/billing')}
+                className="mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-blue-600 px-3 py-2.5 text-[13px] font-semibold text-white shadow-sm shadow-blue-600/25 transition hover:bg-blue-700 active:scale-[0.97] motion-reduce:active:scale-100"
+              >
+                Upgrade now
+              </button>
+              <button
+                type="button"
+                onClick={() => setMxUpgradeOpen(false)}
+                className="mt-2 w-full rounded-xl px-3 py-2 text-[12.5px] font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+              >
+                Maybe later
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         {/* In-search Library — saved + assigned lists; click one to run it here. */}
         <SearchLibraryPanel
