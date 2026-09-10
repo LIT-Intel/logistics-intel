@@ -116,6 +116,67 @@ const toShipper = (row) => ({
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isUuid = (v) => typeof v === 'string' && UUID_RE.test(v);
 
+// ── NA cross-border Market mode (region=MX + Market) ─────────────────────
+// Searches lit_na_market_search — US companies importing FROM Mexico/Canada.
+// Completely separate from the US market path (pulse-explore /
+// useExploreAccounts / lit_company_directory), which is untouched.
+//
+// localExtractFilters emits 2-letter state codes, but the NA dataset stores
+// FULL names ('Florida'); this is the inverse of STATE_NAME_TO_CODE in
+// api/pulse-explore-parse.js.
+const US_CODE_TO_STATE = {
+  AL: 'Alabama', AK: 'Alaska', AZ: 'Arizona', AR: 'Arkansas', CA: 'California',
+  CO: 'Colorado', CT: 'Connecticut', DE: 'Delaware', DC: 'District of Columbia',
+  FL: 'Florida', GA: 'Georgia', HI: 'Hawaii', ID: 'Idaho', IL: 'Illinois',
+  IN: 'Indiana', IA: 'Iowa', KS: 'Kansas', KY: 'Kentucky', LA: 'Louisiana',
+  ME: 'Maine', MD: 'Maryland', MA: 'Massachusetts', MI: 'Michigan', MN: 'Minnesota',
+  MS: 'Mississippi', MO: 'Missouri', MT: 'Montana', NE: 'Nebraska', NV: 'Nevada',
+  NH: 'New Hampshire', NJ: 'New Jersey', NM: 'New Mexico', NY: 'New York',
+  NC: 'North Carolina', ND: 'North Dakota', OH: 'Ohio', OK: 'Oklahoma',
+  OR: 'Oregon', PA: 'Pennsylvania', RI: 'Rhode Island', SC: 'South Carolina',
+  SD: 'South Dakota', TN: 'Tennessee', TX: 'Texas', UT: 'Utah', VT: 'Vermont',
+  VA: 'Virginia', WA: 'Washington', WV: 'West Virginia', WI: 'Wisconsin',
+  WY: 'Wyoming', PR: 'Puerto Rico',
+};
+
+// State centroids for map pins (the NA aggregate table has no geocode).
+// Keyed by lowercase full state name; rows in uncovered states fall back to a
+// jittered US centroid. Same pattern as MX_STATE_C in the mx-companies branch.
+const US_STATE_CENTROIDS = {
+  alabama: [32.8, -86.8], arizona: [34.3, -111.7], arkansas: [34.9, -92.4],
+  california: [37.2, -119.5], colorado: [39.0, -105.5], connecticut: [41.6, -72.7],
+  florida: [28.6, -82.4], georgia: [32.6, -83.4], illinois: [40.0, -89.2],
+  indiana: [39.9, -86.3], iowa: [42.1, -93.5], kansas: [38.5, -98.4],
+  kentucky: [37.5, -85.3], louisiana: [31.0, -92.0], maryland: [39.0, -76.8],
+  massachusetts: [42.3, -71.8], michigan: [44.3, -85.4], minnesota: [46.3, -94.3],
+  mississippi: [32.7, -89.7], missouri: [38.4, -92.5], nebraska: [41.5, -99.8],
+  nevada: [39.3, -116.6], 'new jersey': [40.2, -74.7], 'new mexico': [34.4, -106.1],
+  'new york': [42.9, -75.5], 'north carolina': [35.5, -79.4], ohio: [40.3, -82.8],
+  oklahoma: [35.6, -97.5], oregon: [43.9, -120.6], pennsylvania: [40.9, -77.8],
+  'south carolina': [33.9, -80.9], tennessee: [35.9, -86.4], texas: [31.5, -99.3],
+  utah: [39.3, -111.7], virginia: [37.5, -78.9], washington: [47.4, -120.5],
+  wisconsin: [44.6, -89.7],
+};
+const naCoords = (state, i) => {
+  const c = state ? US_STATE_CENTROIDS[String(state).trim().toLowerCase()] : null;
+  if (c) return { latitude: c[0] + (i % 5) * 0.05, longitude: c[1] + Math.floor(i / 5) * 0.05 };
+  return { latitude: 39.5 + (i % 6) * 0.4, longitude: -98.35 + Math.floor(i / 6) * 0.4 };
+};
+
+// Residual query text = the raw query minus geography + origin/filler words.
+// What's left ("auto parts", "steel") goes to the RPC's p_q for name/goods
+// keyword matching. Empty residual ⇒ null (no keyword filter).
+const naResidualQuery = (q, stateCodes = []) => {
+  let s = ` ${String(q || '')} `;
+  for (const code of stateCodes) {
+    const nm = US_CODE_TO_STATE[code];
+    if (nm) s = s.replace(new RegExp(`\\b${nm.replace(/ /g, '\\s+')}\\b`, 'gi'), ' ');
+    s = s.replace(new RegExp(`\\b${code}\\b`, 'g'), ' ');
+  }
+  s = s.replace(/\b(compan(?:y|ies)|importers?|imports?|importing|exporters?|buyers?|shippers?|from|in|near|the|mexico|mexican|canada|canadian|us|usa|american|united states)\b/gi, ' ');
+  return s.replace(/[^A-Za-z0-9&' -]/g, ' ').replace(/\s+/g, ' ').trim();
+};
+
 export default function CompanySearchTab() {
   const { setSelectedCompany } = useExplorer();
   const navigate = useNavigate();
@@ -205,7 +266,9 @@ export default function CompanySearchTab() {
   // toggle. Both render in THIS same overlay/map/detail UI (the true merge).
   const [searchMode, setSearchMode] = useState('companies');
   // Search region: 'us' (ImportYeti US BOLs) | 'mx' (Mexico pedimentos via
-  // PowerQuery, live search-and-cache). MX is Companies-mode only.
+  // PowerQuery, live search-and-cache). MX supports BOTH modes: Companies =
+  // Mexican importers/exporters; Market = the NA cross-border dataset (US
+  // companies importing from Mexico/Canada via lit_na_market_search).
   const [region, setRegion] = useState('us');
   const modeTouched = useRef(false); // stop auto-detect once the user toggles
   const [marketFilters, setMarketFilters] = useState({});
@@ -297,6 +360,71 @@ export default function CompanySearchTab() {
     // georgia") → 'market'.
     const resolvedMode = opts?.mode ?? (modeTouched.current ? searchMode : (looksLikeCompanyName(q) ? 'companies' : 'market'));
     if (resolvedMode !== searchMode) setSearchMode(resolvedMode);
+
+    // ── MX region + Market mode: NA cross-border dataset (US companies
+    //    importing FROM Mexico/Canada) via the lit_na_market_search RPC.
+    //    Entirely separate from the US market path below, which is untouched. ──
+    if (resolvedMode === 'market' && region === 'mx') {
+      handledQRef.current = q;
+      setSearching(true);
+      setError('');
+      setSubmitted(q);
+      setDetailRow(null);
+      setHoverRow(null);
+      setServedFromCache(false);
+      setDegraded(null);
+      setSp((prev) => { const next = new URLSearchParams(prev); next.set('q', q); return next; }, { replace: true });
+      try {
+        // Reuse the deterministic query parser for geography; its 2-letter
+        // codes map back to the full state names the NA data stores. The
+        // directory-industry strings it emits do NOT apply to this dataset
+        // (v1: industry filter stays null; keywords go to p_q instead).
+        const mf = localExtractFilters(q);
+        const stateCodes = mf?.geo?.states ?? [];
+        const states = stateCodes.map((c) => US_CODE_TO_STATE[c]).filter(Boolean);
+        const origin = /\bcanad(a|ian)\b/i.test(q) ? 'Canada' : 'Mexico';
+        const residual = naResidualQuery(q, stateCodes);
+        const { data, error: rpcErr } = await supabase.rpc('lit_na_market_search', {
+          p_origin: origin,
+          p_states: states.length ? states : null,
+          p_hs: null,
+          p_industry: null,
+          p_q: residual.length >= 3 ? residual : null,
+          p_min_shipments: 0,
+          p_limit: 300,
+        });
+        if (rpcErr) throw new Error(rpcErr.message || 'Cross-border search failed.');
+        const rows = (data || []).map((r, i) => ({
+          id: `na:${r.consignee_norm}`,
+          company_name: r.name || r.consignee_norm,
+          city: r.city || null,
+          state: r.state || null,
+          country: 'United States',
+          domain: r.website ? (String(r.website).replace(/^https?:\/\/(www\.)?/, '').split('/')[0] || null) : null,
+          shipments: r.total_shipments ?? null,
+          teu: r.total_teu ?? null,
+          industry: [r.industry || r.hs_label || null, `Imports from ${origin}`].filter(Boolean).join(' · '),
+          opportunity_composite_score: null,
+          source_company_key: null,
+          is_saved: false,
+          ...naCoords(r.state, i),
+          approx_location: true,
+          raw: r,
+        }));
+        setResults(rows);
+        setMapPoints(rows.filter((x) => x.latitude != null && x.longitude != null));
+        setUnmappedCount(rows.filter((x) => x.latitude == null).length);
+        setAnalytics(null);
+        if (rows.length > 0) setPanelOpen(true);
+        if (rows.length === 0) setError(`No US importers matched "${q}". Try a state ("importers in Texas") or a product keyword.`);
+      } catch (err) {
+        setError(err?.message || 'Cross-border search failed.');
+        setResults([]); setMapPoints([]); setUnmappedCount(0); setAnalytics(null);
+      } finally {
+        setSearching(false);
+      }
+      return;
+    }
 
     if (resolvedMode === 'market') {
       // Browse the universe by location/industry in THIS UI (no bounce to old
@@ -788,7 +916,11 @@ export default function CompanySearchTab() {
   //    THIS overlay/map/detail. Rows are shape-compatible with company-search
   //    rows (company_name/domain/city/state/teu/industry); a light mapper
   //    reconciles the few differences (opportunity → opportunity_composite_score).
-  const marketEnabled = searchMode === 'market' && hasAnyFilter(marketFilters);
+  // MX-region Market mode is served by lit_na_market_search inside runSearch
+  // (rows land in `results`, like Companies mode) — so the useExploreAccounts
+  // US-market fetch must stay dark and the display source stays `results`.
+  const naMarket = region === 'mx' && searchMode === 'market';
+  const marketEnabled = searchMode === 'market' && !naMarket && hasAnyFilter(marketFilters);
   const { data: marketData, isLoading: marketLoading } = useExploreAccounts(marketFilters, null, {
     enabled: marketEnabled,
     limit: 500,
@@ -804,8 +936,8 @@ export default function CompanySearchTab() {
   })), [marketData]);
 
   // The active result set + map rows, whichever mode is live.
-  const displayResults = searchMode === 'market' ? marketRows : results;
-  const displayMapRows = searchMode === 'market' ? marketRows : mapRows;
+  const displayResults = searchMode === 'market' && !naMarket ? marketRows : results;
+  const displayMapRows = searchMode === 'market' && !naMarket ? marketRows : mapRows;
 
   // ── High-level filters (client-side, over the current result set). Narrow
   //    the LIST and the MAP together so the two never disagree. ──────────────
@@ -905,7 +1037,7 @@ export default function CompanySearchTab() {
   const showPanel = (hasResults || searchActive) && (panelOpen || !isMobile);
   // Market query that produced no usable filters → no fetch ever ran. Distinct
   // empty copy nudges the user toward a location/industry.
-  const marketNoFilters = searchMode === 'market' && searchActive && !marketEnabled && !busy;
+  const marketNoFilters = searchMode === 'market' && !naMarket && searchActive && !marketEnabled && !busy;
 
   return (
     <div className="flex h-full flex-col bg-slate-50">
@@ -964,7 +1096,7 @@ export default function CompanySearchTab() {
             same map + overlay + detail UI. */}
         <div className="mt-2 flex items-center gap-2">
           <div className="inline-flex items-center rounded-lg border border-white/10 bg-white/5 p-0.5 text-[11.5px]">
-            {(region === 'mx' ? [['companies', 'Companies']] : [['companies', 'Companies'], ['market', 'Market']]).map(([m, label]) => (
+            {[['companies', 'Companies'], ['market', 'Market']].map(([m, label]) => (
               <button
                 key={m}
                 type="button"
@@ -981,7 +1113,7 @@ export default function CompanySearchTab() {
                 key={rg}
                 type="button"
                 title={rg === 'mx' ? 'Search Mexican importers & exporters (customs declarations)' : 'Search US import data'}
-                onClick={() => { setRegion(rg); if (rg === 'mx') { modeTouched.current = true; setSearchMode('companies'); } }}
+                onClick={() => setRegion(rg)}
                 className={`rounded-md px-2 py-1 font-semibold transition active:scale-[0.96] motion-reduce:active:scale-100 ${region === rg ? 'bg-emerald-400 text-slate-900' : 'text-slate-300 hover:text-white'}`}
               >
                 {label}
@@ -989,7 +1121,9 @@ export default function CompanySearchTab() {
             ))}
           </div>
           <span className="hidden text-[10.5px] text-cyan-200/60 sm:inline">
-            {region === 'mx' ? 'Mexico trade — importers & exporters from customs declarations' : searchMode === 'market' ? 'Browse companies by location / industry' : 'Find a company by name'}
+            {region === 'mx'
+              ? (searchMode === 'market' ? 'Browse US companies importing from Mexico & Canada' : 'Mexico trade — importers & exporters from customs declarations')
+              : searchMode === 'market' ? 'Browse companies by location / industry' : 'Find a company by name'}
           </span>
           <button
             type="button"
