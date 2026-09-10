@@ -70,6 +70,7 @@ import { FolderPlus, Sparkles as SparklesIcon } from 'lucide-react';
 import { enrichCompanyLive } from '@/api/ai';
 import { looksLikeCompanyName, parseExploreQuery, localExtractFilters, parsedToFilters, hasAnyFilter } from '@/api/pulse-explore-parse';
 import { useExploreAccounts } from '@/features/pulse/explore/useExploreAccounts';
+import { lookupCoords } from '@/features/pulse/explore/coordLookup';
 // Lazy-loaded so maplibre-gl (~800KB) ships in its own chunk instead of the
 // first-load bundle for this default landing route.
 const ExploreMap = lazy(() => import('@/features/pulse/explore/ExploreMapMaplibre'));
@@ -139,28 +140,27 @@ const US_CODE_TO_STATE = {
   WY: 'Wyoming', PR: 'Puerto Rico',
 };
 
-// State centroids for map pins (the NA aggregate table has no geocode).
-// Keyed by lowercase full state name; rows in uncovered states fall back to a
-// jittered US centroid. Same pattern as MX_STATE_C in the mx-companies branch.
-const US_STATE_CENTROIDS = {
-  alabama: [32.8, -86.8], arizona: [34.3, -111.7], arkansas: [34.9, -92.4],
-  california: [37.2, -119.5], colorado: [39.0, -105.5], connecticut: [41.6, -72.7],
-  florida: [28.6, -82.4], georgia: [32.6, -83.4], illinois: [40.0, -89.2],
-  indiana: [39.9, -86.3], iowa: [42.1, -93.5], kansas: [38.5, -98.4],
-  kentucky: [37.5, -85.3], louisiana: [31.0, -92.0], maryland: [39.0, -76.8],
-  massachusetts: [42.3, -71.8], michigan: [44.3, -85.4], minnesota: [46.3, -94.3],
-  mississippi: [32.7, -89.7], missouri: [38.4, -92.5], nebraska: [41.5, -99.8],
-  nevada: [39.3, -116.6], 'new jersey': [40.2, -74.7], 'new mexico': [34.4, -106.1],
-  'new york': [42.9, -75.5], 'north carolina': [35.5, -79.4], ohio: [40.3, -82.8],
-  oklahoma: [35.6, -97.5], oregon: [43.9, -120.6], pennsylvania: [40.9, -77.8],
-  'south carolina': [33.9, -80.9], tennessee: [35.9, -86.4], texas: [31.5, -99.3],
-  utah: [39.3, -111.7], virginia: [37.5, -78.9], washington: [47.4, -120.5],
-  wisconsin: [44.6, -89.7],
-};
-const naCoords = (state, i) => {
-  const c = state ? US_STATE_CENTROIDS[String(state).trim().toLowerCase()] : null;
-  if (c) return { latitude: c[0] + (i % 5) * 0.05, longitude: c[1] + Math.floor(i / 5) * 0.05 };
-  return { latitude: 39.5 + (i % 6) * 0.4, longitude: -98.35 + Math.floor(i / 6) * 0.4 };
+// Coordinates for NA-market map bubbles (the NA aggregate table has no
+// geocode). Resolution chain is the SAME shared lookup Pulse uses
+// (coordLookup.js): city+state → metro centroid, else state centroid, else
+// US centroid. Rows that resolve to the IDENTICAL point (same metro, or the
+// same state-centroid fallback) are separated with a deterministic
+// golden-angle spiral (~0.05–0.15°) so co-located bubbles fan out radially
+// instead of forming the old grid-jitter "walls" of markers.
+const GOLDEN_ANGLE = 2.399963; // radians
+const naResolveCoords = (r, coordSeen) => {
+  const c = lookupCoords({ city: r.city, state: r.state, country: 'USA' })
+    ?? { lat: 39.5, lng: -98.35 };
+  const key = `${c.lat.toFixed(3)},${c.lng.toFixed(3)}`;
+  const n = coordSeen.get(key) ?? 0; // nth row landing on this exact point
+  coordSeen.set(key, n + 1);
+  if (n === 0) return { latitude: c.lat, longitude: c.lng };
+  const radius = Math.min(0.15, 0.05 + 0.012 * Math.sqrt(n));
+  const theta = n * GOLDEN_ANGLE;
+  return {
+    latitude: c.lat + radius * Math.cos(theta),
+    longitude: c.lng + radius * Math.sin(theta),
+  };
 };
 
 // Residual query text = the raw query minus geography + origin/filler words.
@@ -393,8 +393,18 @@ export default function CompanySearchTab() {
           p_min_shipments: 0,
           p_limit: 300,
         });
-        if (rpcErr) throw new Error(rpcErr.message || 'Cross-border search failed.');
-        const rows = (data || []).map((r, i) => ({
+        if (rpcErr) {
+          // Server-side gate: the RPC raises when the workspace lacks a paid
+          // plan + the Mexico Trade Intelligence add-on.
+          if (String(rpcErr.message || '').includes('mx_addon_required')) {
+            openMxAddonGate();
+            setResults([]); setMapPoints([]); setUnmappedCount(0); setSearching(false);
+            return;
+          }
+          throw new Error(rpcErr.message || 'Cross-border search failed.');
+        }
+        const coordSeen = new Map(); // exact-point → occurrence count (spiral separation)
+        const rows = (data || []).map((r) => ({
           id: `na:${r.consignee_norm}`,
           company_name: r.name || r.consignee_norm,
           city: r.city || null,
@@ -407,7 +417,7 @@ export default function CompanySearchTab() {
           opportunity_composite_score: null,
           source_company_key: null,
           is_saved: false,
-          ...naCoords(r.state, i),
+          ...naResolveCoords(r, coordSeen),
           approx_location: true,
           raw: r,
         }));
@@ -939,6 +949,14 @@ export default function CompanySearchTab() {
   const displayResults = searchMode === 'market' && !naMarket ? marketRows : results;
   const displayMapRows = searchMode === 'market' && !naMarket ? marketRows : mapRows;
 
+  // NA cross-border market rows render as clustered BUBBLES (no label pills):
+  // 200+ labeled pills at shared metro/state coords formed unreadable
+  // horizontal walls. Derived from the rendered rows themselves (na: id
+  // prefix) so US companies / MX companies / US market modes keep their
+  // current presentation untouched. Also sizes NA bubbles by shipment count
+  // (the NA aggregate's primary volume signal; teu is often null).
+  const showingNaMarket = typeof displayMapRows[0]?.id === 'string' && displayMapRows[0].id.startsWith('na:');
+
   // ── High-level filters (client-side, over the current result set). Narrow
   //    the LIST and the MAP together so the two never disagree. ──────────────
   const [filters, setFilters] = useState({
@@ -1198,13 +1216,13 @@ export default function CompanySearchTab() {
             <ExploreMap
               rows={filteredMapRows}
               colorMode="industry"
-              sizeMode="teu"
+              sizeMode={showingNaMarket ? 'shipments' : 'teu'}
               selection={[]}
               onBubbleClick={onRowClick}
               onBubbleHover={onBubbleHover}
               onBubbleLeave={onBubbleLeave}
               fitBoundsToPoints={hasResults}
-              labeledMarkers
+              labeledMarkers={!showingNaMarket}
               mapMode="bubbles"
               mapStyle="alidade_satellite"
             />
