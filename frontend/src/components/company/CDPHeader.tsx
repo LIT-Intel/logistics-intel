@@ -27,6 +27,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
+import type { MxHeaderStats } from "@/api/mxProfile";
 import LitCategoryChip from "@/components/ui/LitCategoryChip";
 import LitFlag from "@/components/ui/LitFlag";
 import LitHeaderIconBtn from "@/components/ui/LitHeaderIconBtn";
@@ -176,6 +177,16 @@ type CDPHeaderProps = {
    * `lit_companies`. When omitted, the pencil affordance is hidden.
    */
   onEditCompany?: () => void;
+  /**
+   * MX pedimento identity (data adapter, 2026-09). When set, the header
+   * derives EVERYTHING trade-related from the MX customs RPC instead of
+   * the US ImportYeti snapshot: KPI tiles become declared-value /
+   * declarations / weight / gateway tiles, the [RECEIVER] chip becomes
+   * the derived Importer/Exporter role, the subtitle summarizes cached
+   * declarations, and the "Snapshot pending" indicator is suppressed
+   * (a US snapshot will never exist for an MX identity).
+   */
+  mx?: MxHeaderStats | null;
 };
 
 export default function CDPHeader({
@@ -202,14 +213,21 @@ export default function CDPHeader({
   selectedYear,
   onSelectYear,
   onEditCompany,
+  mx,
 }: CDPHeaderProps) {
   const [moreOpen, setMoreOpen] = useState(false);
 
   const domain = company.domain || derivedDomain(company.name);
-  const primaryLane = derivePrimaryLane(kpis.topRoute);
-  const updatedLabel = formatUpdated(snapshotUpdatedAt);
+  const primaryLane = mx ? null : derivePrimaryLane(kpis.topRoute);
+  // MX identities never get a US snapshot — "Snapshot pending" would be a
+  // forever-lie. Describe the customs coverage instead.
+  const updatedLabel = mx
+    ? mx.lastActivity
+      ? `Customs data through ${formatAbsoluteShort(mx.lastActivity)}`
+      : "MX customs declarations"
+    : formatUpdated(snapshotUpdatedAt);
 
-  const kpiCells: {
+  const usKpiCells: {
     label: string;
     value: React.ReactNode;
     hint?: React.ReactNode;
@@ -304,6 +322,69 @@ export default function CDPHeader({
     },
   ];
 
+  // MX tile set — every value comes straight from the pedimento RPC via
+  // the shared adapter, so the header always agrees with the MX tab body.
+  const mxKpiCells: typeof usKpiCells = mx
+    ? [
+        {
+          label: "DECLARED VALUE (USD)",
+          value:
+            mx.declaredValueUsd != null && mx.declaredValueUsd > 0
+              ? formatSpend(mx.declaredValueUsd)
+              : "—",
+          // Honesty label: customs-declared value, not a modeled figure.
+          hint: "customs-declared (pedimentos)",
+          icon: DollarSign,
+          tone: "emerald",
+        },
+        {
+          label: "DECLARATIONS",
+          value: mx.declarations > 0 ? mx.declarations.toLocaleString() : "—",
+          hint:
+            mx.declarations > 0
+              ? `${mx.imports.toLocaleString()} imports · ${mx.exports.toLocaleString()} exports`
+              : null,
+          icon: Package,
+          tone: "blue",
+        },
+        {
+          label: "TOTAL WEIGHT",
+          value:
+            mx.totalWeightKg != null && mx.totalWeightKg > 0
+              ? formatWeightTonnes(mx.totalWeightKg)
+              : "—",
+          icon: Box,
+          tone: "cyan",
+        },
+        {
+          label: "PRIMARY TRADE LANE",
+          value: mx.topGateway || "—",
+          hint: mx.topGateway ? "top customs gateway" : null,
+          icon: ArrowRightLeft,
+          tone: "amber",
+        },
+        {
+          label: "TRADE LANES",
+          value:
+            mx.gatewayCount != null && mx.gatewayCount > 0
+              ? String(mx.gatewayCount)
+              : "—",
+          hint: mx.gatewayCount != null ? "customs gateways" : null,
+          icon: GitBranch,
+          tone: "indigo",
+        },
+        {
+          label: "LAST ACTIVITY",
+          value: mx.lastActivity ? formatRelativeShort(mx.lastActivity) : "—",
+          hint: mx.lastActivity ? formatAbsoluteShort(mx.lastActivity) : null,
+          icon: CalendarClock,
+          tone: "rose",
+        },
+      ]
+    : [];
+
+  const kpiCells = mx ? mxKpiCells : usKpiCells;
+
   return (
     <div className="shrink-0 border-b border-slate-200 bg-white">
       {/* Breadcrumb / meta row. Mobile-first padding so the breadcrumb +
@@ -368,7 +449,9 @@ export default function CDPHeader({
         </div>
         <div className="min-w-0 flex-1">
           <div className="mb-2">
-            <LitCategoryChip label="Receiver" />
+            {/* MX identities derive their role from import/export counts —
+                calling an exporter "[RECEIVER]" was owner-flagged wrong. */}
+            <LitCategoryChip label={mx ? mx.role || "Mexico Trade" : "Receiver"} />
           </div>
           <div className="mb-1.5 flex flex-wrap items-center gap-2">
             <h1
@@ -410,7 +493,31 @@ export default function CDPHeader({
           </div>
 
           <div className="font-body mb-2 text-[12px] leading-relaxed text-slate-600">
-            {kpis.shipments != null && Number(kpis.shipments) > 0 ? (
+            {mx ? (
+              mx.declarations > 0 ? (
+                <>
+                  Trailing:{" "}
+                  <strong className="font-mono font-semibold text-slate-900">
+                    {mx.declarations.toLocaleString()}
+                  </strong>{" "}
+                  declarations
+                  {mx.declaredValueUsd != null && mx.declaredValueUsd > 0 && (
+                    <>
+                      {" "}
+                      /{" "}
+                      <strong className="font-mono font-semibold text-slate-900">
+                        {formatSpend(mx.declaredValueUsd)}
+                      </strong>{" "}
+                      declared
+                    </>
+                  )}
+                </>
+              ) : (
+                <span className="text-slate-400">
+                  Loading Mexico customs activity…
+                </span>
+              )
+            ) : kpis.shipments != null && Number(kpis.shipments) > 0 ? (
               <>
                 Trailing 12m:{" "}
                 <strong className="font-mono font-semibold text-slate-900">
@@ -567,7 +674,12 @@ export default function CDPHeader({
           untouched. Responsive reflow preserved from the prior LitKpiStrip
           override (commit 4499a1ec): 2-up on phones, 4-up on tablets
           (768–1279px), and all 8 across on xl. */}
-      <div className="grid grid-cols-2 gap-2 border-t border-slate-100 bg-[#FAFBFC] px-3 py-3 sm:px-6 md:grid-cols-4 xl:grid-cols-8">
+      <div
+        className={cn(
+          "grid grid-cols-2 gap-2 border-t border-slate-100 bg-[#FAFBFC] px-3 py-3 sm:px-6 md:grid-cols-4",
+          mx ? "xl:grid-cols-6" : "xl:grid-cols-8",
+        )}
+      >
         {kpiCells.map((cell) => (
           <CdpKpiChip
             key={cell.label}
@@ -634,6 +746,14 @@ function formatAbsoluteShort(value: string) {
     day: "numeric",
     year: "numeric",
   });
+}
+
+/** kg → metric-tonne display ("842 t", "12.4K t"; sub-tonne stays in kg). */
+function formatWeightTonnes(kg: number) {
+  const t = kg / 1000;
+  if (t >= 1000) return `${(t / 1000).toFixed(1)}K t`;
+  if (t >= 1) return `${Math.round(t).toLocaleString()} t`;
+  return `${Math.round(kg).toLocaleString()} kg`;
 }
 
 function formatTeu(n: number) {

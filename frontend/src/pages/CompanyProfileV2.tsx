@@ -83,6 +83,7 @@ import PulseCoachQuotaCard from "@/components/company/PulseCoachQuotaCard";
 import LockedAccountPreview from "@/components/company/LockedAccountPreview";
 import CDPSupplyChain from "@/components/company/CDPSupplyChain";
 import MxTradePanel from "@/components/company/MxTradePanel";
+import { deriveMxHeaderStats, useMxCompanyProfile } from "@/api/mxProfile";
 import CDPContacts from "@/components/company/CDPContacts";
 import EditCompanyModal from "@/components/company/EditCompanyModal";
 import CDPResearch from "@/components/company/CDPResearch";
@@ -818,7 +819,11 @@ function ProfilePanel({ rawId }: { rawId: string }) {
       // fallback below, not a live fetch.
       if (!cached.profile && !cached.routeKpis) {
         const bareKey = String(routeOrStoredId || "").replace(/^company\//i, "");
-        if (bareKey && !UUID_RE.test(bareKey)) {
+        // MX pedimento identities (mx:<name> route ids) can NEVER have an
+        // ImportYeti snapshot — skip the live fetch + 20s poll entirely so
+        // the page doesn't burn provider calls waiting on a snapshot that
+        // will never land ("Snapshot pending" owner defect, 2026-09).
+        if (bareKey && !UUID_RE.test(bareKey) && !/^mx[:-]/i.test(bareKey)) {
           try {
             await getIyCompanyProfile({ companyKey: bareKey });
           } catch (liveErr) {
@@ -1168,6 +1173,19 @@ function ProfilePanel({ rawId }: { rawId: string }) {
     decodedRouteId && String(decodedRouteId).startsWith("mx:")
       ? String(decodedRouteId).slice(3)
       : null;
+
+  // ── MX data adapter ─────────────────────────────────────────────────────
+  // ONE shared TanStack query over lit_mx_company_profile — MxTradePanel
+  // reuses the same hook, so query dedup means the RPC fires once for the
+  // whole page. The derived stats feed the header tiles / subtitle / role
+  // chip and the right-rail Last-activity so the header can never
+  // contradict the MX tab below it (owner-flagged defect 2026-09).
+  const mxProfileQuery = useMxCompanyProfile(
+    isMxCompany ? mxRouteName || companyName : null,
+  );
+  const mxHeaderStats = isMxCompany
+    ? deriveMxHeaderStats(mxProfileQuery.data ?? undefined)
+    : null;
 
   const harveyCompanyId = bundle?.identity?.id ?? null;
   const harveySourceCompanyKey =
@@ -2339,6 +2357,9 @@ function ProfilePanel({ rawId }: { rawId: string }) {
         onEditCompany={
           companyId ? () => setEditCompanyOpen(true) : undefined
         }
+        // MX identities: header KPIs / subtitle / role chip derive from the
+        // pedimento RPC; also suppresses the "Snapshot pending" indicator.
+        mx={mxHeaderStats}
       />
 
       <CompanySignalsStrip
@@ -2781,7 +2802,14 @@ function ProfilePanel({ rawId }: { rawId: string }) {
                 phone: companyPhone,
               } as any
             }
-            kpis={headerKpis as any}
+            kpis={
+              // MX: the right rail's "Last activity" row reads
+              // kpis.lastShipment — feed it the customs last_activity so
+              // it stops rendering "—" for pedimento identities.
+              (mxHeaderStats
+                ? { ...headerKpis, lastShipment: mxHeaderStats.lastActivity }
+                : headerKpis) as any
+            }
             profile={activeProfile as any}
             ownerName={ownerName}
             ownerInitials={ownerInitials}
