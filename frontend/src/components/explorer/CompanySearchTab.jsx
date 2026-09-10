@@ -77,6 +77,7 @@ import { normalizeCompanySearchResults } from '@/lib/explorer/normalizeCompanySe
 import { countryFlag, compactLocation } from '@/lib/explorer/countryFlags';
 import CountryFlag from './CountryFlag';
 import { unlockCompany } from '@/api/entitlements';
+import { getAddon, startAddonCheckout } from '@/api/billing';
 import { useExplorer } from './ExplorerContext';
 
 // Credits v2 (§7): once the unlock endpoint tells us metering is OFF we cache it
@@ -170,6 +171,35 @@ export default function CompanySearchTab() {
   const [libraryOpen, setLibraryOpen] = useState(false);
   // Upgrade prompt when a trial user hits the paid-only MX gate.
   const [mxUpgradeOpen, setMxUpgradeOpen] = useState(false);
+  // Which MX gate fired: 'plan' (needs a paid base plan) vs 'addon' (paid plan
+  // but missing the $99/mo Mexico Trade Intelligence add-on). Same modal shell,
+  // different copy + CTA.
+  const [mxGateMode, setMxGateMode] = useState('plan');
+  // Add-on catalog row (lit_get_addon RPC): undefined = loading, null = not
+  // yet purchasable (stripe_price_id NULL — owner hasn't pasted it), object =
+  // purchasable. Drives the truthful button state (no fake checkout).
+  const [mxAddon, setMxAddon] = useState(undefined);
+  const [mxAddonBusy, setMxAddonBusy] = useState(false);
+  const openMxAddonGate = useCallback(() => {
+    setMxGateMode('addon');
+    setMxUpgradeOpen(true);
+    setMxAddon(undefined);
+    getAddon('mx_trade')
+      .then((a) => setMxAddon(a && a.stripe_price_id ? a : null))
+      .catch(() => setMxAddon(null));
+  }, []);
+  const startMxAddonCheckout = useCallback(async () => {
+    if (!mxAddon?.stripe_price_id || mxAddonBusy) return;
+    setMxAddonBusy(true);
+    try {
+      const res = await startAddonCheckout('mx_trade');
+      if (res?.url) { window.location.href = res.url; return; }
+      throw new Error('Could not start checkout.');
+    } catch (e) {
+      toast.error(e?.message || 'Could not start checkout.');
+      setMxAddonBusy(false);
+    }
+  }, [mxAddon, mxAddonBusy]);
   // Search TYPE — 'companies' (name lookup) vs 'market' (Pulse universe browse
   // by location/industry). Auto-detected from the query, overridable via the
   // toggle. Both render in THIS same overlay/map/detail UI (the true merge).
@@ -320,7 +350,15 @@ export default function CompanySearchTab() {
       try {
         const { data, error: fnErr } = await supabase.functions.invoke('mx-company-search', { body: { q } });
         if (data?.code === 'mx_requires_paid') {
+          setMxGateMode('plan');
           setMxUpgradeOpen(true);
+          setResults([]); setMapPoints([]); setUnmappedCount(0); setSearching(false);
+          return;
+        }
+        // Paid plan but no Mexico Trade Intelligence add-on ($99/mo) — same
+        // modal shell with add-on copy + purchase CTA.
+        if (data?.code === 'mx_addon_required') {
+          openMxAddonGate();
           setResults([]); setMapPoints([]); setUnmappedCount(0); setSearching(false);
           return;
         }
@@ -586,6 +624,19 @@ export default function CompanySearchTab() {
         toast.error(warm.data.message || 'Not enough credits to open this Mexico company.', {
           action: { label: 'Add credits', onClick: () => navigate('/app/billing/credits') },
         });
+        return;
+      }
+      // Server gates can also fire on the company-open (declarations) call —
+      // e.g. deep link / add-on lapsed mid-session. Same modal as search.
+      if (warm?.data?.code === 'mx_addon_required') {
+        toast.dismiss(tid);
+        openMxAddonGate();
+        return;
+      }
+      if (warm?.data?.code === 'mx_requires_paid') {
+        toast.dismiss(tid);
+        setMxGateMode('plan');
+        setMxUpgradeOpen(true);
         return;
       }
       if (warm?.data?.code === 'iy_cap_reached') {
@@ -1189,18 +1240,57 @@ export default function CompanySearchTab() {
               <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-sm">
                 <Globe2 size={22} />
               </div>
-              <h3 className="font-display mt-3 text-[16px] font-bold tracking-tight text-slate-900">Unlock Mexico Trade Intelligence</h3>
-              <p className="font-body mt-1 text-[12.5px] leading-snug text-slate-500">
-                Search Mexican importers &amp; exporters, cross-border truck lanes, customs gateways and
-                declared values — sourced from line-level customs declarations. Available on paid plans.
-              </p>
-              <button
-                type="button"
-                onClick={() => navigate('/app/billing')}
-                className="mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-blue-600 px-3 py-2.5 text-[13px] font-semibold text-white shadow-sm shadow-blue-600/25 transition hover:bg-blue-700 active:scale-[0.97] motion-reduce:active:scale-100"
-              >
-                Upgrade now
-              </button>
+              {mxGateMode === 'addon' ? (
+                <>
+                  <h3 className="font-display mt-3 text-[16px] font-bold tracking-tight text-slate-900">Add Mexico Trade Intelligence</h3>
+                  <p className="font-body mt-1 text-[12.5px] leading-snug text-slate-500">
+                    Mexico search is a $99/mo add-on to your plan — pedimento-level customs
+                    declarations, cross-border truck, air &amp; sea lanes, border customs gateways and
+                    declared values. Includes 1,000 LIT credits/mo for Mexico usage.
+                  </p>
+                  {mxAddon === undefined ? (
+                    <button
+                      type="button"
+                      disabled
+                      className="mt-4 inline-flex w-full cursor-wait items-center justify-center gap-1.5 rounded-xl bg-blue-600/60 px-3 py-2.5 text-[13px] font-semibold text-white"
+                    >
+                      Loading…
+                    </button>
+                  ) : mxAddon?.stripe_price_id ? (
+                    <button
+                      type="button"
+                      disabled={mxAddonBusy}
+                      onClick={startMxAddonCheckout}
+                      className="mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-blue-600 px-3 py-2.5 text-[13px] font-semibold text-white shadow-sm shadow-blue-600/25 transition hover:bg-blue-700 active:scale-[0.97] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {mxAddonBusy ? 'Starting checkout…' : 'Add Mexico Intelligence — $99/mo'}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled
+                      className="mt-4 inline-flex w-full cursor-not-allowed items-center justify-center gap-1.5 rounded-xl bg-slate-200 px-3 py-2.5 text-[13px] font-semibold text-slate-500"
+                    >
+                      Coming soon — contact us
+                    </button>
+                  )}
+                </>
+              ) : (
+                <>
+                  <h3 className="font-display mt-3 text-[16px] font-bold tracking-tight text-slate-900">Unlock Mexico Trade Intelligence</h3>
+                  <p className="font-body mt-1 text-[12.5px] leading-snug text-slate-500">
+                    Search Mexican importers &amp; exporters, cross-border truck lanes, customs gateways and
+                    declared values — sourced from line-level customs declarations. Available on paid plans.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/app/billing')}
+                    className="mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-blue-600 px-3 py-2.5 text-[13px] font-semibold text-white shadow-sm shadow-blue-600/25 transition hover:bg-blue-700 active:scale-[0.97] motion-reduce:active:scale-100"
+                  >
+                    Upgrade now
+                  </button>
+                </>
+              )}
               <button
                 type="button"
                 onClick={() => setMxUpgradeOpen(false)}

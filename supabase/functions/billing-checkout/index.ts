@@ -12,6 +12,10 @@ const corsHeaders = {
 type CheckoutRequest = {
   plan_code?: string;
   interval?: "month" | "year";
+  // Catalog ADD-ON checkout (lit_addons table — e.g. 'mx_trade' Mexico Trade
+  // Intelligence $99/mo). When set, plan_code/interval are ignored and a
+  // hosted subscription checkout is created for the add-on's stripe_price_id.
+  addon_key?: string;
   success_url?: string;
   cancel_url?: string;
   // When "embedded", create an EMBEDDED Checkout Session and return
@@ -109,6 +113,111 @@ serve(async (req) => {
     }
 
     const body = (await req.json().catch(() => ({}))) as CheckoutRequest;
+
+    // ── ADD-ON checkout (lit_addons catalog) ──────────────────────────
+    // Self-contained branch, must run BEFORE plan normalization (an
+    // addon-only body would otherwise normalize to free_trial and 400).
+    // The Stripe price id comes from the lit_addons table — the owner
+    // pastes the live price id there; Stripe stays the source of truth
+    // and nothing is hardcoded. While stripe_price_id is NULL we refuse
+    // to create a session (code:'addon_not_configured' — no fake billing
+    // paths). The webhook routes the resulting subscription into
+    // lit_org_addon_subscriptions via metadata.kind='lit_addon' so it can
+    // never clobber the user's one-row-per-user main-plan subscription.
+    if (body.addon_key) {
+      const addonKey = String(body.addon_key).toLowerCase().trim();
+      const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+      if (!serviceKey) return json({ error: "Missing SUPABASE_SERVICE_ROLE_KEY" }, 500);
+      const svcHeaders = {
+        apikey: serviceKey,
+        Authorization: `Bearer ${serviceKey}`,
+        Accept: "application/json",
+      };
+
+      const addonRes = await fetch(
+        `${supabaseUrl}/rest/v1/lit_addons?addon_key=eq.${encodeURIComponent(addonKey)}&active=eq.true&select=addon_key,name,stripe_price_id&limit=1`,
+        { headers: svcHeaders },
+      );
+      const addonRows = await addonRes.json().catch(() => []);
+      const addon = Array.isArray(addonRows) ? addonRows[0] : null;
+      if (!addon) {
+        return json({ ok: false, code: "addon_not_found", error: `Unknown add-on: ${addonKey}` }, 404);
+      }
+      if (!addon.stripe_price_id) {
+        // Not yet purchasable — owner hasn't created/pasted the Stripe price.
+        return json({
+          ok: false,
+          code: "addon_not_configured",
+          error: `${addon.name} isn't available for purchase yet.`,
+        }, 200);
+      }
+
+      // Org for entitlement keying (earliest membership — same rule the
+      // webhook and mx-company-search use).
+      const omRes = await fetch(
+        `${supabaseUrl}/rest/v1/org_members?user_id=eq.${userId}&select=org_id&order=joined_at.asc&limit=1`,
+        { headers: svcHeaders },
+      );
+      const omRows = await omRes.json().catch(() => []);
+      const addonOrgId = omRows?.[0]?.org_id ?? null;
+
+      // Reuse the existing Stripe customer (subscriptions row / metadata).
+      const custRes = await fetch(
+        `${supabaseUrl}/rest/v1/subscriptions?user_id=eq.${userId}&select=stripe_customer_id&limit=1`,
+        { headers: svcHeaders },
+      );
+      const custRows = await custRes.json().catch(() => []);
+      let addonCustomerId =
+        custRows?.[0]?.stripe_customer_id ||
+        user?.user_metadata?.stripe_customer_id ||
+        null;
+      if (!addonCustomerId) {
+        const customer = await stripe.customers.create({
+          email: userEmail,
+          metadata: { supabase_user_id: userId },
+        });
+        addonCustomerId = customer.id;
+      }
+
+      const addonOrigin = req.headers.get("origin") || "";
+      const addonBase = addonOrigin && addonOrigin.startsWith("http")
+        ? addonOrigin
+        : "https://www.logisticintel.com";
+      const addonMeta = {
+        kind: "lit_addon",
+        addon_key: addonKey,
+        supabase_user_id: userId,
+        ...(addonOrgId ? { org_id: addonOrgId } : {}),
+      };
+
+      try {
+        const session = await stripe.checkout.sessions.create({
+          mode: "subscription",
+          customer: addonCustomerId,
+          line_items: [{ price: addon.stripe_price_id, quantity: 1 }],
+          success_url: body.success_url || `${addonBase}/app/billing?checkout=success`,
+          cancel_url: body.cancel_url || `${addonBase}/app/billing?checkout=cancelled`,
+          allow_promotion_codes: true,
+          client_reference_id: userId,
+          metadata: addonMeta,
+          subscription_data: { metadata: addonMeta },
+        });
+        return json({ ok: true, url: session.url, sessionId: session.id, addon_key: addonKey });
+      } catch (addonErr) {
+        const msg = addonErr instanceof Error ? addonErr.message : String(addonErr);
+        if (/No such price|a similar object exists in (test|live) mode|does not exist/i.test(msg)) {
+          console.warn("[billing-checkout] addon price_mismatch", msg);
+          return json({
+            ok: false,
+            code: "billing_not_configured",
+            error: "Billing is not configured for this add-on (Stripe price not found).",
+            detail: msg,
+          }, 200);
+        }
+        console.error("[billing-checkout] addon fatal", msg);
+        return json({ ok: false, error: "Could not start add-on checkout.", detail: msg }, 500);
+      }
+    }
 
     const requestedPlan = normalizePlanCode(body.plan_code);
     const interval = body.interval === "year" ? "year" : "month";

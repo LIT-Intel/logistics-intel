@@ -10,6 +10,7 @@
  * forbidden — see CLAUDE.md.
  */
 import { invokeEdge, EdgeFunctionError } from "./_client";
+import { supabase } from "@/lib/supabase";
 
 // ──────────────────────────────────────────────────────────────────────────
 // Types
@@ -228,4 +229,58 @@ export async function cancelStripeSubscription(
   req: CancelRequest = {},
 ): Promise<CancelResponse> {
   return invokeEdge<CancelResponse>("cancel-subscription", req);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Add-ons (lit_addons catalog — e.g. 'mx_trade' Mexico Trade Intelligence)
+// ──────────────────────────────────────────────────────────────────────────
+
+export interface AddonInfo {
+  addon_key: string | null;
+  name: string | null;
+  /** NULL until the owner pastes the live Stripe price id — while NULL the
+   *  add-on is NOT purchasable (billing-checkout refuses; UI shows
+   *  "Coming soon"). */
+  stripe_price_id: string | null;
+  monthly_price_usd: number | null;
+  included_credits: number | null;
+  active: boolean | null;
+}
+
+/**
+ * Fetch an add-on catalog row via the lit_get_addon RPC (SECURITY DEFINER).
+ * Returns null when the key is unknown/inactive (the RPC returns a
+ * NULL-field composite in that case).
+ */
+export async function getAddon(key: string): Promise<AddonInfo | null> {
+  const { data, error } = await supabase.rpc("lit_get_addon", { p_key: key });
+  if (error) return null;
+  const row = (Array.isArray(data) ? data[0] : data) as AddonInfo | null;
+  return row && row.addon_key ? row : null;
+}
+
+/**
+ * True when the CALLING user's org holds an active subscription for the
+ * add-on (lit_org_has_addon RPC — server-derived; statuses
+ * active/trialing/past_due). UX hint only: the real gate lives in the edge
+ * functions (CLAUDE.md rule 6).
+ */
+export async function orgHasAddon(key: string): Promise<boolean> {
+  const { data, error } = await supabase.rpc("lit_org_has_addon", { p_addon_key: key });
+  return !error && data === true;
+}
+
+/**
+ * Start a HOSTED Stripe checkout for a catalog add-on via billing-checkout
+ * { addon_key }. The edge fn resolves the Stripe price server-side from
+ * lit_addons (nothing hardcoded client-side). Throws EdgeFunctionError with
+ * code 'addon_not_configured' while the owner hasn't pasted the price id.
+ */
+export async function startAddonCheckout(
+  addonKey: string,
+): Promise<{ ok: boolean; url?: string; sessionId?: string }> {
+  return invokeEdge<{ ok: boolean; url?: string; sessionId?: string }>(
+    "billing-checkout",
+    { addon_key: addonKey },
+  );
 }

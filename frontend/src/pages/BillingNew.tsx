@@ -18,6 +18,10 @@ import {
   createStripePortalSession,
   listStripeInvoices,
   getBillingStatus,
+  getAddon,
+  orgHasAddon,
+  startAddonCheckout,
+  type AddonInfo,
 } from '@/api/billing';
 import EmbeddedCheckoutModal, {
   type EmbeddedCheckoutResult,
@@ -34,7 +38,7 @@ import {
 import { useEntitlements, FEATURE_LABELS, type FeatureKey } from '@/lib/usage';
 import { useUsageSummary } from '@/hooks/useUsageSummary';
 import { usePartnerStatus } from '@/lib/affiliate';
-import { CheckCircle2, AlertCircle, Sparkles, ArrowRight } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Sparkles, ArrowRight, Globe2 } from 'lucide-react';
 
 import { BillingHeader, ReadOnlyBanner } from '@/components/billing/sections/BillingHeader';
 import { BillingAlerts } from '@/components/billing/sections/BillingAlerts';
@@ -133,6 +137,7 @@ export default function Billing() {
     loadOrgSeatCount();
     loadInvoices();
     loadBillingStatus();
+    loadMxAddon();
     if (checkoutSuccess) {
       // Refetch entitlements immediately so the new plan reflects, then again
       // after a short delay to catch the webhook landing.
@@ -142,12 +147,52 @@ export default function Billing() {
         loadOrgSeatCount();
         loadInvoices();
         loadBillingStatus();
+        loadMxAddon();
         refreshEntitlements();
       }, 3500);
       return () => clearTimeout(t);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, checkoutSuccess]);
+
+  // ── Mexico Trade Intelligence add-on ($99/mo) ──
+  // Catalog row via lit_get_addon (undefined = loading, null = not yet
+  // purchasable while the owner hasn't pasted the Stripe price id) + the
+  // org's active state via lit_org_has_addon. UX hint only — the real gate
+  // is server-side in mx-company-search.
+  const [mxAddon, setMxAddon] = useState<AddonInfo | null | undefined>(undefined);
+  const [mxAddonActive, setMxAddonActive] = useState(false);
+  const [mxAddonBusy, setMxAddonBusy] = useState(false);
+
+  async function loadMxAddon() {
+    try {
+      const [addon, active] = await Promise.all([
+        getAddon('mx_trade'),
+        orgHasAddon('mx_trade'),
+      ]);
+      setMxAddon(addon);
+      setMxAddonActive(active);
+    } catch {
+      setMxAddon(null);
+    }
+  }
+
+  async function handleMxAddonPurchase() {
+    if (mxAddonBusy) return;
+    setErr('');
+    setMxAddonBusy(true);
+    try {
+      const res = await startAddonCheckout('mx_trade');
+      if (res?.url) {
+        window.location.href = res.url;
+        return;
+      }
+      throw new Error('Unable to start add-on checkout.');
+    } catch (e: any) {
+      setErr(e?.message || 'Failed to start add-on checkout. Please try again.');
+      setMxAddonBusy(false);
+    }
+  }
 
   async function loadBillingStatus() {
     try {
@@ -750,6 +795,22 @@ export default function Billing() {
           />
         </div>
 
+        {/* Add-ons — premium data modules on top of the base plan.
+            Mexico Trade Intelligence ($99/mo). Purchase goes through
+            billing-checkout { addon_key }; "Active" reflects
+            lit_org_has_addon. Truthful states only: while the owner
+            hasn't pasted the Stripe price id, the button is a disabled
+            "Coming soon" (no fake checkout). */}
+        <div className="mb-6">
+          <MexicoAddonCard
+            addon={mxAddon}
+            active={mxAddonActive}
+            busy={mxAddonBusy}
+            canManage={canManage}
+            onPurchase={handleMxAddonPurchase}
+          />
+        </div>
+
         {/* Usage — collapsible so it doesn't push the purchase grid
             below the fold on trial accounts. Auto-opens when any meter
             is ≥70% so users see the burn that's prompting an upgrade. */}
@@ -904,6 +965,98 @@ export default function Billing() {
         />
       )}
     </div>
+  );
+}
+
+/**
+ * Compact "Add-ons" section — Mexico Trade Intelligence ($99/mo, includes
+ * 1,000 LIT credits/mo for Mexico usage). States: Active (org holds the
+ * add-on), purchasable (Stripe price id set → real checkout), or a disabled
+ * "Coming soon — contact us" while the price id is NULL.
+ */
+function MexicoAddonCard({
+  addon,
+  active,
+  busy,
+  canManage,
+  onPurchase,
+}: {
+  addon: AddonInfo | null | undefined;
+  active: boolean;
+  busy: boolean;
+  canManage: boolean;
+  onPurchase: () => void;
+}) {
+  const purchasable = Boolean(addon?.stripe_price_id);
+  const loading = addon === undefined;
+  return (
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-100 px-5 py-3">
+        <div className="font-display text-[13px] font-bold text-slate-900">Add-ons</div>
+        <div className="font-body mt-0.5 text-[12px] text-slate-500">
+          Premium data modules on top of your plan.
+        </div>
+      </div>
+      <div className="flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-sm">
+            <Globe2 className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-display text-[13.5px] font-bold tracking-tight text-slate-900">
+                Mexico Trade Intelligence
+              </span>
+              <span className="font-display rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700">
+                $99/mo
+              </span>
+              {active && (
+                <span className="font-display inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                  <CheckCircle2 className="h-3 w-3" /> Active
+                </span>
+              )}
+            </div>
+            <p className="font-body mt-1 text-[12px] leading-snug text-slate-500">
+              Pedimento-level Mexican customs declarations · cross-border truck, air &amp; sea
+              lanes · border customs gateways · freight-control &amp; broker intel. Includes
+              1,000 LIT credits/mo for Mexico usage.
+            </p>
+          </div>
+        </div>
+        <div className="shrink-0">
+          {active ? (
+            <span className="font-display inline-flex h-9 items-center rounded-lg border border-emerald-200 bg-emerald-50 px-4 text-[12px] font-semibold text-emerald-700">
+              Active
+            </span>
+          ) : loading ? (
+            <button
+              type="button"
+              disabled
+              className="font-display inline-flex h-9 cursor-wait items-center rounded-lg bg-blue-600/60 px-4 text-[12px] font-semibold text-white"
+            >
+              …
+            </button>
+          ) : purchasable ? (
+            <button
+              type="button"
+              disabled={!canManage || busy}
+              onClick={onPurchase}
+              className="font-display inline-flex h-9 items-center gap-1.5 rounded-lg bg-blue-600 px-4 text-[12px] font-semibold text-white shadow-sm shadow-blue-600/25 transition hover:bg-blue-700 active:scale-[0.97] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {busy ? 'Starting checkout…' : 'Add for $99/mo'}
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled
+              className="font-display inline-flex h-9 cursor-not-allowed items-center rounded-lg border border-slate-200 bg-slate-100 px-4 text-[12px] font-semibold text-slate-500"
+            >
+              Coming soon — contact us
+            </button>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 

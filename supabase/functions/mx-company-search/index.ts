@@ -3,6 +3,9 @@
 // customs offices (border gateways), counterparty countries (US/CA focus),
 // city/state, and declared-value rollups where the API exposes them.
 // NOTE: deployed via MCP with bundled ./_shared copies; repo copy uses ../_shared.
+// 2026-09-10: MX search is now a PAID ADD-ON — after the paid-plan gate, the
+// caller's org must also hold the $99/mo "Mexico Trade Intelligence" add-on
+// (lit_addons 'mx_trade' + lit_org_addon_subscriptions, webhook-owned).
 import { handlePreflight, json, requireUser } from "../_shared/auth.ts";
 import { createLogger, requestId } from "../_shared/logger.ts";
 import { meterAction } from "../_shared/credits.ts";
@@ -106,6 +109,45 @@ Deno.serve(async (req) => {
   if (!paid) {
     return json({ ok: false, code: "mx_requires_paid",
       message: "Mexico trade search is available on paid plans. Upgrade to unlock cross-border intelligence." });
+  }
+
+  // ── ADD-ON gate (owner ruling 2026-09-10): a paid base plan alone is NOT
+  // enough — MX search additionally requires the $99/mo "Mexico Trade
+  // Intelligence" add-on (lit_addons.addon_key='mx_trade'). Server-side =
+  // the security boundary; the platform-admin bypass above applies here too.
+  // While lit_addons.stripe_price_id is NULL (owner hasn't created the Stripe
+  // price yet) the add-on is not purchasable and non-admins are gated.
+  // Access activates the moment the price id lands in lit_addons AND the org
+  // holds a live add-on subscription: a webhook-written
+  // lit_org_addon_subscriptions row, or (belt-and-suspenders) any org
+  // subscriptions row carrying the add-on's price id.
+  if (!pa) {
+    const ADDON_STATUSES = ["active", "trialing", "past_due"];
+    let hasAddon = false;
+    const { data: addon } = await auth.admin.from("lit_addons")
+      .select("stripe_price_id").eq("addon_key", "mx_trade").eq("active", true).maybeSingle();
+    const addonPrice = (addon as { stripe_price_id?: string | null } | null)?.stripe_price_id ?? null;
+    const addonOrgIds = (om ?? []).map((r: any) => r.org_id).filter(Boolean);
+    if (addonPrice && addonOrgIds.length) {
+      const [{ data: oas }, { data: priced }] = await Promise.all([
+        auth.admin.from("lit_org_addon_subscriptions").select("org_id")
+          .in("org_id", addonOrgIds).eq("addon_key", "mx_trade")
+          .in("status", ADDON_STATUSES).limit(1),
+        auth.admin.from("subscriptions").select("id")
+          .in("organization_id", addonOrgIds).eq("stripe_price_id", addonPrice)
+          .in("status", ADDON_STATUSES).limit(1),
+      ]);
+      hasAddon = Boolean((oas && oas.length) || (priced && priced.length));
+    }
+    if (!hasAddon) {
+      log.info("mx_addon_gate", { rid, user_id: auth.user.id, purchasable: Boolean(addonPrice) });
+      return json({
+        ok: false,
+        code: "mx_addon_required",
+        message: "Mexico Trade Intelligence is a paid add-on. Add it to your plan to unlock cross-border data.",
+        price_usd: 99,
+      });
+    }
   }
 
   let body: { q?: string; mode?: string } = {};

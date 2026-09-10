@@ -457,6 +457,166 @@ async function handleCrmSubscriptionEvent(sub: Stripe.Subscription, eventLabel: 
   moduleLog.info("crm_subscription_event_handled", { event_label: eventLabel, org_id: orgId, status: sub.status, seats });
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// LIT catalog ADD-ONS (lit_addons table — e.g. 'mx_trade' Mexico Trade
+// Intelligence, $99/mo). Add-on purchases are SEPARATE Stripe subscriptions
+// started by billing-checkout { addon_key } with metadata.kind='lit_addon'.
+// They must NEVER flow into the main-plan path: `subscriptions` is
+// one-row-per-user (unique user_id), so letting handleSubscriptionEvent
+// process an add-on event would overwrite the base plan's
+// stripe_subscription_id / stripe_price_id — and the next base-plan renewal
+// would clobber it back, breaking the add-on entitlement mid-cycle.
+// Mirrors the CRM add-on pattern above, but detection is by PRICE ID looked
+// up in lit_addons (the owner pastes the Stripe price id into that table;
+// routing activates the moment it lands — no product-id constant, no
+// redeploy) with subscription metadata.addon_key as fallback.
+// ─────────────────────────────────────────────────────────────────────
+
+let addonPriceCache: { at: number; map: Record<string, string> } | null = null;
+
+/** price_id -> addon_key for all active lit_addons rows (60s cache). */
+async function getAddonPriceMap(): Promise<Record<string, string>> {
+  if (addonPriceCache && Date.now() - addonPriceCache.at < 60_000) return addonPriceCache.map;
+  const map: Record<string, string> = {};
+  try {
+    const res = await fetch(
+      `${supabaseUrl}/rest/v1/lit_addons?select=addon_key,stripe_price_id&active=eq.true&stripe_price_id=not.is.null`,
+      {
+        headers: {
+          apikey: supabaseServiceRoleKey!,
+          Authorization: `Bearer ${supabaseServiceRoleKey}`,
+        },
+      },
+    );
+    const rows: Array<{ addon_key: string; stripe_price_id: string }> = await res.json().catch(() => []);
+    for (const r of rows) if (r.stripe_price_id) map[r.stripe_price_id] = r.addon_key;
+  } catch (e) {
+    moduleLog.warn("addon_price_map_failed", { err: String(e) });
+  }
+  addonPriceCache = { at: Date.now(), map };
+  return map;
+}
+
+/** addon_key when any item on the subscription is a lit_addons price (or the
+ *  subscription metadata carries addon_key — safety net if the table read
+ *  hiccups; either way the event is kept OUT of the main-plan path). */
+async function subscriptionAddonKey(sub: Stripe.Subscription): Promise<string | null> {
+  const map = await getAddonPriceMap();
+  const items = (sub as any).items?.data;
+  if (Array.isArray(items)) {
+    for (const it of items) {
+      const pid = it?.price?.id;
+      if (typeof pid === "string" && map[pid]) return map[pid];
+    }
+  }
+  const metaKey = (sub as any).metadata?.addon_key;
+  return typeof metaKey === "string" && metaKey ? metaKey : null;
+}
+
+/** Upsert the org's add-on entitlement row (merge on (org_id, addon_key)). */
+async function upsertAddonSubscription(
+  orgId: string,
+  addonKey: string,
+  data: Record<string, unknown>,
+) {
+  await fetch(
+    `${supabaseUrl}/rest/v1/lit_org_addon_subscriptions?on_conflict=org_id,addon_key`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: supabaseServiceRoleKey!,
+        Authorization: `Bearer ${supabaseServiceRoleKey}`,
+        Prefer: "resolution=merge-duplicates,return=minimal",
+      },
+      body: JSON.stringify({
+        org_id: orgId,
+        addon_key: addonKey,
+        ...data,
+        updated_at: new Date().toISOString(),
+      }),
+    },
+  );
+}
+
+/** Org resolution for an add-on subscription: metadata first (billing-checkout
+ *  writes org_id), then customer-link fallback via the buyer's user_id. */
+async function resolveAddonOrgId(sub: Stripe.Subscription): Promise<string | null> {
+  const meta = (sub as any).metadata ?? {};
+  const metaOrg = meta.org_id ?? meta.supabase_org_id ?? meta.supabase_organization_id;
+  if (metaOrg) return String(metaOrg);
+  const userId = await resolveUserId(sub);
+  if (!userId) return null;
+  const res = await fetch(
+    `${supabaseUrl}/rest/v1/org_members?user_id=eq.${userId}&select=org_id&order=joined_at.asc&limit=1`,
+    {
+      headers: {
+        apikey: supabaseServiceRoleKey!,
+        Authorization: `Bearer ${supabaseServiceRoleKey}`,
+      },
+    },
+  );
+  const rows: Array<{ org_id: string }> = await res.json().catch(() => []);
+  return rows[0]?.org_id ?? null;
+}
+
+/** Handle an add-on subscription create/update/renewal — writes ONLY
+ *  lit_org_addon_subscriptions; never touches `subscriptions`. */
+async function handleAddonSubscriptionEvent(
+  sub: Stripe.Subscription,
+  addonKey: string,
+  eventLabel: string,
+) {
+  const orgId = await resolveAddonOrgId(sub);
+  if (!orgId) {
+    moduleLog.warn("addon_org_unresolved", { err: "no org_id", event_label: eventLabel, addon_key: addonKey, stripe_sub_id: sub.id });
+    return;
+  }
+  const update: Record<string, unknown> = {
+    status: sub.status,
+    stripe_subscription_id: sub.id,
+    stripe_customer_id: sub.customer as string,
+  };
+  const periodEnd = (sub as any).current_period_end;
+  if (periodEnd) update.current_period_end = new Date(periodEnd * 1000).toISOString();
+  await upsertAddonSubscription(orgId, addonKey, update);
+  moduleLog.info("addon_subscription_event_handled", { event_label: eventLabel, addon_key: addonKey, org_id: orgId, status: sub.status });
+}
+
+/** Grant the add-on's included monthly LIT credits for a PAID invoice.
+ *  Idempotent: lit_credit_grant_purchase dedups on p_ref
+ *  (`addon:<key>:<invoice_id>`), and this webhook dedups on event.id.
+ *  Best-effort — a grant failure never fails the billing write. */
+async function grantAddonIncludedCredits(orgId: string, addonKey: string, invoiceId: string) {
+  try {
+    const res = await fetch(
+      `${supabaseUrl}/rest/v1/lit_addons?addon_key=eq.${encodeURIComponent(addonKey)}&select=included_credits`,
+      {
+        headers: {
+          apikey: supabaseServiceRoleKey!,
+          Authorization: `Bearer ${supabaseServiceRoleKey}`,
+        },
+      },
+    );
+    const rows: Array<{ included_credits: number }> = await res.json().catch(() => []);
+    const credits = Number(rows[0]?.included_credits ?? 0);
+    if (!(credits > 0)) return;
+    const { error } = await affiliateAdmin.rpc("lit_credit_grant_purchase", {
+      p_org_id: orgId,
+      p_credits: credits,
+      p_ref: `addon:${addonKey}:${invoiceId}`,
+      p_metadata: { source: "addon_included_credits", addon_key: addonKey, stripe_invoice: invoiceId },
+    });
+    if (error) {
+      moduleLog.warn("addon_credit_grant_failed", { err: error.message, org_id: orgId, addon_key: addonKey, invoice_id: invoiceId });
+    } else {
+      moduleLog.info("addon_credits_granted", { org_id: orgId, addon_key: addonKey, credits, invoice_id: invoiceId });
+    }
+  } catch (e) {
+    moduleLog.warn("addon_credit_grant_failed", { err: String(e), org_id: orgId, addon_key: addonKey });
+  }
+}
+
 serve(async (req) => {
   if (req.method !== "POST") {
     return json({ error: "Method not allowed" }, 405);
@@ -521,6 +681,26 @@ serve(async (req) => {
           break;
         }
 
+        // ── Catalog add-on checkout (metadata.kind='lit_addon') ──
+        // e.g. 'mx_trade' Mexico Trade Intelligence. Routes into
+        // lit_org_addon_subscriptions; must never reach the main-plan path.
+        if (session.metadata?.kind === "lit_addon") {
+          const addonKey = String(session.metadata?.addon_key || "");
+          const subId = session.subscription as string | null;
+          if (!subId || !addonKey) {
+            log.warn("addon_checkout_missing_fields", { err: "no subscription/addon_key on session", addon_key: addonKey });
+            break;
+          }
+          const sub = await stripe.subscriptions.retrieve(subId);
+          // Prefer the org_id from session metadata; handler falls back to
+          // sub metadata / customer link.
+          if (session.metadata?.org_id && !(sub as any).metadata?.org_id) {
+            (sub as any).metadata = { ...((sub as any).metadata ?? {}), org_id: session.metadata.org_id };
+          }
+          await handleAddonSubscriptionEvent(sub, addonKey, "addon_checkout.completed");
+          break;
+        }
+
         // ── Credit-pack top-up (one-time payment) ──
         // Embedded credit-pack checkout carries metadata.kind='credit_pack'.
         // Grant the credits idempotently — lit_credit_grant_purchase dedups on
@@ -538,7 +718,12 @@ serve(async (req) => {
             log.warn("credit_pack_unpaid", { org_id: orgId, payment_status: session.payment_status });
             break;
           }
-          const { data: grant, error: grantErr } = await supabase.rpc("lit_credit_grant_purchase", {
+          // (2026-09-10 fix: this previously called `supabase.rpc` — a
+          // variable that was never defined in this module, so every
+          // credit-pack grant threw a ReferenceError caught by the outer
+          // handler and recorded as processing_error. affiliateAdmin is the
+          // module's service-role client.)
+          const { data: grant, error: grantErr } = await affiliateAdmin.rpc("lit_credit_grant_purchase", {
             p_org_id: orgId,
             p_credits: credits,
             p_ref: session.id,
@@ -642,6 +827,13 @@ serve(async (req) => {
           await handleCrmSubscriptionEvent(sub, "subscription.created");
           break;
         }
+        {
+          const addonKey = await subscriptionAddonKey(sub);
+          if (addonKey) {
+            await handleAddonSubscriptionEvent(sub, addonKey, "subscription.created");
+            break;
+          }
+        }
         await handleSubscriptionEvent(sub, "subscription.created");
         break;
       }
@@ -651,6 +843,13 @@ serve(async (req) => {
         if (subscriptionHasCrmAddon(sub)) {
           await handleCrmSubscriptionEvent(sub, "subscription.updated");
           break;
+        }
+        {
+          const addonKey = await subscriptionAddonKey(sub);
+          if (addonKey) {
+            await handleAddonSubscriptionEvent(sub, addonKey, "subscription.updated");
+            break;
+          }
         }
         await handleSubscriptionEvent(sub, "subscription.updated");
         break;
@@ -674,6 +873,26 @@ serve(async (req) => {
             log.warn("crm_subscription_deleted_no_org", { err: "no org_id", stripe_sub_id: sub.id });
           }
           break;
+        }
+
+        // Catalog add-on cancellation: mark the org's add-on row canceled
+        // rather than touching the main plan (which would wrongly downgrade
+        // the base subscription to free_trial).
+        {
+          const addonKey = await subscriptionAddonKey(sub);
+          if (addonKey) {
+            const orgId = await resolveAddonOrgId(sub);
+            if (orgId) {
+              await upsertAddonSubscription(orgId, addonKey, {
+                status: "canceled",
+                stripe_subscription_id: sub.id,
+              });
+              log.info("addon_subscription_deleted", { addon_key: addonKey, org_id: orgId });
+            } else {
+              log.warn("addon_subscription_deleted_no_org", { err: "no org_id", addon_key: addonKey, stripe_sub_id: sub.id });
+            }
+            break;
+          }
         }
 
         const userId = await resolveUserId(sub);
@@ -706,6 +925,15 @@ serve(async (req) => {
           log.warn("crm_invoice_payment_failed", { err: "payment_failed", org_id: orgId, status: sub.status });
           break;
         }
+        // Catalog add-on invoice failure: reflect Stripe's status on the
+        // org's add-on row; never touch the main plan.
+        {
+          const addonKey = await subscriptionAddonKey(sub);
+          if (addonKey) {
+            await handleAddonSubscriptionEvent(sub, addonKey, "invoice.payment_failed");
+            break;
+          }
+        }
         const userId = await resolveUserId(sub);
         if (!userId) break;
         await upsertSubscription(userId, { status: "past_due" });
@@ -724,6 +952,20 @@ serve(async (req) => {
         if (subscriptionHasCrmAddon(sub)) {
           await handleCrmSubscriptionEvent(sub, "invoice.payment_succeeded");
           break;
+        }
+        // Catalog add-on renewal (or first invoice): refresh the org's
+        // add-on row and grant the included monthly LIT credits (idempotent
+        // per invoice via lit_credit_grant_purchase p_ref dedup).
+        {
+          const addonKey = await subscriptionAddonKey(sub);
+          if (addonKey) {
+            await handleAddonSubscriptionEvent(sub, addonKey, "invoice.payment_succeeded");
+            const orgId = await resolveAddonOrgId(sub);
+            if (orgId && invoice.id) {
+              await grantAddonIncludedCredits(orgId, addonKey, invoice.id);
+            }
+            break;
+          }
         }
         const userId = await resolveUserId(sub);
         if (!userId) break;
