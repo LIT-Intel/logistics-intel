@@ -107,14 +107,57 @@ const LS_PANEL_KEY = 'lit.explorer.companySearch.panelOpen';
 // made saveCompanyDirectToSupabase fall back to "Unknown" — polluting Command
 // Center with nameless shells (owner-reported; 8 purged 2026-09-05). Always
 // thread the resolved name + location through.
-const toShipper = (row) => ({
-  ...(row.raw || {}),
-  name: row.raw?.name ?? row.raw?.title ?? row.company_name,
-  title: row.raw?.title ?? row.company_name,
-  city: row.raw?.city ?? row.city ?? null,
-  state: row.raw?.state ?? row.state ?? null,
-  domain: row.raw?.domain ?? row.domain ?? null,
-});
+// ── Canonical ImportYeti identity (P0 2026-09-10) ─────────────────────────
+// The bare IY slug ("augusta-sportswear") from any key shape, or null when
+// nothing usable is present. Rejects: empty/prefix-only keys ("company/"),
+// the "unknown" garbage-input sentinel from normalizeCompanyIdToSlug, and
+// synthetic non-IY identities ("mx:...", "na:..."). An empty slug must NEVER
+// reach pre-warm/save/navigate — ensureCompanyKey("") used to round-trip it
+// into the literal key "company/", which saved un-healable placeholder
+// shells ("Company" / company.com) that all later keyless saves deduped onto.
+const iyBareSlug = (v) => {
+  const s = String(v ?? '').trim().replace(/^company\//i, '').trim();
+  if (!s || s.toLowerCase() === 'unknown' || s.includes(':')) return null;
+  return s;
+};
+// The prefixed key ("company/<slug>") for a result row — reads every field
+// the different row producers use (normalized rows carry source_company_key;
+// raw IY hits carry key/companyKey/companyId). Null when the row is keyless.
+const iyKeyOfRow = (row) => {
+  const cands = [
+    row?.source_company_key,
+    row?.raw?.key,
+    row?.raw?.companyKey,
+    row?.raw?.companyId,
+    row?.raw?.source_company_key,
+  ];
+  for (const c of cands) {
+    const bare = iyBareSlug(c);
+    if (bare) return `company/${bare}`;
+  }
+  return null;
+};
+
+const toShipper = (row) => {
+  const iyKey = iyKeyOfRow(row);
+  return {
+    ...(row.raw || {}),
+    // Thread the canonical key EXPLICITLY. row.raw for NA-market/directory
+    // rows carries no key field, so saveIyCompanyToCrm's fallback chain
+    // resolved to "" → ensureCompanyKey("") → the literal "company/" key
+    // (Augusta Sportswear P0: real name + KPIs saved under an empty slug the
+    // profile can never self-heal from). Keyless rows are blocked upstream
+    // (onSave guard / openIyRow) — mx: saves pass their own synthetic key.
+    ...(iyKey
+      ? { key: iyKey, companyId: iyKey, companyKey: iyKey, source_company_key: iyKey }
+      : {}),
+    name: row.raw?.name ?? row.raw?.title ?? row.company_name,
+    title: row.raw?.title ?? row.company_name,
+    city: row.raw?.city ?? row.city ?? null,
+    state: row.raw?.state ?? row.state ?? null,
+    domain: row.raw?.domain ?? row.domain ?? null,
+  };
+};
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isUuid = (v) => typeof v === 'string' && UUID_RE.test(v);
@@ -680,6 +723,13 @@ export default function CompanySearchTab() {
       setSaveModalIds([row.company_id]);
       return;
     }
+    // No ImportYeti identity → materializing would write the colliding
+    // "company/" empty-slug shell (P0 2026-09-10). Route through Open, which
+    // resolves the live identity first.
+    if (!iyKeyOfRow(row)) {
+      toast.info('Open this company first to resolve its trade identity, then add it to a list.');
+      return;
+    }
     setSavingListRow(true);
     try {
       const res = await saveCompanyToCommandCenter({
@@ -750,6 +800,14 @@ export default function CompanySearchTab() {
 
   const onSave = useCallback(async (row, e) => {
     e?.stopPropagation?.();
+    // Keyless rows (na: market aggregates, unresolved directory rows, mx:
+    // pedimento rows) carry no ImportYeti identity to save under. Saving
+    // them used to write the colliding source_company_key="company/" shell
+    // (P0 2026-09-10). Open resolves the live identity first — route there.
+    if (!iyKeyOfRow(row)) {
+      toast.info('Open this company first — it will be saved to Command Center automatically once its trade identity resolves.');
+      return;
+    }
     try {
       const shipper = toShipper(row);
       await saveCompanyToCommandCenter({
@@ -764,19 +822,66 @@ export default function CompanySearchTab() {
     }
   }, []);
 
+  // Keyless open — resolve the live company SILENTLY and go straight to its
+  // profile; dropping the user into a second search was double work
+  // (owner-flagged, Lintech). Fallback: if the live lookup finds nothing
+  // usable, run the visible Companies search so they at least see why.
+  // Shared by the keyless onOpenDetails branch AND openIyRow's empty-key
+  // guard, so a garbage key can never save/navigate a placeholder shell.
+  const resolveKeylessOpen = useCallback(async (row) => {
+    const name = String(row.company_name || row.raw?.name || '').trim();
+    if (!name) {
+      toast.error('This result carries no company identity to open.');
+      return;
+    }
+    setOpeningId(row.id);
+    const tid = toast.loading(`Opening ${name}…`);
+    try {
+      const resp = await searchShippers({ q: name, page: 1, pageSize: 3 });
+      const bare = (resp?.results || []).map((h) => iyBareSlug(h.key)).find(Boolean);
+      if (bare) {
+        toast.dismiss(tid);
+        setOpeningId(null);
+        const key = `company/${bare}`;
+        getIyCompanyProfile({ companyKey: key }).catch(() => {});
+        navigate(`/app/companies/${encodeURIComponent(key)}`);
+        return;
+      }
+    } catch { /* fall through to visible search */ }
+    toast.dismiss(tid);
+    setOpeningId(null);
+    modeTouched.current = true;
+    setSearchMode('companies');
+    setQuery(name);
+    setDetailRow(null);
+    runSearch(name, { mode: 'companies' });
+  }, [navigate, runSearch]);
+
   // The blessed "open an ImportYeti-keyed result" path — profile pre-warm,
   // auto-save, credits-v2 unlock gate, SPA navigate. Shared by regular
   // Companies-mode rows AND na: rows once their live IY identity is verified,
   // so both open flows stay byte-for-byte identical.
   const openIyRow = useCallback(async (row) => {
+    // Canonical identity — normalize whatever field the row carries into
+    // "company/<slug>" (iyKeyOfRow). DEFENSIVE GUARD (P0 2026-09-10): an
+    // empty or prefix-only key ("company/") must NEVER pre-warm, save, or
+    // navigate — the bare prefix is truthy, so it sailed past every
+    // `if (!key)` check, saved a source_company_key="company/" shell that
+    // later keyless saves deduped onto, pre-warmed an empty slug, and landed
+    // on a permanently "Snapshot pending" placeholder profile. Fall back to
+    // the live-search resolution UX instead.
+    const iyKey = iyKeyOfRow(row);
+    if (!iyKey) return resolveKeylessOpen(row);
+
     const proceed = () => {
       // Pre-warm the profile snapshot in the BACKGROUND. Never await it — it's a
       // 10-15s importyeti-proxy call, and awaiting it before navigating made the
       // click do nothing for many seconds (users hard-refreshed to recover).
-      getIyCompanyProfile({ companyKey: row.source_company_key }).catch(() => {});
+      getIyCompanyProfile({ companyKey: iyKey }).catch(() => {});
       // Auto-save on open — core behavior from the legacy Search page that the
       // Explorer rewrite (daf839c) dropped. Skip if already saved; never block
       // navigation (cap-reached / network errors are non-fatal here).
+      // toShipper threads iyKey + the real company name into the payload.
       if (!row.is_saved) {
         saveCompanyToCommandCenter({
           shipper: toShipper(row),
@@ -785,10 +890,9 @@ export default function CompanySearchTab() {
           source: 'importyeti',
         }).catch(() => { /* non-fatal: explicit Save button still available */ });
       }
-      const slug = encodeURIComponent(row.source_company_key || row.id);
       // SPA navigation — instant, keeps the React app mounted. The previous
       // window.location.href did a full document reload, which read as a hang.
-      navigate(`/app/companies/${slug}`);
+      navigate(`/app/companies/${encodeURIComponent(iyKey)}`);
     };
 
     // Credits v2 unlock gate (§7). While credits_metering_enabled is OFF this is
@@ -799,7 +903,7 @@ export default function CompanySearchTab() {
     // silently failing. unlockCompany() fails OPEN on any transient error.
     if (meteringKnownOff) { proceed(); return; }
     const res = await unlockCompany({
-      source_company_key: row.source_company_key,
+      source_company_key: iyKey,
       company_id: row.company_id ?? null,
       company_name: row.company_name ?? null,
     });
@@ -811,7 +915,7 @@ export default function CompanySearchTab() {
         action: { label: 'Add credits', onClick: () => navigate('/app/billing/credits') },
       });
     }
-  }, [navigate]);
+  }, [navigate, resolveKeylessOpen]);
 
   const onOpenDetails = useCallback(async (row, e) => {
     e?.stopPropagation?.();
@@ -965,36 +1069,14 @@ export default function CompanySearchTab() {
       return;
     }
 
-    if (!row.source_company_key) {
-      // Resolve the live company SILENTLY and go straight to its profile —
-      // dropping the user into a second search was double work (owner-flagged,
-      // Lintech). Fallback: if the live lookup finds nothing, run the visible
-      // Companies search so they at least see why.
-      setOpeningId(row.id);
-      const tid = toast.loading(`Opening ${row.company_name}…`);
-      try {
-        const resp = await searchShippers({ q: row.company_name, page: 1, pageSize: 3 });
-        const hit = (resp?.results || []).find((h) => h.key);
-        if (hit?.key) {
-          toast.dismiss(tid);
-          setOpeningId(null);
-          getIyCompanyProfile({ companyKey: hit.key }).catch(() => {});
-          navigate(`/app/companies/${encodeURIComponent(hit.key)}`);
-          return;
-        }
-      } catch { /* fall through to visible search */ }
-      toast.dismiss(tid);
-      setOpeningId(null);
-      modeTouched.current = true;
-      setSearchMode('companies');
-      setQuery(row.company_name);
-      setDetailRow(null);
-      runSearch(row.company_name, { mode: 'companies' });
-      return;
-    }
+    // NORMALIZED identity check (was `!row.source_company_key`): a row whose
+    // stored key normalizes to nothing — including the empty-slug "company/"
+    // shells this P0 produced — now takes the live-resolution path instead of
+    // navigating to a placeholder profile.
+    if (!iyKeyOfRow(row)) return resolveKeylessOpen(row);
 
     return openIyRow(row);
-  }, [navigate, runSearch, openIyRow]);
+  }, [navigate, runSearch, openIyRow, resolveKeylessOpen]);
 
   const onRowClick = useCallback((row) => {
     setSelectedCompany({
@@ -1397,10 +1479,12 @@ export default function CompanySearchTab() {
               pos={hoverPos}
               opening={openingId != null && openingId === hoverRow.id}
               onOpen={(e) => {
-                // Keyless rows (na:/market) resolve their live identity before
-                // navigating — keep the popover mounted so its Open button can
-                // show the spinner; dismiss immediately only for direct opens.
-                if (hoverRow.source_company_key) dismissHover();
+                // Keyless rows (na:/market — normalized check, so empty-slug
+                // "company/" shells count as keyless too) resolve their live
+                // identity before navigating — keep the popover mounted so its
+                // Open button can show the spinner; dismiss immediately only
+                // for direct opens.
+                if (iyKeyOfRow(hoverRow)) dismissHover();
                 onOpenDetails(hoverRow, e);
               }}
               onClose={dismissHover}

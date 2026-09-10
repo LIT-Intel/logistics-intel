@@ -1071,6 +1071,13 @@ export function normalizeCompanyIdToSlug(input: string): string {
 
 export function ensureCompanyKey(value: string) {
   const slug = normalizeCompanyIdToSlug(value);
+  // Empty input must yield an EMPTY key, never the bare "company/" prefix.
+  // "company/" is truthy, so every `if (!companyKey) throw` guard downstream
+  // was silently bypassed and empty-identity rows were persisted with
+  // source_company_key = "company/" (P0 2026-09-10: un-healable saved
+  // companies + placeholder "Company"/company.com profiles; all keyless
+  // saves dedup-collided onto the single "company/" row).
+  if (!slug) return "";
   return slug.startsWith(IY_COMPANY_KEY_PREFIX)
     ? slug
     : `${IY_COMPANY_KEY_PREFIX}${slug}`;
