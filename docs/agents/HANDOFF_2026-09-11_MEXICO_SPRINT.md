@@ -56,15 +56,40 @@ Supabase project `jkmrfiaefxwgbvftohrb`. Last commit this sprint: `b1cebd92`.
 
 ## PENDING — verify first in next session
 
-- [ ] **Owner ran cleanup SQL?** Steps: UPDATE Augusta lit_companies key →
-  `company/augusta-sportswear`; realign its lit_saved_companies rows; DELETE
-  placeholder shells (`source_company_key='company/'`, name Company/Unknown)
-  from lit_saved_companies (by company_id subquery — it has NO company_name
-  column) then lit_companies. If not run, re-issue the SQL.
-- [ ] **Browser verification**: (a) demo acct (Gabriel Knight) MX Market →
-  $99 add-on modal, not results; (b) new company open from Companies search
-  populates within ~20s (no "Company" shell); (c) Augusta Sportswear profile
-  heals after SQL repair; (d) NA market map shows clustered city bubbles.
+- [x] **Cleanup SQL — DONE (verified 2026-09-10 evening).** Owner's shell
+  cleanup had run (0 shells, 0 orphaned saves). Remaining Augusta DUPLICATE
+  found and merged via Management API: dead null-key row `6da3b4f5` deleted
+  (its dup save removed — same user already had the good row saved; its 1
+  activity event repointed), canonical row `19b1151d` keyed
+  `company/augusta-sportswear`, 2 saves intact. DB-verified same session:
+  lit_addons mx_trade ($99/500cr/live price id/active), metering flag OFF
+  (global_kill, rollout 0), mx costs 5/10 active, addon subs 0, NA tables
+  RLS-enabled with zero policies (default-deny), iy_spend_2026-09 = 1.
+  No IY snapshot for Augusta yet — attaches on first profile open (~1-2 IY
+  credits, owner's call per credit hold).
+- [x] **(a) demo acct MX Market gate — VERIFIED 2026-09-10 22:38 UTC** via
+  edge logs: Gabriel Knight's lit_na_market_search RPC returned 400 followed
+  by lit_get_addon (the add-on modal fetch). Server gate works.
+- [x] **(b) new-company opens — WAS BROKEN by a SECOND P0, now FIXED.**
+  Owner repro (amneal-pharmaceuticals, american-global-logistics): every
+  importyeti-proxy companyProfile 500'd with "snapshot_upsert_failed: cannot
+  extract elements from an object". Root cause: lit_extract_iy_snapshot_intel
+  (trigger on lit_importyeti_company_snapshot, from 20260819210000) called
+  jsonb_array_elements() on data.lane_permutations /
+  other_addresses_contact_info guarded only by `?` key-existence — IY returns
+  these as OBJECTS for some companies, the trigger threw, and the throw
+  ROLLED BACK the snapshot insert → those companies could never materialize
+  (profile stuck as synthetic "Company"/Snapshot-pending; frontend was NOT
+  at fault — the b1cebd92 fix is live and its heal+poll ran correctly).
+  Fixed by migration 20260911010000 (APPLIED to prod + tested end-to-end):
+  lit_jsonb_elems() handles array AND keyed-object shapes, and the whole
+  extraction is exception-wrapped (derived intel can never block the
+  snapshot write; failures raise WARNING). Re-open any affected company to
+  confirm (~1-2 IY credits). NOTE: today's failed attempts still consumed
+  IY credits upstream (fetch succeeded, persist failed).
+- [ ] **Browser verification remaining**: (c) Augusta Sportswear profile
+  heals after the dup-merge repair; (d) NA market map shows clustered city
+  bubbles.
 - [ ] **Dry-run add-on purchase** (owner, live card, then refund) — the only
   unwalked path in the purchase chain.
 
@@ -78,6 +103,12 @@ Supabase project `jkmrfiaefxwgbvftohrb`. Last commit this sprint: `b1cebd92`.
    rollups feeding the existing Cadence chart. Blocked on IY top-up.
 3. Backlog: MX supplier + broker rankings as prospect categories; US-export/
    Canada direction (`lit_us_export_bols` empty); freight-control scoring.
+4. Minor issues spotted in edge logs 2026-09-10 (P3, not yet fixed):
+   pulse-explore "freshness join failed: Invalid URL" — the snapshot
+   freshness lookup builds an `in.(...)` URL from the full result set and
+   overflows; chunk the id list. Also chronic
+   "Deno.core.runMicrotasks() is not supported" event-loop noise from a cron
+   fn (std@0.177.1 node shim) — cosmetic but log-polluting.
 
 ## Gotchas / constraints (hard-won this sprint)
 
@@ -86,9 +117,15 @@ Supabase project `jkmrfiaefxwgbvftohrb`. Last commit this sprint: `b1cebd92`.
   Bimbo = $0). Each NEW company profile open costs ~1-2 IY credits.
 - **Supabase MCP token death**: mid-session expiry does NOT self-heal even
   when settings show "Connected"; the session permanently loses the tools.
-  Fallbacks that work: owner pastes SQL into dashboard SQL editor; or start
-  a fresh session (fresh tokens). Consider getting a `SUPABASE_ACCESS_TOKEN`
-  from the owner for CLI (`npx supabase`) independence.
+  SOLVED 2026-09-10: `SUPABASE_ACCESS_TOKEN` is now in the Windows USER env
+  on this PC — run SQL directly via the Management API:
+  `POST https://api.supabase.com/v1/projects/jkmrfiaefxwgbvftohrb/database/query`
+  with `Authorization: Bearer $SUPABASE_ACCESS_TOKEN`, body `{"query":"..."}`.
+  Multi-statement BEGIN/…/COMMIT batches work. The MCP connector is no
+  longer a single point of failure.
+- **claude.ai Stripe connector is the WRONG account**: it exposes an EMPTY
+  livemode account (acct_1TQqce3NsgrEw9xv) — NOT LIT prod billing. Verify
+  billing via the edge-env STRIPE_SECRET_KEY (temp fn) or owner dashboard.
 - **Edge deploys**: CI broken for new fns — deploy via Supabase MCP
   `deploy_edge_function`, bundle `./_shared/` copies (auth/logger/sentry/
   credits), verify_jwt true.
