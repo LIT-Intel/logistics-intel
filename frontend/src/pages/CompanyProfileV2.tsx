@@ -834,9 +834,39 @@ function ProfilePanel({ rawId }: { rawId: string }) {
         // ImportYeti snapshot — skip the live fetch + 20s poll entirely so
         // the page doesn't burn provider calls waiting on a snapshot that
         // will never land ("Snapshot pending" owner defect, 2026-09).
-        if (bareKey && !UUID_RE.test(bareKey) && !/^mx[:-]/i.test(bareKey)) {
+        // UUID route ids (market/Command-Center opens) used to SKIP the
+        // self-heal entirely — the pre-warm snapshot lands 10-20s after
+        // navigate, so the page settled into "Snapshot pending" until a hard
+        // refresh (owner defect, NA market opens 2026-09). Resolve the stored
+        // IY slug and heal with it; mx-pedimento identities still never heal.
+        let healKey =
+          bareKey && !UUID_RE.test(bareKey) && !/^mx[:-]/i.test(bareKey)
+            ? bareKey
+            : null;
+        if (!healKey && bareKey && UUID_RE.test(bareKey)) {
           try {
-            await getIyCompanyProfile({ companyKey: bareKey });
+            const { data: keyRow } = await supabase
+              .from("lit_companies")
+              .select("source_company_key, source")
+              .eq("id", bareKey)
+              .maybeSingle();
+            const slug = String((keyRow as any)?.source_company_key || "")
+              .replace(/^company\//i, "")
+              .trim();
+            if (
+              slug &&
+              (keyRow as any)?.source !== "mx-pedimento" &&
+              !/^mx[:-]/i.test(slug)
+            ) {
+              healKey = slug;
+            }
+          } catch {
+            /* stay on the synthetic fallback */
+          }
+        }
+        if (healKey) {
+          try {
+            await getIyCompanyProfile({ companyKey: healKey });
           } catch (liveErr) {
             // The fetch often kicks off the server-side snapshot write even
             // when the client call times out — so DON'T give up here; the
