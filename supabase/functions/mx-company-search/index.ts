@@ -5,6 +5,7 @@
 // NOTE: deployed via MCP with bundled ./_shared copies; repo copy uses ../_shared.
 import { handlePreflight, json, requireUser } from "../_shared/auth.ts";
 import { createLogger, requestId } from "../_shared/logger.ts";
+import { meterAction } from "../_shared/credits.ts";
 
 const BASE = (Deno.env.get("IMPORTYETI_API_BASE") || "https://data.importyeti.com/v1.0").replace(/\/+$/, "");
 const log = createLogger("mx-company-search");
@@ -15,11 +16,38 @@ async function iy(path: string, q: string, apiKey: string, pageSize: number) {
   u.searchParams.set("page_size", String(pageSize));
   u.searchParams.set("company_name", q);
   const r = await fetch(u.toString(), { headers: { IYApiKey: apiKey, Accept: "application/json" } });
-  if (!r.ok) return { rows: [] as any[], credits: null as number | null };
+  if (!r.ok) return { rows: [] as any[], credits: null as number | null, cost: 0 };
   const j = await r.json().catch(() => null);
   const d = j?.data;
   const rows = Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : [];
-  return { rows, credits: j?.creditsRemaining ?? null };
+  return { rows, credits: j?.creditsRemaining ?? null, cost: Number(j?.requestCost ?? 0) || 0 };
+}
+
+// ── ImportYeti monthly spend cap (cost control). PowerQuery responses carry
+// requestCost; we accumulate it per calendar month in lit_internal_meta
+// (meta_key 'iy_spend_YYYY-MM', meta_value jsonb {spend}). All writes are
+// best-effort — a meta hiccup must never fail a real request.
+const IY_CAP = Number(Deno.env.get("LIT_IY_MONTHLY_CAP") ?? 2000) || 2000;
+const iyMonthKey = () => "iy_spend_" + new Date().toISOString().slice(0, 7);
+
+async function iyMonthSpend(admin: any): Promise<number> {
+  try {
+    const { data } = await admin.from("lit_internal_meta")
+      .select("meta_value").eq("meta_key", iyMonthKey()).maybeSingle();
+    return Number((data?.meta_value as any)?.spend ?? 0) || 0;
+  } catch { return 0; }
+}
+
+async function addIySpend(admin: any, amount: number): Promise<void> {
+  if (!(amount > 0)) return;
+  try {
+    const key = iyMonthKey();
+    const { data } = await admin.from("lit_internal_meta")
+      .select("meta_value").eq("meta_key", key).maybeSingle();
+    const cur = Number((data?.meta_value as any)?.spend ?? 0) || 0;
+    await admin.from("lit_internal_meta")
+      .upsert({ meta_key: key, meta_value: { spend: cur + amount }, updated_at: new Date().toISOString() });
+  } catch (e) { log.warn("iy_spend_write_failed", { err: String(e) }); }
 }
 
 const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : null);
@@ -61,7 +89,8 @@ Deno.serve(async (req) => {
   // cannot run MX searches). Server-side = the security boundary. A user
   // qualifies with ANY org subscription row in a live status, or platform admin.
   const [{ data: om }, { data: pa }] = await Promise.all([
-    auth.admin.from("org_members").select("org_id").eq("user_id", auth.user.id).limit(5),
+    auth.admin.from("org_members").select("org_id").eq("user_id", auth.user.id)
+      .order("joined_at", { ascending: true }).limit(5),
     auth.admin.from("platform_admins").select("user_id").eq("user_id", auth.user.id).maybeSingle(),
   ]);
   let paid = Boolean(pa);
@@ -83,6 +112,49 @@ Deno.serve(async (req) => {
   try { body = await req.json(); } catch { /* validated below */ }
   const q = String(body.q ?? "").trim().slice(0, 120);
   if (q.length < 2) return json({ ok: false, error: "q_required" }, 400);
+
+  // ── LIT-credit metering (owner-approved pricing): MX search = 5 credits,
+  // company open (declarations pull) = 10; CACHE-SERVED responses are never
+  // debited (both callers below run only on a cache miss). Same mechanism as
+  // credit-unlock-company: credits_metering_enabled dark-launch flag (OFF ⇒
+  // free), workspace-level meterAction via _shared/credits.ts, and a
+  // platform-admin bypass identical to the paid gate above. Non-balance
+  // metering errors fail OPEN — a credit-engine hiccup never blocks a paid
+  // user (mirrors the frontend unlockCompany fail-open policy).
+  const isPlatformAdmin = Boolean(pa);
+  const orgId = (Array.isArray(om) && om.length ? om[0]?.org_id : null) ?? null;
+  const debitOrBlock = async (feature: string, needed: number, entityType: string): Promise<Response | null> => {
+    if (isPlatformAdmin) return null;
+    if (!orgId) return null; // paid via admin-less edge case — nothing to debit
+    const { data: flag } = await auth.admin.from("lit_feature_flags")
+      .select("global_kill").eq("key", "credits_metering_enabled").maybeSingle();
+    const meteringOn = flag && (flag as { global_kill?: boolean }).global_kill === false;
+    if (!meteringOn) return null; // dark launch — metering off ⇒ free
+    const meter = await meterAction(
+      auth.admin,
+      { orgId, userId: auth.user.id, feature, entityType, entityId: q.toLowerCase(), metadata: { q } },
+      async () => ({ ok: true }),
+    );
+    if (!meter.ok) {
+      if (meter.blocked) {
+        return json({
+          ok: false, code: "insufficient_credits", needed,
+          message: `Not enough LIT credits — this Mexico ${feature === "mx_company_open" ? "company open" : "search"} costs ${needed} credits. Add credits to continue.`,
+        });
+      }
+      log.warn("mx_debit_failed_open", { rid, feature, err: meter.reason ?? null, org_id: orgId });
+    }
+    return null;
+  };
+  const iyCapBlock = async (): Promise<Response | null> => {
+    const spend = await iyMonthSpend(auth.admin);
+    if (spend >= IY_CAP) {
+      log.warn("iy_cap_reached", { rid, spend, cap: IY_CAP });
+      return json({ ok: false, code: "iy_cap_reached",
+        message: "Mexico data temporarily paused — monthly data budget reached." });
+    }
+    return null;
+  };
 
   if (body.mode === "declarations") {
     // DB-first: if we pulled this company within 7 days, build the summary from
@@ -113,10 +185,18 @@ Deno.serve(async (req) => {
         total_value_usd: priorAll.reduce((a, r) => a + (Number(r.value_usd) || 0), 0),
         credits: null });
     }
+    // Cache miss → live IY pull. Cost controls run in order: monthly IY spend
+    // cap first (don't debit LIT credits for a pull we won't make), then the
+    // 10-credit company-open debit.
+    const capD = await iyCapBlock();
+    if (capD) return capD;
+    const debitD = await debitOrBlock("mx_company_open", 10, "mx_company");
+    if (debitD) return debitD;
     const [imp, exp] = await Promise.all([
       iy("/powerquery/mx-import/declarations", q, apiKey, 20),
       iy("/powerquery/mx-export/declarations", q, apiKey, 20),
     ]);
+    await addIySpend(auth.admin, (imp.cost || 0) + (exp.cost || 0));
     const mapDecl = (r: any) => ({
       declaration_id: r.declaration_id || r.pedimento_number || null,
       declaration_date: r.declaration_date || r.import_date || r.export_date || null,
@@ -188,10 +268,16 @@ Deno.serve(async (req) => {
   if (hit && Date.now() - new Date(hit.fetched_at).getTime() < 7 * 864e5) {
     return json({ ok: true, cached: true, results: hit.payload, credits: null });
   }
+  // Cache miss → live IY pull. Spend cap first, then the 5-credit search debit.
+  const capS = await iyCapBlock();
+  if (capS) return capS;
+  const debitS = await debitOrBlock("mx_company_search", 5, "mx_search");
+  if (debitS) return debitS;
   const [imp, exp] = await Promise.all([
     iy("/powerquery/mx-import/companies", q, apiKey, 10),
     iy("/powerquery/mx-export/companies", q, apiKey, 10),
   ]);
+  await addIySpend(auth.admin, (imp.cost || 0) + (exp.cost || 0));
   const byName = new Map<string, any>();
   for (const r of imp.rows.map((x) => normCompany(x, "import"))) if (r.name) byName.set(r.name.toLowerCase(), r);
   for (const r of exp.rows.map((x) => normCompany(x, "export"))) {

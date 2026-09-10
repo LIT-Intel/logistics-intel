@@ -324,6 +324,21 @@ export default function CompanySearchTab() {
           setResults([]); setMapPoints([]); setUnmappedCount(0); setSearching(false);
           return;
         }
+        // Credits v2 metering: a cache-miss MX search costs 5 LIT credits.
+        // On an insufficient balance offer a top-up (same pattern as the
+        // company-unlock gate in onOpenDetails below).
+        if (data?.code === 'insufficient_credits') {
+          toast.error(data.message || 'Not enough credits to run a Mexico search.', {
+            action: { label: 'Add credits', onClick: () => navigate('/app/billing/credits') },
+          });
+          setResults([]); setMapPoints([]); setUnmappedCount(0); setSearching(false);
+          return;
+        }
+        if (data?.code === 'iy_cap_reached') {
+          toast.error(data.message || 'Mexico data temporarily paused — monthly data budget reached.');
+          setResults([]); setMapPoints([]); setUnmappedCount(0); setSearching(false);
+          return;
+        }
         if (fnErr || !data?.ok) throw new Error(data?.error || fnErr?.message || 'Mexico search failed.');
         const rows = (data.results || []).map((r) => ({
           id: `mx:${r.name}`,
@@ -437,7 +452,7 @@ export default function CompanySearchTab() {
     } finally {
       setSearching(false);
     }
-  }, [query, setSp, searchMode, region]);
+  }, [query, setSp, searchMode, region, navigate]);
 
   const onSubmit = useCallback((e) => {
     e?.preventDefault?.();
@@ -558,10 +573,26 @@ export default function CompanySearchTab() {
       // source='mx-pedimento' + country_code='MX', then lands on the standard
       // CompanyProfileV2 URL, whose Supply Chain tab renders the pedimento
       // intel (MxTradePanel) for MX identities.
-      // Warm/refresh the declarations cache in the background first.
-      supabase.functions.invoke('mx-company-search', { body: { q: row.company_name, mode: 'declarations' } }).catch(() => {});
-      // Toasts may not render on this route — navigation is the real feedback.
+      // Warm/refresh the declarations cache FIRST — and await it, because this
+      // is the metered action (Credits v2: cache-miss company open = 10 LIT
+      // credits) and an insufficient balance must block the open, matching the
+      // unlock gate below. Cache-hit responses return in ~ms and stay free.
       const tid = toast.loading(`Opening ${row.company_name}…`);
+      const warm = await supabase.functions
+        .invoke('mx-company-search', { body: { q: row.company_name, mode: 'declarations' } })
+        .catch(() => null);
+      if (warm?.data?.code === 'insufficient_credits') {
+        toast.dismiss(tid);
+        toast.error(warm.data.message || 'Not enough credits to open this Mexico company.', {
+          action: { label: 'Add credits', onClick: () => navigate('/app/billing/credits') },
+        });
+        return;
+      }
+      if (warm?.data?.code === 'iy_cap_reached') {
+        // Data budget paused — no fresh pedimentos, but the profile itself
+        // still opens (cached intel renders if present).
+        toast.error(warm.data.message || 'Mexico data temporarily paused — monthly data budget reached.');
+      }
       try {
         const res = await saveCompanyToCommandCenter({
           shipper: {
