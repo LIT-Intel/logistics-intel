@@ -1246,7 +1246,7 @@ export default function CompanySearchTab() {
                   <p className="font-body mt-1 text-[12.5px] leading-snug text-slate-500">
                     Mexico search is a $99/mo add-on to your plan — pedimento-level customs
                     declarations, cross-border truck, air &amp; sea lanes, border customs gateways and
-                    declared values. Includes 1,000 LIT credits/mo for Mexico usage.
+                    declared values. Includes 500 LIT credits/mo for Mexico usage.
                   </p>
                   {mxAddon === undefined ? (
                     <button

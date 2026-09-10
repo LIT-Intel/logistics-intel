@@ -970,7 +970,7 @@ export default function Billing() {
 
 /**
  * Compact "Add-ons" section — Mexico Trade Intelligence ($99/mo, includes
- * 1,000 LIT credits/mo for Mexico usage). States: Active (org holds the
+ * 500 LIT credits/mo for Mexico usage). States: Active (org holds the
  * add-on), purchasable (Stripe price id set → real checkout), or a disabled
  * "Coming soon — contact us" while the price id is NULL.
  */
@@ -1019,7 +1019,7 @@ function MexicoAddonCard({
             <p className="font-body mt-1 text-[12px] leading-snug text-slate-500">
               Pedimento-level Mexican customs declarations · cross-border truck, air &amp; sea
               lanes · border customs gateways · freight-control &amp; broker intel. Includes
-              1,000 LIT credits/mo for Mexico usage.
+              500 LIT credits/mo for Mexico usage.
             </p>
           </div>
         </div>
