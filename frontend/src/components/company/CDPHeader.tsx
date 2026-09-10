@@ -358,8 +358,14 @@ export default function CDPHeader({
         },
         {
           label: "PRIMARY TRADE LANE",
-          value: mx.topGateway || "—",
-          hint: mx.topGateway ? "top customs gateway" : null,
+          // "CN → Manzanillo" (top counterparty origin → top gateway) —
+          // gateway-only fallback when the origin side is unknown.
+          value: mx.primaryLane || mx.topGateway || "—",
+          hint: mx.primaryLane
+            ? "top origin → customs gateway"
+            : mx.topGateway
+              ? "top customs gateway"
+              : null,
           icon: ArrowRightLeft,
           tone: "amber",
         },

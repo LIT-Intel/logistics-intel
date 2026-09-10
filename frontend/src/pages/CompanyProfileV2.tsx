@@ -83,6 +83,8 @@ import PulseCoachQuotaCard from "@/components/company/PulseCoachQuotaCard";
 import LockedAccountPreview from "@/components/company/LockedAccountPreview";
 import CDPSupplyChain from "@/components/company/CDPSupplyChain";
 import MxTradePanel from "@/components/company/MxTradePanel";
+import MxDeclarationsTable from "@/components/company/MxDeclarationsTable";
+import MxPartnersPanel from "@/components/company/MxPartnersPanel";
 import { deriveMxHeaderStats, useMxCompanyProfile } from "@/api/mxProfile";
 import CDPContacts from "@/components/company/CDPContacts";
 import EditCompanyModal from "@/components/company/EditCompanyModal";
@@ -957,6 +959,12 @@ function ProfilePanel({ rawId }: { rawId: string }) {
           source: (company as any).source ?? null,
           country_code: (company as any).country_code ?? null,
           source_company_key: sck ?? null,
+          // Keep the record's own website/domain (previously dropped) —
+          // MX pedimento identities have no ImportYeti profile, so the
+          // lit_companies columns are the ONLY domain source the right
+          // rail can share with the header chip.
+          website: (company as any).website ?? null,
+          domain: (company as any).domain ?? null,
         });
       } catch (e) {
         console.warn(
@@ -1137,6 +1145,10 @@ function ProfilePanel({ rawId }: { rawId: string }) {
     activeProfile?.domain ||
     shellCompany?.domain ||
     bundle?.identity?.display?.domain ||
+    // lit_companies row's own column — the header chip and the right-rail
+    // Firmographics Website both read from here for MX identities, so
+    // they can never disagree (owner-flagged 2026-09).
+    (companyEnrichment as any)?.domain ||
     null;
 
   // ── MX pedimento identity detection ─────────────────────────────────────
@@ -1234,6 +1246,11 @@ function ProfilePanel({ rawId }: { rawId: string }) {
     activeProfile?.website ||
     shellCompany?.website ||
     bundle?.identity?.display?.website ||
+    // lit_companies row's own columns (MX-aware fallback) — same source
+    // as the header domain chip, so the right rail never shows "—" while
+    // the chip shows a domain.
+    (companyEnrichment as any)?.website ||
+    (isMxCompany ? companyDomain : null) ||
     null;
 
   const companyAddress =
@@ -2519,7 +2536,12 @@ function ProfilePanel({ rawId }: { rawId: string }) {
               />
             )
           )}
-          {tab === "graph" && (
+          {tab === "graph" && isMxCompany && (
+            // MX identity — pedimento partners + customs brokers in the
+            // Trade Graph card language (was MxTradePanel's inner tab).
+            <MxPartnersPanel companyName={mxRouteName || companyName} />
+          )}
+          {tab === "graph" && !isMxCompany && (
             <CDPTradeGraph
               // Same broadened key-fallback chain as Pulse LIVE so the graph
               // resolves whenever ANY company key is available.
@@ -2537,7 +2559,12 @@ function ProfilePanel({ rawId }: { rawId: string }) {
               companyName={companyName}
             />
           )}
-          {tab === "live" && (
+          {tab === "live" && isMxCompany && (
+            // MX identity — pedimento declaration lines ARE the live feed
+            // (was MxTradePanel's inner Declarations tab).
+            <MxDeclarationsTable companyName={mxRouteName || companyName} />
+          )}
+          {tab === "live" && !isMxCompany && (
             <PulseLIVETab
               // Broadened key derivation (regression fix): the old single
               // `bundle.identity.key` went null whenever the bundle hadn't

@@ -19,10 +19,12 @@
  * Lives under frontend/src/api/ per CLAUDE.md (no new code in lib/api.ts).
  */
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
+import { Package, Plane, Ship, Train, Truck, type LucideIcon } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
 export type MxNamedCount = { v?: string | null; n?: number | null; usd?: number | null };
-export type MxCounterparty = MxNamedCount & { c?: string | null };
+/** v3 adds `state` (max counterparty_state) for country-less domestic/truck partners. */
+export type MxCounterparty = MxNamedCount & { c?: string | null; state?: string | null };
 
 export type MxCompanyProfileData = {
   summary?: {
@@ -53,10 +55,22 @@ export type MxCompanyProfileData = {
     weight_kg?: number | null;
     incoterm?: string | null;
     who_pays_freight?: string | null;
+    /** v3 fields — may be absent on older cached payloads. */
+    hts_code?: string | null;
+    quantity?: number | null;
+    unit_value?: number | null;
+    custom_regime?: string | null;
+    pedimento_number?: string | null;
   }> | null;
   /** v3 forward-compat — render only when present. */
   regimes?: MxNamedCount[] | null;
   name_variants?: string[] | null;
+  quantities?: Array<{
+    unit?: string | null;
+    n?: number | null;
+    total_qty?: number | null;
+    avg_unit_value?: number | null;
+  }> | null;
 } | null;
 
 /**
@@ -111,6 +125,12 @@ export type MxHeaderStats = {
   declarations: number;
   totalWeightKg: number | null;
   topGateway: string | null;
+  /**
+   * "<top counterparty country||state> → <top gateway short>" — e.g.
+   * "CN → Manzanillo". Null when either side is unknown; consumers fall
+   * back to `topGateway`.
+   */
+  primaryLane: string | null;
   gatewayCount: number | null;
   lastActivity: string | null;
   firstActivity: string | null;
@@ -127,6 +147,17 @@ export function deriveMxHeaderStats(
   const declaredValueUsd = Number(s?.total_value_usd);
   const totalWeightKg = Number(s?.total_weight_kg);
   const gateways = Array.isArray(data?.gateways) ? data!.gateways! : [];
+  const topGateway = shortGatewayLabel(gateways[0]?.v) || null;
+  // Primary trade lane — top counterparty's country code, else its MX
+  // state (v3 `state` key, defensive), joined to the top gateway.
+  const topCp = Array.isArray(data?.counterparties)
+    ? data!.counterparties![0]
+    : null;
+  const cpCountry = String(topCp?.c ?? "").trim().toUpperCase() || null;
+  const cpOrigin =
+    (cpCountry && cpCountry !== "MX" ? cpCountry : null) ||
+    shortGatewayLabel(topCp?.state) ||
+    (cpCountry === "MX" ? "MX" : null);
   return {
     rfc: s?.rfc ?? null,
     declaredValueUsd:
@@ -138,7 +169,8 @@ export function deriveMxHeaderStats(
     declarations: imports + exports,
     totalWeightKg:
       Number.isFinite(totalWeightKg) && totalWeightKg > 0 ? totalWeightKg : null,
-    topGateway: shortGatewayLabel(gateways[0]?.v) || null,
+    topGateway,
+    primaryLane: cpOrigin && topGateway ? `${cpOrigin} → ${topGateway}` : null,
     gatewayCount: gateways.length > 0 ? gateways.length : null,
     lastActivity: s?.last_activity ?? null,
     firstActivity: s?.first_activity ?? null,
@@ -258,3 +290,66 @@ export const MX_MODE_ARC_COLORS: Record<
   rail: { base: "#F59E0B", selected: "#D97706", glow: "rgba(245,158,11,0.30)", label: "Rail" },
   other: { base: "#64748B", selected: "#475569", glow: "rgba(100,116,139,0.30)", label: "Other" },
 };
+
+/** Mode icon + chip tone — shared by every MX surface (map legend, chips,
+ *  declarations table, partners panel) so mode presentation never drifts. */
+export const MX_MODE_ICONS: Record<MxModeKey, LucideIcon> = {
+  truck: Truck,
+  sea: Ship,
+  air: Plane,
+  rail: Train,
+  other: Package,
+};
+export const MX_MODE_TONES: Record<MxModeKey, string> = {
+  truck: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+  sea: "bg-cyan-50 text-cyan-700 ring-cyan-200",
+  air: "bg-violet-50 text-violet-700 ring-violet-200",
+  rail: "bg-amber-50 text-amber-700 ring-amber-200",
+  other: "bg-slate-100 text-slate-600 ring-slate-200",
+};
+
+/** Compact USD formatter shared by the MX table/panel components. */
+export function mxFmtUsd(v: number | null | undefined): string | null {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  if (n >= 1e6) return `$${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `$${Math.round(n / 1e3)}K`;
+  return `$${Math.round(n).toLocaleString()}`;
+}
+
+/** Deep-link a counterparty/broker name into the main Search surface. */
+export function mxSearchHref(name: string | null | undefined): string {
+  return `/app/search?q=${encodeURIComponent(String(name ?? "").trim())}`;
+}
+
+/* ── Mexican state centroids ([lat, lng]) ──────────────────────────────
+ * Shared export (copied from the Explorer's CompanySearchTab MX pin
+ * fallback) so country-less counterparties — domestic/truck partners
+ * that only carry `counterparty_state` — still anchor a real map arc. */
+
+export const MX_STATE_CENTROIDS: Record<string, [number, number]> = {
+  "ciudad de mexico": [19.43, -99.13], "distrito federal": [19.43, -99.13],
+  "nuevo leon": [25.67, -100.31], jalisco: [20.67, -103.35],
+  "estado de mexico": [19.29, -99.65], mexico: [19.29, -99.65],
+  "baja california": [32.52, -117.02], chihuahua: [28.63, -106.08],
+  coahuila: [25.54, -103.41], tamaulipas: [25.87, -97.5],
+  guanajuato: [20.92, -101.26], queretaro: [20.59, -100.39],
+  sonora: [29.07, -110.95], puebla: [19.04, -98.2],
+  "san luis potosi": [22.15, -100.98], yucatan: [20.97, -89.62],
+};
+
+/**
+ * Resolve an MX state label to its centroid [lat, lng]. Accent- and
+ * case-insensitive; null when the state isn't in the compact table.
+ */
+export function mxStateCoords(
+  raw: string | null | undefined,
+): [number, number] | null {
+  const v = String(raw ?? "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "");
+  if (!v) return null;
+  return MX_STATE_CENTROIDS[v] ?? null;
+}
