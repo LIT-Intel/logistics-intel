@@ -23,6 +23,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Link,
   useNavigate,
@@ -85,7 +86,15 @@ import CDPSupplyChain from "@/components/company/CDPSupplyChain";
 import MxTradePanel from "@/components/company/MxTradePanel";
 import MxDeclarationsTable from "@/components/company/MxDeclarationsTable";
 import MxPartnersPanel from "@/components/company/MxPartnersPanel";
-import { deriveMxHeaderStats, useMxCompanyProfile } from "@/api/mxProfile";
+import {
+  deriveMxHeaderStats,
+  MX_MODE_ARC_COLORS,
+  MX_MODE_ICONS,
+  mxModeKey,
+  shortGatewayLabel,
+  useMxCompanyProfile,
+} from "@/api/mxProfile";
+import { enrichCompanyLive } from "@/api/ai";
 import CDPContacts from "@/components/company/CDPContacts";
 import EditCompanyModal from "@/components/company/EditCompanyModal";
 import CDPResearch from "@/components/company/CDPResearch";
@@ -1198,6 +1207,63 @@ function ProfilePanel({ rawId }: { rawId: string }) {
   const mxHeaderStats = isMxCompany
     ? deriveMxHeaderStats(mxProfileQuery.data ?? undefined)
     : null;
+
+  // Top transport mode for the MX right rail — shares mxModeKey /
+  // MX_MODE_ICONS with MxTradePanel's chips so the rail's icon + label can
+  // never drift from the tab body below it.
+  const mxTopMode = useMemo(() => {
+    if (!isMxCompany) return null;
+    const raw = mxProfileQuery.data?.modes?.[0]?.v;
+    if (!raw) return null;
+    const key = mxModeKey(raw);
+    return {
+      label:
+        key === "other"
+          ? shortGatewayLabel(raw) || String(raw)
+          : MX_MODE_ARC_COLORS[key].label,
+      Icon: MX_MODE_ICONS[key],
+    };
+  }, [isMxCompany, mxProfileQuery.data?.modes]);
+
+  // ── MX firmographics enrichment (owner-flagged empty right rail) ────────
+  // Pedimentos carry zero firmographic fields, so MX identities lean on the
+  // same FREE Apollo org lookup the Explorer detail panel fires on open
+  // (company-live-enrich → website/phone/HQ/industry/headcount/revenue).
+  // 24h staleTime = at most one call per company per day per session cache.
+  const mxFirmoQuery = useQuery({
+    queryKey: ["mx-firmo", companyName],
+    enabled: Boolean(isMxCompany && companyName && companyName !== "Company"),
+    staleTime: 24 * 60 * 60 * 1000,
+    queryFn: async () => {
+      try {
+        const res = await enrichCompanyLive({
+          name: companyName,
+          domain: companyDomain || null,
+        });
+        return res?.enriched ? res.data : null;
+      } catch {
+        // Non-fatal — the rail keeps "—" for truly absent values.
+        return null;
+      }
+    },
+  });
+  const mxFirmo = isMxCompany ? (mxFirmoQuery.data ?? null) : null;
+
+  // HQ for MX: Apollo street/city/state when the lookup hits; else the
+  // pedimento company state (persisted by the MX materialize path) + MX.
+  const mxHqAddress = useMemo(() => {
+    if (!isMxCompany) return null;
+    const apolloHq = [mxFirmo?.street_address, mxFirmo?.city, mxFirmo?.state]
+      .filter(Boolean)
+      .join(", ");
+    if (apolloHq) return apolloHq;
+    const pedimentoState =
+      storedSelectedCompany?.state ||
+      (companyEnrichment as any)?.enrichment_params?.company_state ||
+      (companyEnrichment as any)?.enrichment_params?.hqLocation?.state ||
+      null;
+    return pedimentoState ? `${pedimentoState}, MX` : null;
+  }, [isMxCompany, mxFirmo, storedSelectedCompany, companyEnrichment]);
 
   const harveyCompanyId = bundle?.identity?.id ?? null;
   const harveySourceCompanyKey =
@@ -2822,11 +2888,16 @@ function ProfilePanel({ rawId }: { rawId: string }) {
             company={
               {
                 domain: companyDomain,
-                website: companyWebsite,
-                address: companyAddress,
+                // MX: Apollo live-enrich fills the gaps the pedimento
+                // record can't (phone / street address); the record's
+                // own domain/website still wins so the rail never
+                // disagrees with the header chip.
+                website:
+                  companyWebsite || (isMxCompany ? mxFirmo?.website : null),
+                address: companyAddress || mxHqAddress,
                 countryCode: companyCountryCode,
                 countryName: companyCountryName,
-                phone: companyPhone,
+                phone: companyPhone || (isMxCompany ? mxFirmo?.phone : null),
               } as any
             }
             kpis={
@@ -2837,7 +2908,40 @@ function ProfilePanel({ rawId }: { rawId: string }) {
                 ? { ...headerKpis, lastShipment: mxHeaderStats.lastActivity }
                 : headerKpis) as any
             }
-            profile={activeProfile as any}
+            profile={
+              // MX: pedimento identities have no ImportYeti profile, so
+              // industry / headcount / revenue backfill from the Apollo
+              // org lookup. Record values (lit_companies / enrichment)
+              // still take precedence.
+              (isMxCompany && mxFirmo
+                ? {
+                    ...((activeProfile as any) || {}),
+                    industry:
+                      (activeProfile as any)?.industry ??
+                      mxFirmo.industry ??
+                      null,
+                    employeeCount:
+                      (activeProfile as any)?.employeeCount ??
+                      mxFirmo.estimated_num_employees ??
+                      null,
+                    estimatedRevenue:
+                      (activeProfile as any)?.estimatedRevenue ??
+                      mxFirmo.annual_revenue ??
+                      null,
+                  }
+                : activeProfile) as any
+            }
+            mx={
+              isMxCompany
+                ? {
+                    primaryLane:
+                      mxHeaderStats?.primaryLane ??
+                      mxHeaderStats?.topGateway ??
+                      null,
+                    topMode: mxTopMode,
+                  }
+                : null
+            }
             ownerName={ownerName}
             ownerInitials={ownerInitials}
             lists={null}

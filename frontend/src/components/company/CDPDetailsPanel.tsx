@@ -171,6 +171,19 @@ type CDPDetailsPanelProps = {
    *  hosts the Suppliers view) when the user clicks the Top Supplier
    *  tile in the Trade Intelligence section. */
   onOpenSuppliersTab?: () => void;
+  /** MX pedimento overrides (CompanyProfileV2 passes these for
+   *  source='mx-pedimento' identities). `primaryLane` is the customs-
+   *  derived lane label ("CN → Manzanillo"); `topMode` carries the shared
+   *  MX mode icon so the rail matches the MxTradePanel chips. When set,
+   *  the Top carrier row is hidden entirely — pedimentos don't carry
+   *  carrier data, so a permanent "—" would be noise, not truth. */
+  mx?: {
+    primaryLane?: string | null;
+    topMode?: {
+      label: string;
+      Icon?: React.ComponentType<{ className?: string }>;
+    } | null;
+  } | null;
 };
 
 export default function CDPDetailsPanel({
@@ -191,6 +204,7 @@ export default function CDPDetailsPanel({
   companyId,
   savedPresent,
   onStageChange,
+  mx,
 }: CDPDetailsPanelProps) {
   const [open, setOpen] = useState({
     account: true,
@@ -548,11 +562,15 @@ export default function CDPDetailsPanel({
           onToggle={() => toggle("intel")}
         >
           <Row icon={<TrendingUp />} label="Top lane" accent>
-            {primaryLane || "—"}
+            {mx?.primaryLane || primaryLane || "—"}
           </Row>
-          <Row icon={<Ship />} label="Top carrier">
-            {topCarrier || "—"}
-          </Row>
+          {/* MX pedimentos carry no carrier field — hide the row rather
+              than render a permanent "—". */}
+          {mx ? null : (
+            <Row icon={<Ship />} label="Top carrier">
+              {topCarrier || "—"}
+            </Row>
+          )}
           {topSupplier ? (
             <div className="px-4 py-2">
               <button
@@ -578,7 +596,16 @@ export default function CDPDetailsPanel({
             </div>
           ) : null}
           <Row icon={<Package />} label="Top mode">
-            {topMode || "—"}
+            {mx?.topMode ? (
+              <span className="inline-flex items-center gap-1">
+                {mx.topMode.Icon ? (
+                  <mx.topMode.Icon className="h-3 w-3 shrink-0 text-slate-500" />
+                ) : null}
+                <span className="truncate">{mx.topMode.label}</span>
+              </span>
+            ) : (
+              topMode || "—"
+            )}
           </Row>
           <Row icon={<Container />} label="Dominant container">
             {profile?.topContainerLength || "—"}
