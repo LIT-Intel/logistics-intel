@@ -46,6 +46,7 @@ import {
   ArrowUpRight,
   Globe2,
   Filter,
+  Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useSearchParams, useNavigate } from 'react-router-dom';
@@ -74,7 +75,8 @@ import { lookupCoords } from '@/features/pulse/explore/coordLookup';
 // Lazy-loaded so maplibre-gl (~800KB) ships in its own chunk instead of the
 // first-load bundle for this default landing route.
 const ExploreMap = lazy(() => import('@/features/pulse/explore/ExploreMapMaplibre'));
-import { normalizeCompanySearchResults } from '@/lib/explorer/normalizeCompanySearch';
+import { normalizeCompanySearchResults, extractStateCode } from '@/lib/explorer/normalizeCompanySearch';
+import { normalizeName } from '@/lib/companyResolver';
 import { countryFlag, compactLocation } from '@/lib/explorer/countryFlags';
 import CountryFlag from './CountryFlag';
 import { unlockCompany } from '@/api/entitlements';
@@ -116,6 +118,27 @@ const toShipper = (row) => ({
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isUuid = (v) => typeof v === 'string' && UUID_RE.test(v);
+
+// Same-company identity check for name-based live-search resolution. Lesson
+// from the FMCSA resolver bug: taking the first prefix hit WITHOUT verifying
+// it's actually the same company produces garbage profiles (the owner's
+// screenshot: an NA row opened a literal "Company" / company.com record).
+// Both names are normalized (lowercase, punctuation + corporate suffixes
+// stripped via companyResolver.normalizeName); a candidate passes only on
+// exact equality OR when one name is a token-prefix of the other with at
+// most 2 extra trailing tokens ("Tenaris Global Services Usa" matches
+// "Tenaris Global Services", not "Tenaris Steel Mexico SA").
+const isSameCompanyName = (a, b) => {
+  const na = normalizeName(String(a ?? ''));
+  const nb = normalizeName(String(b ?? ''));
+  if (!na || !nb) return false; // placeholder names normalize to '' — never match
+  if (na === nb) return true;
+  const ta = na.split(' ');
+  const tb = nb.split(' ');
+  const [short, long] = ta.length <= tb.length ? [ta, tb] : [tb, ta];
+  if (long.length - short.length > 2) return false;
+  return short.every((t, i) => t === long[i]);
+};
 
 // ── NA cross-border Market mode (region=MX + Market) ─────────────────────
 // Searches lit_na_market_search — US companies importing FROM Mexico/Canada.
@@ -219,6 +242,10 @@ export default function CompanySearchTab() {
   // Inline detail panel — clicking a result opens this in place (Google-Maps
   // behavior) instead of navigating straight to the full profile page.
   const [detailRow, setDetailRow] = useState(null);
+  // Row id currently being RESOLVED by onOpenDetails (na:/keyless rows run a
+  // live lookup before navigating) — drives the spinner/disabled state on the
+  // clicked Open button in the list, cards, and map-bubble popover.
+  const [openingId, setOpeningId] = useState(null);
   // Save-to-list: array of lit_companies ids to save (opens the modal), or null.
   const [saveModalIds, setSaveModalIds] = useState(null);
   // Cross-border intel for the open MX company — rendered IN the detail panel
@@ -360,11 +387,16 @@ export default function CompanySearchTab() {
     // georgia") → 'market'.
     const resolvedMode = opts?.mode ?? (modeTouched.current ? searchMode : (looksLikeCompanyName(q) ? 'companies' : 'market'));
     if (resolvedMode !== searchMode) setSearchMode(resolvedMode);
+    // Region override — the na:-row open fallback must run the US (ImportYeti)
+    // Companies search even though the user is sitting on the MX toggle; state
+    // updates land too late for THIS invocation, so thread it through opts.
+    const resolvedRegion = opts?.region ?? region;
+    if (resolvedRegion !== region) setRegion(resolvedRegion);
 
     // ── MX region + Market mode: NA cross-border dataset (US companies
     //    importing FROM Mexico/Canada) via the lit_na_market_search RPC.
     //    Entirely separate from the US market path below, which is untouched. ──
-    if (resolvedMode === 'market' && region === 'mx') {
+    if (resolvedMode === 'market' && resolvedRegion === 'mx') {
       handledQRef.current = q;
       setSearching(true);
       setError('');
@@ -461,7 +493,7 @@ export default function CompanySearchTab() {
     // ── Mexico region: live PowerQuery company search (same on-demand model as
     //    US — results are cached server-side as they come back). Geocoded rows
     //    render on the same map/list/detail surface. ──
-    if (region === 'mx') {
+    if (resolvedRegion === 'mx') {
       // Ranking endpoints don't return the geocode that declarations carry, so
       // fall back to state centroids (else a jittered country centroid) — every
       // MX result gets a map pin. Declarations later refine to real addresses.
@@ -732,6 +764,55 @@ export default function CompanySearchTab() {
     }
   }, []);
 
+  // The blessed "open an ImportYeti-keyed result" path — profile pre-warm,
+  // auto-save, credits-v2 unlock gate, SPA navigate. Shared by regular
+  // Companies-mode rows AND na: rows once their live IY identity is verified,
+  // so both open flows stay byte-for-byte identical.
+  const openIyRow = useCallback(async (row) => {
+    const proceed = () => {
+      // Pre-warm the profile snapshot in the BACKGROUND. Never await it — it's a
+      // 10-15s importyeti-proxy call, and awaiting it before navigating made the
+      // click do nothing for many seconds (users hard-refreshed to recover).
+      getIyCompanyProfile({ companyKey: row.source_company_key }).catch(() => {});
+      // Auto-save on open — core behavior from the legacy Search page that the
+      // Explorer rewrite (daf839c) dropped. Skip if already saved; never block
+      // navigation (cap-reached / network errors are non-fatal here).
+      if (!row.is_saved) {
+        saveCompanyToCommandCenter({
+          shipper: toShipper(row),
+          profile: null,
+          stage: 'prospect',
+          source: 'importyeti',
+        }).catch(() => { /* non-fatal: explicit Save button still available */ });
+      }
+      const slug = encodeURIComponent(row.source_company_key || row.id);
+      // SPA navigation — instant, keeps the React app mounted. The previous
+      // window.location.href did a full document reload, which read as a hang.
+      navigate(`/app/companies/${slug}`);
+    };
+
+    // Credits v2 unlock gate (§7). While credits_metering_enabled is OFF this is
+    // a no-op: the endpoint returns metering_off, we cache it, and every open is
+    // instant. When metering is ON, unlocking a NEW company costs 1 credit at
+    // the workspace level; re-opening an already-owned company is free. On an
+    // insufficient balance we block the open and offer a top-up rather than
+    // silently failing. unlockCompany() fails OPEN on any transient error.
+    if (meteringKnownOff) { proceed(); return; }
+    const res = await unlockCompany({
+      source_company_key: row.source_company_key,
+      company_id: row.company_id ?? null,
+      company_name: row.company_name ?? null,
+    });
+    if (res.ok) {
+      if (res.meteringOff) meteringKnownOff = true;
+      proceed();
+    } else {
+      toast.error(res.message || 'Not enough credits to unlock this company.', {
+        action: { label: 'Add credits', onClick: () => navigate('/app/billing/credits') },
+      });
+    }
+  }, [navigate]);
+
   const onOpenDetails = useCallback(async (row, e) => {
     e?.stopPropagation?.();
 
@@ -821,23 +902,89 @@ export default function CompanySearchTab() {
       }
       return;
     }
+    // ── NA cross-border Market rows (`na:` ids from lit_na_market_search) ──
+    // These carry NO source_company_key, and the old fallthrough below took
+    // the FIRST searchShippers hit with a key — no identity check — so IY's
+    // fuzzy ranking happily navigated to an unrelated or literal placeholder
+    // "Company"/company.com record (owner screenshot: Augusta Sportswear).
+    // Same failure class as the FMCSA name-resolution bug. Now: run the FREE
+    // live IY company search (classic company-search endpoint, 0 credits) and
+    // open a candidate ONLY if it verifies as the same company, preferring a
+    // state match. No confident match → visible Companies search with live
+    // candidates. NEVER land on a placeholder profile.
+    if (String(row.id || '').startsWith('na:')) {
+      const fullName = String(row.raw?.name || row.company_name || '').trim();
+      if (!fullName) return;
+      setOpeningId(row.id);
+      const tid = toast.loading(`Opening ${fullName}…`);
+      let match = null;
+      try {
+        const resp = await searchShippers({ q: fullName, page: 1, pageSize: 10 });
+        const verified = (resp?.results || []).filter(
+          (h) => h?.key && isSameCompanyName(fullName, h.name || h.title || ''),
+        );
+        // Prefer the candidate in the same state as the NA row (full state
+        // names like "Georgia" and messy IY blobs both resolve via
+        // extractStateCode); otherwise the top verified hit.
+        const rowState = extractStateCode(row.state);
+        match = (rowState
+          ? verified.find((h) => (extractStateCode(h.state) ?? extractStateCode(h.city)) === rowState)
+          : null) || verified[0] || null;
+      } catch { match = null; /* fall through to visible search */ }
+      toast.dismiss(tid);
+      if (match) {
+        // Confident identity — open EXACTLY like a regular Companies-mode
+        // result (pre-warm + auto-save + unlock gate + navigate) via the
+        // shared openIyRow path.
+        try {
+          await openIyRow({
+            ...row,
+            id: String(match.key),
+            company_name: match.name || match.title || fullName,
+            source_company_key: match.key,
+            company_id: match.companyId ?? null,
+            domain: match.domain ?? match.website ?? row.domain ?? null,
+            is_saved: false,
+            raw: match,
+          });
+        } finally {
+          setOpeningId(null);
+        }
+        return;
+      }
+      // No confident match — do NOT navigate. Drop into the visible live
+      // Companies search (US region — na: rows are US importers, and the UI
+      // sits on the MX toggle here) so the user picks from real candidates.
+      setOpeningId(null);
+      toast.info(`Showing live matches for ${fullName}`);
+      modeTouched.current = true;
+      setSearchMode('companies');
+      setQuery(fullName);
+      setDetailRow(null);
+      runSearch(fullName, { mode: 'companies', region: 'us' });
+      return;
+    }
+
     if (!row.source_company_key) {
       // Resolve the live company SILENTLY and go straight to its profile —
       // dropping the user into a second search was double work (owner-flagged,
       // Lintech). Fallback: if the live lookup finds nothing, run the visible
       // Companies search so they at least see why.
+      setOpeningId(row.id);
       const tid = toast.loading(`Opening ${row.company_name}…`);
       try {
         const resp = await searchShippers({ q: row.company_name, page: 1, pageSize: 3 });
         const hit = (resp?.results || []).find((h) => h.key);
         if (hit?.key) {
           toast.dismiss(tid);
+          setOpeningId(null);
           getIyCompanyProfile({ companyKey: hit.key }).catch(() => {});
           navigate(`/app/companies/${encodeURIComponent(hit.key)}`);
           return;
         }
       } catch { /* fall through to visible search */ }
       toast.dismiss(tid);
+      setOpeningId(null);
       modeTouched.current = true;
       setSearchMode('companies');
       setQuery(row.company_name);
@@ -846,49 +993,8 @@ export default function CompanySearchTab() {
       return;
     }
 
-    const proceed = () => {
-      // Pre-warm the profile snapshot in the BACKGROUND. Never await it — it's a
-      // 10-15s importyeti-proxy call, and awaiting it before navigating made the
-      // click do nothing for many seconds (users hard-refreshed to recover).
-      getIyCompanyProfile({ companyKey: row.source_company_key }).catch(() => {});
-      // Auto-save on open — core behavior from the legacy Search page that the
-      // Explorer rewrite (daf839c) dropped. Skip if already saved; never block
-      // navigation (cap-reached / network errors are non-fatal here).
-      if (!row.is_saved) {
-        saveCompanyToCommandCenter({
-          shipper: toShipper(row),
-          profile: null,
-          stage: 'prospect',
-          source: 'importyeti',
-        }).catch(() => { /* non-fatal: explicit Save button still available */ });
-      }
-      const slug = encodeURIComponent(row.source_company_key || row.id);
-      // SPA navigation — instant, keeps the React app mounted. The previous
-      // window.location.href did a full document reload, which read as a hang.
-      navigate(`/app/companies/${slug}`);
-    };
-
-    // Credits v2 unlock gate (§7). While credits_metering_enabled is OFF this is
-    // a no-op: the endpoint returns metering_off, we cache it, and every open is
-    // instant. When metering is ON, unlocking a NEW company costs 1 credit at
-    // the workspace level; re-opening an already-owned company is free. On an
-    // insufficient balance we block the open and offer a top-up rather than
-    // silently failing. unlockCompany() fails OPEN on any transient error.
-    if (meteringKnownOff) { proceed(); return; }
-    const res = await unlockCompany({
-      source_company_key: row.source_company_key,
-      company_id: row.company_id ?? null,
-      company_name: row.company_name ?? null,
-    });
-    if (res.ok) {
-      if (res.meteringOff) meteringKnownOff = true;
-      proceed();
-    } else {
-      toast.error(res.message || 'Not enough credits to unlock this company.', {
-        action: { label: 'Add credits', onClick: () => navigate('/app/billing/credits') },
-      });
-    }
-  }, [navigate, runSearch]);
+    return openIyRow(row);
+  }, [navigate, runSearch, openIyRow]);
 
   const onRowClick = useCallback((row) => {
     setSelectedCompany({
@@ -1289,7 +1395,14 @@ export default function CompanySearchTab() {
             <BubblePopover
               row={hoverRow}
               pos={hoverPos}
-              onOpen={(e) => { dismissHover(); onOpenDetails(hoverRow, e); }}
+              opening={openingId != null && openingId === hoverRow.id}
+              onOpen={(e) => {
+                // Keyless rows (na:/market) resolve their live identity before
+                // navigating — keep the popover mounted so its Open button can
+                // show the spinner; dismiss immediately only for direct opens.
+                if (hoverRow.source_company_key) dismissHover();
+                onOpenDetails(hoverRow, e);
+              }}
               onClose={dismissHover}
               onCardEnter={clearHoverTimer}
               onCardLeave={() => scheduleHide(120)}
@@ -1337,6 +1450,7 @@ export default function CompanySearchTab() {
                   onRowClick={onRowClick}
                   onSave={onSave}
                   onOpen={onOpenDetails}
+                  openingId={openingId}
                 />
               ) : busy ? (
                 <PanelBusy />
@@ -1802,7 +1916,7 @@ function ViewToggleBtn({ active, onClick, icon, label }) {
 const LIST_GRID_COLS =
   'minmax(200px,2.4fr) minmax(120px,1.3fr) minmax(110px,1.2fr) minmax(150px,1.5fr) 80px 100px 70px 130px';
 
-function ListView({ rows, onRowClick, onSave, onOpen }) {
+function ListView({ rows, onRowClick, onSave, onOpen, openingId = null }) {
   return (
     <div>
       <div className="divide-y divide-slate-100">
@@ -1810,6 +1924,7 @@ function ListView({ rows, onRowClick, onSave, onOpen }) {
           <ListRow
             key={row.id}
             row={row}
+            opening={openingId != null && openingId === row.id}
             onClick={() => onRowClick(row)}
             onSave={(e) => onSave(row, e)}
             onOpen={(e) => onOpen(row, e)}
@@ -1832,7 +1947,7 @@ function HeaderCell({ children, align = 'left' }) {
   );
 }
 
-function ListRow({ row, onClick, onSave, onOpen }) {
+function ListRow({ row, onClick, onSave, onOpen, opening = false }) {
   const loc = compactLocation(row.city, row.state, row.country);
   const annualSales = row.revenue != null && Number.isFinite(row.revenue)
     ? formatMoney(row.revenue)
@@ -1890,11 +2005,14 @@ function ListRow({ row, onClick, onSave, onOpen }) {
               </button>
               <button
                 type="button"
+                disabled={opening}
                 onClick={(e) => { e.stopPropagation(); onOpen(e); }}
                 title="Open full profile"
-                className="inline-flex h-7 items-center gap-1 rounded-lg bg-blue-600 px-2.5 text-[11px] font-semibold text-white shadow-sm transition hover:bg-blue-700 active:scale-[0.96] motion-reduce:active:scale-100"
+                className="inline-flex h-7 items-center gap-1 rounded-lg bg-blue-600 px-2.5 text-[11px] font-semibold text-white shadow-sm transition hover:bg-blue-700 active:scale-[0.96] motion-reduce:active:scale-100 disabled:cursor-wait disabled:opacity-70"
               >
-                Open <ArrowUpRight size={12} />
+                {opening
+                  ? (<>Opening <Loader2 size={12} className="animate-spin" /></>)
+                  : (<>Open <ArrowUpRight size={12} /></>)}
               </button>
             </div>
           </div>
@@ -1911,8 +2029,9 @@ function ListRow({ row, onClick, onSave, onOpen }) {
             {showProfileHint ? (
               <button
                 type="button"
+                disabled={opening}
                 onClick={(e) => { e.stopPropagation(); onOpen(e); }}
-                className="font-body inline-flex items-center gap-0.5 text-[10px] text-blue-600 hover:text-blue-800"
+                className="font-body inline-flex items-center gap-0.5 text-[10px] text-blue-600 hover:text-blue-800 disabled:cursor-wait disabled:opacity-60"
               >
                 details on profile <ExternalLink size={9} />
               </button>
@@ -2091,7 +2210,7 @@ function MiniStat({ label, value }) {
 // parent) keep the card alive while the user moves onto it. The X
 // button is a force-close belt to dismiss the popover even when a
 // MapLibre marker re-render orphans the original mouseleave listener.
-function BubblePopover({ row, pos, onOpen, onClose, onCardEnter, onCardLeave }) {
+function BubblePopover({ row, pos, onOpen, onClose, onCardEnter, onCardLeave, opening = false }) {
   const loc = compactLocation(row.city, row.state, row.country);
   return (
     <div
@@ -2135,12 +2254,13 @@ function BubblePopover({ row, pos, onOpen, onClose, onCardEnter, onCardLeave }) 
 
         <button
           type="button"
+          disabled={opening}
           onMouseDown={(e) => e.preventDefault()}
           onClick={onOpen}
-          className="font-display mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-blue-600 px-2.5 py-1.5 text-[11px] font-semibold text-white transition hover:bg-blue-700 active:scale-[0.97] motion-reduce:active:scale-100"
+          className="font-display mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-blue-600 px-2.5 py-1.5 text-[11px] font-semibold text-white transition hover:bg-blue-700 active:scale-[0.97] motion-reduce:active:scale-100 disabled:cursor-wait disabled:opacity-70"
         >
-          <ExternalLink size={11} />
-          Open profile
+          {opening ? <Loader2 size={11} className="animate-spin" /> : <ExternalLink size={11} />}
+          {opening ? 'Opening…' : 'Open profile'}
         </button>
       </div>
       {/* Small caret pointing down to the bubble. */}
