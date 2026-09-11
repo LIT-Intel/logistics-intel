@@ -69,7 +69,7 @@ import { getListCompanies } from '@/features/pulse/pulseListsApi';
 import InsightsPanel from '@/features/pulse/explore/InsightsPanel';
 import { FolderPlus, Sparkles as SparklesIcon } from 'lucide-react';
 import { enrichCompanyLive } from '@/api/ai';
-import { looksLikeCompanyName, parseExploreQuery, localExtractFilters, parsedToFilters, hasAnyFilter } from '@/api/pulse-explore-parse';
+import { looksLikeCompanyName, parseExploreQuery, localExtractFilters, parsedToFilters, hasAnyFilter, detectNaOrigin, stripStateTypoTokens } from '@/api/pulse-explore-parse';
 import { useExploreAccounts } from '@/features/pulse/explore/useExploreAccounts';
 import { lookupCoords } from '@/features/pulse/explore/coordLookup';
 // Lazy-loaded so maplibre-gl (~800KB) ships in its own chunk instead of the
@@ -240,8 +240,11 @@ const naResidualQuery = (q, stateCodes = []) => {
     if (nm) s = s.replace(new RegExp(`\\b${nm.replace(/ /g, '\\s+')}\\b`, 'gi'), ' ');
     s = s.replace(new RegExp(`\\b${code}\\b`, 'g'), ' ');
   }
-  s = s.replace(/\b(compan(?:y|ies)|importers?|imports?|importing|exporters?|buyers?|shippers?|from|in|near|the|mexico|mexican|canada|canadian|us|usa|american|united states)\b/gi, ' ');
-  return s.replace(/[^A-Za-z0-9&' -]/g, ' ').replace(/\s+/g, ' ').trim();
+  s = s.replace(/\b(compan(?:y|ies)|importers?|imports?|importing|exporters?|buyers?|shippers?|suppliers?|sourcing|sourced?|from|to|in|into|near|the|and|that|with|out of|cross[\s-]?border|mexico|mexican|canada|canadian|us|usa|american|united states)\b/gi, ' ');
+  s = s.replace(/[^A-Za-z0-9&' -]/g, ' ').replace(/\s+/g, ' ').trim();
+  // Drop tokens that are typos of the resolved states ("geogia" after GA
+  // matched via the fuzzy pass) — they'd poison the keyword filter.
+  return stripStateTypoTokens(s, stateCodes);
 };
 
 export default function CompanySearchTab() {
@@ -437,10 +440,14 @@ export default function CompanySearchTab() {
     const resolvedRegion = opts?.region ?? region;
     if (resolvedRegion !== region) setRegion(resolvedRegion);
 
-    // ── MX region + Market mode: NA cross-border dataset (US companies
-    //    importing FROM Mexico/Canada) via the lit_na_market_search RPC.
-    //    Entirely separate from the US market path below, which is untouched. ──
-    if (resolvedMode === 'market' && resolvedRegion === 'mx') {
+    // ── NA cross-border dataset (US companies importing FROM Mexico/Canada)
+    //    via the lit_na_market_search RPC. Reached two ways: the MX region
+    //    toggle, OR an origin-intent query on ANY region ("companies
+    //    importing from canada to georgia") — the US market directory has no
+    //    shipment-origin dimension, so those queries can only be answered
+    //    here. Entirely separate from the US market path below. ──
+    const naOrigin = resolvedMode === 'market' ? detectNaOrigin(q) : null;
+    if (resolvedMode === 'market' && (resolvedRegion === 'mx' || naOrigin)) {
       handledQRef.current = q;
       setSearching(true);
       setError('');
@@ -458,7 +465,7 @@ export default function CompanySearchTab() {
         const mf = localExtractFilters(q);
         const stateCodes = mf?.geo?.states ?? [];
         const states = stateCodes.map((c) => US_CODE_TO_STATE[c]).filter(Boolean);
-        const origin = /\bcanad(a|ian)\b/i.test(q) ? 'Canada' : 'Mexico';
+        const origin = naOrigin || (/\bcanad(a|ian)\b/i.test(q) ? 'Canada' : 'Mexico');
         const residual = naResidualQuery(q, stateCodes);
         const { data, error: rpcErr } = await supabase.rpc('lit_na_market_search', {
           p_origin: origin,
@@ -524,10 +531,23 @@ export default function CompanySearchTab() {
         return next;
       }, { replace: true });
       let mf = localExtractFilters(q);
-      if (!hasAnyFilter(mf)) {
-        try { mf = parsedToFilters(await parseExploreQuery(q)); } catch { /* keep local */ }
+      // Deterministic parse paints results IMMEDIATELY when it found
+      // anything; the LLM refine below then merges in whatever the regex
+      // layer missed (industry synonyms, typos, cities, size ranges)
+      // without ever blocking the first paint. When the regex found
+      // nothing at all, the LLM parse is the whole answer — its output
+      // reaches the filters now (parsedToFilters unwraps the {ok,parsed}
+      // envelope; it silently produced {} for months).
+      if (hasAnyFilter(mf)) setMarketFilters(mf);
+      if (!hasAnyFilter(mf) || !mf.industry?.length) {
+        let merged = mf;
+        try {
+          const llm = parsedToFilters(await parseExploreQuery(q));
+          // Deterministic wins on conflict; LLM fills the gaps.
+          merged = { ...llm, ...mf, geo: { ...(llm.geo || {}), ...(mf.geo || {}) } };
+        } catch { /* LLM cold or down — the deterministic result stands */ }
+        if (handledQRef.current === q) setMarketFilters(merged);
       }
-      setMarketFilters(mf);
       return;
     }
     // Mark this q handled so the ?q= effect (which fires when runSearch writes
@@ -1803,7 +1823,7 @@ function PanelEmpty({ mode, query, noFilters }) {
       </p>
       <p className="font-body max-w-[270px] text-[11.5px] leading-snug text-slate-500">
         {noFilters
-          ? <>We couldn&apos;t turn &ldquo;{query}&rdquo; into a market filter. Try a location or sector — e.g. &ldquo;manufacturing companies in Texas&rdquo;.</>
+          ? <>We couldn&apos;t turn &ldquo;{query}&rdquo; into a market filter. Try a place, an industry, or an origin — e.g. &ldquo;manufacturing companies in Texas&rdquo;, &ldquo;furniture importers in Georgia&rdquo;, or &ldquo;companies importing from Mexico&rdquo;.</>
           : isMarket
             ? <>Nothing matched &ldquo;{query}&rdquo;. Broaden the location or industry, or clear a filter.</>
             : <>No shipper named &ldquo;{query}&rdquo;. Check the spelling, or switch to <span className="font-semibold text-slate-700">Market</span> to browse by location &amp; industry.</>}
