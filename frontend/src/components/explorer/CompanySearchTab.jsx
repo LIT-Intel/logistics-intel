@@ -240,7 +240,7 @@ const naResidualQuery = (q, stateCodes = []) => {
     if (nm) s = s.replace(new RegExp(`\\b${nm.replace(/ /g, '\\s+')}\\b`, 'gi'), ' ');
     s = s.replace(new RegExp(`\\b${code}\\b`, 'g'), ' ');
   }
-  s = s.replace(/\b(compan(?:y|ies)|importers?|imports?|importing|exporters?|buyers?|shippers?|suppliers?|sourcing|sourced?|from|to|in|into|near|the|and|that|with|out of|cross[\s-]?border|mexico|mexican|canada|canadian|us|usa|american|united states)\b/gi, ' ');
+  s = s.replace(/\b(compan(?:y|ies)|importers?|imports?|importing|exporters?|buyers?|shippers?|suppliers?|sourcing|sourced?|from|to|of|for|in|into|near|the|and|that|with|out of|cross[\s-]?border|mexico|mexican|canada|canadian|us|usa|american|united states)\b/gi, ' ');
   s = s.replace(/[^A-Za-z0-9&' -]/g, ' ').replace(/\s+/g, ' ').trim();
   // Drop tokens that are typos of the resolved states ("geogia" after GA
   // matched via the fuzzy pass) — they'd poison the keyword filter.
@@ -346,6 +346,14 @@ export default function CompanySearchTab() {
   const [region, setRegion] = useState('us');
   const modeTouched = useRef(false); // stop auto-detect once the user toggles
   const [marketFilters, setMarketFilters] = useState({});
+  // True when the LAST market search was routed to the NA cross-border
+  // dataset by ORIGIN INTENT ("importing from canada …") while the region
+  // toggle sat on US. The display layer picks rows by `naMarket` (region
+  // toggle) — without this flag the NA branch's results were computed and
+  // then silently discarded in favor of the empty US-directory rows
+  // (owner repro: Canada queries showed "Add a place or industry" while
+  // the RPC had returned matches).
+  const [naRouted, setNaRouted] = useState(false);
 
   // List vs Cards view inside the panel. Default LIST per user spec.
   const initialView = useMemo(() => {
@@ -447,6 +455,9 @@ export default function CompanySearchTab() {
     //    shipment-origin dimension, so those queries can only be answered
     //    here. Entirely separate from the US market path below. ──
     const naOrigin = resolvedMode === 'market' ? detectNaOrigin(q) : null;
+    // The display layer routes rows by this flag — keep it in sync for
+    // EVERY branch, or origin-routed results get discarded (see naRouted).
+    setNaRouted(resolvedMode === 'market' && resolvedRegion !== 'mx' && !!naOrigin);
     if (resolvedMode === 'market' && (resolvedRegion === 'mx' || naOrigin)) {
       handledQRef.current = q;
       setSearching(true);
@@ -467,15 +478,24 @@ export default function CompanySearchTab() {
         const states = stateCodes.map((c) => US_CODE_TO_STATE[c]).filter(Boolean);
         const origin = naOrigin || (/\bcanad(a|ian)\b/i.test(q) ? 'Canada' : 'Mexico');
         const residual = naResidualQuery(q, stateCodes);
-        const { data, error: rpcErr } = await supabase.rpc('lit_na_market_search', {
+        const runRpc = (pq) => supabase.rpc('lit_na_market_search', {
           p_origin: origin,
           p_states: states.length ? states : null,
           p_hs: null,
           p_industry: null,
-          p_q: residual.length >= 3 ? residual : null,
+          p_q: pq,
           p_min_shipments: 0,
           p_limit: 300,
         });
+        let broadenedFrom = null;
+        let { data, error: rpcErr } = await runRpc(residual.length >= 3 ? residual : null);
+        if (!rpcErr && (data || []).length === 0 && residual.length >= 3) {
+          // Keyword matched nothing — Panjiva goods text rarely echoes the
+          // user's phrasing ("auto parts" vs "PARTS, AUTOMOTIVE"). Broaden
+          // to origin + state instead of dead-ending on zero results.
+          ({ data, error: rpcErr } = await runRpc(null));
+          if ((data || []).length > 0) broadenedFrom = residual;
+        }
         if (rpcErr) {
           // Server-side gate: the RPC raises when the workspace lacks a paid
           // plan + the Mexico Trade Intelligence add-on.
@@ -509,6 +529,9 @@ export default function CompanySearchTab() {
         setUnmappedCount(rows.filter((x) => x.latitude == null).length);
         setAnalytics(null);
         if (rows.length > 0) setPanelOpen(true);
+        if (broadenedFrom) {
+          setError(`No goods descriptions matched “${broadenedFrom}” — showing all ${origin}-origin importers${states.length ? ` in ${states.join(', ')}` : ''} instead.`);
+        }
         if (rows.length === 0) setError(`No US importers matched "${q}". Try a state ("importers in Texas") or a product keyword.`);
       } catch (err) {
         setError(err?.message || 'Cross-border search failed.');
@@ -1147,7 +1170,7 @@ export default function CompanySearchTab() {
   // MX-region Market mode is served by lit_na_market_search inside runSearch
   // (rows land in `results`, like Companies mode) — so the useExploreAccounts
   // US-market fetch must stay dark and the display source stays `results`.
-  const naMarket = region === 'mx' && searchMode === 'market';
+  const naMarket = (region === 'mx' || naRouted) && searchMode === 'market';
   const marketEnabled = searchMode === 'market' && !naMarket && hasAnyFilter(marketFilters);
   const { data: marketData, isLoading: marketLoading } = useExploreAccounts(marketFilters, null, {
     enabled: marketEnabled,

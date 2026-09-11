@@ -281,8 +281,8 @@ function CDPSupplyChainBody({
         // the row falls back to the country-text fallback in that case.
         return {
           displayLabel: dl,
-          fromMeta: resolveEndpoint(rawFrom),
-          toMeta: resolveEndpoint(rawTo),
+          fromMeta: resolveEndpointLoose(rawFrom),
+          toMeta: resolveEndpointLoose(rawTo),
           shipments: Number(r?.shipments) || 0,
           teu: Number(r?.teu) || 0,
           spend: null,
@@ -2798,6 +2798,28 @@ function firstCentroidHit(
   return null;
 }
 
+/**
+ * resolveEndpoint(), but tolerant of city-qualified strings. Rollup rows and
+ * snapshot lanes frequently carry "La Ceiba, Honduras" / "Puerto Cortes,
+ * Honduras" as the origin — the strict resolver only knows countries, so
+ * every such row counted as UNRESOLVED and the profile hero map rendered
+ * zero arcs while the overlay text happily described the top lane (owner
+ * repro: Dole Fresh Fruit, "2 unresolved routes", empty map). Fall back to
+ * the segment after the last comma (the country) before giving up.
+ */
+function resolveEndpointLoose(raw: unknown) {
+  const s = String(raw ?? "").trim();
+  if (!s) return null;
+  const direct = resolveEndpoint(s);
+  if (direct?.coords) return direct;
+  const ix = s.lastIndexOf(",");
+  if (ix > 0) {
+    const tail = resolveEndpoint(s.slice(ix + 1).trim());
+    if (tail?.coords) return tail;
+  }
+  return direct;
+}
+
 type ScopedLaneData = {
   /** Country-pair lanes shaped like canonicalizeLanes() output. */
   pairs: any[];
@@ -2822,8 +2844,8 @@ function buildPairsFromRollup(rows: CompanyLaneMonthRow[]): ScopedLaneData {
   let unresolvedCount = 0;
   let unresolvedShipments = 0;
   for (const r of rows) {
-    const from = resolveEndpoint(r.origin_country);
-    const to = resolveEndpoint(r.dest_country || "United States");
+    const from = resolveEndpointLoose(r.origin_country);
+    const to = resolveEndpointLoose(r.dest_country || "United States");
     if (!from?.coords || !to?.coords) {
       unresolvedCount += 1;
       unresolvedShipments += Number(r.shipments) || 0;
@@ -2911,8 +2933,8 @@ function buildPairsFromSampleBols(
   for (const { bol, d } of dated) {
     const originRaw = getBolOrigin(bol);
     const destRaw = getBolDestination(bol);
-    const from = resolveEndpoint(originRaw === "—" ? null : originRaw);
-    const to = resolveEndpoint(destRaw === "—" ? null : destRaw);
+    const from = resolveEndpointLoose(originRaw === "—" ? null : originRaw);
+    const to = resolveEndpointLoose(destRaw === "—" ? null : destRaw);
     if (!from?.coords || !to?.coords) {
       unresolvedCount += 1;
       continue;
@@ -2980,8 +3002,8 @@ function buildLaneMonthsFromRollup(
 ): Map<string, Record<string, number>> {
   const m = new Map<string, Record<string, number>>();
   for (const r of rows) {
-    const from = resolveEndpoint(r.origin_country);
-    const to = resolveEndpoint(r.dest_country || "United States");
+    const from = resolveEndpointLoose(r.origin_country);
+    const to = resolveEndpointLoose(r.dest_country || "United States");
     if (!from || !to) continue;
     const pairKey = `${from.canonicalKey}::${to.canonicalKey}`;
     const mk = String(r.month).slice(0, 7);
@@ -2998,8 +3020,8 @@ function buildLaneMonthsFromBols(
 ): Map<string, Record<string, number>> {
   const m = new Map<string, Record<string, number>>();
   for (const { bol, d } of dated) {
-    const from = resolveEndpoint(getBolOrigin(bol));
-    const to = resolveEndpoint(getBolDestination(bol));
+    const from = resolveEndpointLoose(getBolOrigin(bol));
+    const to = resolveEndpointLoose(getBolDestination(bol));
     if (!from || !to) continue;
     const pairKey = `${from.canonicalKey}::${to.canonicalKey}`;
     const mk = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;

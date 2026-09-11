@@ -899,12 +899,16 @@ function ProfilePanel({ rawId }: { rawId: string }) {
           if (cancelled) return;
           try { cached = await getSavedCompanyShellOnly(companyId); } catch { /* poll below */ }
           // The snapshot write behind getIyCompanyProfile is eventually
-          // consistent and can take 10-20s — the old 5×1.5s poll (7.5s) often
-          // expired first, which is exactly the "blank until hard refresh"
-          // report. Poll longer (10×2s = 20s), bounded + cancel-aware, and
-          // ALWAYS (even after a fetch error, since the write may still land).
-          for (let i = 0; i < 10 && !(cached.profile || cached.routeKpis); i++) {
-            await new Promise((r) => setTimeout(r, 2000));
+          // consistent — usually seconds, but under IY latency or retries it
+          // can run past 20s, and a poll that expires first strands the page
+          // on the seed/synthetic shell until a hard refresh (owner repro:
+          // Dole Fresh Fruit — snapshot landed at T+3s yet the page never
+          // picked it up; a later slow pull would hit this for real). Poll
+          // adaptively: 10×2s for the common case, then 8×5s for stragglers
+          // (~60s total), bounded + cancel-aware, and ALWAYS (even after a
+          // fetch error, since the server-side write may still land).
+          for (let i = 0; i < 18 && !(cached.profile || cached.routeKpis); i++) {
+            await new Promise((r) => setTimeout(r, i < 10 ? 2000 : 5000));
             if (cancelled) return;
             try {
               cached = await getSavedCompanyShellOnly(companyId);
