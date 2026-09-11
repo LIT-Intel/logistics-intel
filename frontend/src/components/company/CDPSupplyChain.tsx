@@ -1,5 +1,7 @@
 import {
+  createContext,
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -144,7 +146,16 @@ type CDPSupplyChainProps = {
    *  passes the full series here. Cadence, the monthly reconciliation series
    *  and the map's year/month scope options all read this. (CEO P0 2026-08-14) */
   fullTimeSeries?: any[] | null;
+  /** True while a background snapshot pull is in flight (seed-backed first
+   *  open from search, or a refresh). Empty modules render syncing skeletons
+   *  instead of "No data yet — try Refresh Intel", so a freshly-opened
+   *  profile reads as loading, not broken. */
+  syncing?: boolean;
 };
+
+/** Read by EmptyMessage. Context, not prop-drilling — the ~14 empty states
+ *  live in deeply nested section components. */
+const SupplyChainSyncContext = createContext(false);
 
 /**
  * Phase 3 (rev. Phase 4) — Supply Chain tab.
@@ -171,7 +182,9 @@ export default function CDPSupplyChain(props: CDPSupplyChainProps) {
   // body component so the body itself can `useSupplyChainFilter()`.
   return (
     <SupplyChainFilterProvider>
-      <CDPSupplyChainBody {...props} />
+      <SupplyChainSyncContext.Provider value={Boolean(props.syncing)}>
+        <CDPSupplyChainBody {...props} />
+      </SupplyChainSyncContext.Provider>
     </SupplyChainFilterProvider>
   );
 }
@@ -6992,6 +7005,25 @@ function YoyPill({ value }: { value: string }) {
 }
 
 function EmptyMessage({ text }: { text: string }) {
+  // While a background snapshot pull is in flight, "no data" is not yet a
+  // fact — render a syncing skeleton instead of the empty-state copy so a
+  // just-opened profile reads as loading, not broken. Falls back to the
+  // honest empty state the moment the pull settles (syncing flips false).
+  const syncing = useContext(SupplyChainSyncContext);
+  if (syncing) {
+    return (
+      <div className="px-6 py-8" aria-busy="true" aria-live="polite">
+        <div className="mx-auto max-w-md space-y-2.5">
+          <div className="h-3 w-3/4 rounded-full bg-slate-100 animate-pulse motion-reduce:animate-none" />
+          <div className="h-3 w-1/2 rounded-full bg-slate-100 animate-pulse motion-reduce:animate-none" />
+          <div className="h-3 w-2/3 rounded-full bg-slate-100 animate-pulse motion-reduce:animate-none" />
+        </div>
+        <p className="mt-4 text-center font-body text-[12px] text-slate-400">
+          Pulling live shipment history…
+        </p>
+      </div>
+    );
+  }
   return (
     <div className="px-6 py-8 text-center">
       <p className="font-body text-[12px] text-slate-400">{text}</p>

@@ -77,6 +77,7 @@ import { lookupCoords } from '@/features/pulse/explore/coordLookup';
 const ExploreMap = lazy(() => import('@/features/pulse/explore/ExploreMapMaplibre'));
 import { normalizeCompanySearchResults, extractStateCode } from '@/lib/explorer/normalizeCompanySearch';
 import { normalizeName } from '@/lib/companyResolver';
+import { stashProfileSeed } from '@/lib/profileSeed';
 import { countryFlag, compactLocation } from '@/lib/explorer/countryFlags';
 import CountryFlag from './CountryFlag';
 import { unlockCompany } from '@/api/entitlements';
@@ -843,6 +844,9 @@ export default function CompanySearchTab() {
         toast.dismiss(tid);
         setOpeningId(null);
         const key = `company/${bare}`;
+        // Seed the profile with what we know (name + any row KPIs) so the
+        // page paints instantly while the pre-warm streams the snapshot in.
+        stashProfileSeed(key, { ...row, company_name: name });
         getIyCompanyProfile({ companyKey: key }).catch(() => {});
         navigate(`/app/companies/${encodeURIComponent(key)}`);
         return;
@@ -874,6 +878,12 @@ export default function CompanySearchTab() {
     if (!iyKey) return resolveKeylessOpen(row);
 
     const proceed = () => {
+      // Hand the row's display data to the profile page so it paints
+      // INSTANTLY (header + KPI tiles from the data the user is already
+      // looking at) while the snapshot pre-warm below streams in the deep
+      // customs history. Without this the profile sat on dashes for the
+      // 10-20s the pre-warm takes (owner: "feels old and not trustworthy").
+      stashProfileSeed(iyKey, row);
       // Pre-warm the profile snapshot in the BACKGROUND. Never await it — it's a
       // 10-15s importyeti-proxy call, and awaiting it before navigating made the
       // click do nothing for many seconds (users hard-refreshed to recover).

@@ -111,6 +111,7 @@ import CompanyProfileGuard from "@/components/company/CompanyProfileGuard";
 // PremiumIntelPanel + LaneIntelTable files were deleted at the same time.
 import { useCompanyProfile } from "@/hooks/useCompanyProfile";
 import { loadSyntheticProfile } from "@/lib/companyProfileFallback";
+import { takeProfileSeed } from "@/lib/profileSeed";
 import {
   loadLatestBenchmarks,
   matchAllRoutesForCompany,
@@ -785,10 +786,29 @@ function ProfilePanel({ rawId }: { rawId: string }) {
     }
 
     let cancelled = false;
-    setLoading(true);
     setError("");
-    setRefreshing(false);
     setRefreshError(null);
+
+    // ── Instant paint from the search handoff ────────────────────────────
+    // Opening from Intelligence search lands here BEFORE the background
+    // pre-warm writes the snapshot (10-20s) — every loader below misses and
+    // the page used to sit on dashes the whole time (owner: "feels old and
+    // not trustworthy"). The search tab stashes the clicked row's data
+    // (name, domain, HQ, 12m shipments/TEU/spend, top lane); synthesize a
+    // profile from it and paint NOW, then run the exact same heal below in
+    // the background. `refreshing` drives the header's "Refreshing intel…"
+    // chip and the Supply Chain syncing skeletons while the snapshot lands.
+    const seedProfile = takeProfileSeed(routeOrStoredId);
+    if (seedProfile) {
+      setProfile(seedProfile);
+      setRouteKpis(seedProfile.routeKpis ?? null);
+      setSnapshotUpdatedAt(null);
+      setLoading(false);
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+      setRefreshing(false);
+    }
 
     function applyYearFromProfile(nextProfile: any) {
       const yrs = Array.from(
@@ -902,11 +922,15 @@ function ProfilePanel({ rawId }: { rawId: string }) {
         setRouteKpis(cached.routeKpis || null);
         setSnapshotUpdatedAt(cached.snapshotUpdatedAt || null);
         if (cached.profile) applyYearFromProfile(cached.profile);
-      } else {
+      } else if (!seedProfile) {
+        // No snapshot AND no seed → honest empty. When a seed painted the
+        // page, keep it — the search KPIs stay up rather than flashing to
+        // dashes just because the snapshot hasn't landed yet.
         setProfile(null);
         setRouteKpis(null);
       }
       setLoading(false);
+      setRefreshing(false);
     })();
 
     return () => {
@@ -2610,6 +2634,10 @@ function ProfilePanel({ rawId }: { rawId: string }) {
                 onSelectYear={setSelectedYear}
                 onOpenPulseLive={() => setTab("live")}
                 companyName={companyName}
+                // While the seed-backed background heal (or a refresh) is
+                // pulling the snapshot, empty modules render syncing
+                // skeletons instead of "No data yet — try Refresh Intel".
+                syncing={refreshing || manualRefreshing}
                 // UNSCOPED month-keyed series (every month back to 2015).
                 // `activeProfile` is year-scoped by buildYearScopedProfile,
                 // which truncated the cadence chart + killed YoY / past-year
