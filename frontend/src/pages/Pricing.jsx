@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Check, Calculator, TrendingUp, DollarSign, ArrowRight } from 'lucide-react';
+import { trackEvent } from '@/lib/track';
 
 const plans = {
   monthly: [
@@ -160,6 +161,12 @@ const PricingCard = ({ plan, billingCycle }) => (
 
 export default function Pricing() {
   const [billingCycle, setBillingCycle] = useState('monthly');
+
+  // Funnel instrumentation — record in-app pricing views (no-op for logged-out
+  // visitors; the marketing /pricing page is tracked separately).
+  useEffect(() => {
+    trackEvent('pricing_viewed', {});
+  }, []);
 
   return (
     <div className="bg-gray-50">

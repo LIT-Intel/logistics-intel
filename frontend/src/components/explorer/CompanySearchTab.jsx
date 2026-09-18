@@ -78,6 +78,7 @@ const ExploreMap = lazy(() => import('@/features/pulse/explore/ExploreMapMaplibr
 import { normalizeCompanySearchResults, extractStateCode } from '@/lib/explorer/normalizeCompanySearch';
 import { normalizeName } from '@/lib/companyResolver';
 import { stashProfileSeed } from '@/lib/profileSeed';
+import { useUpgradeModal } from '@/components/billing/UpgradeModal';
 import { countryFlag, compactLocation } from '@/lib/explorer/countryFlags';
 import CountryFlag from './CountryFlag';
 import { unlockCompany } from '@/api/entitlements';
@@ -250,6 +251,7 @@ const naResidualQuery = (q, stateCodes = []) => {
 export default function CompanySearchTab() {
   const { setSelectedCompany } = useExplorer();
   const navigate = useNavigate();
+  const { show: showUpgrade } = useUpgradeModal();
   const [sp, setSp] = useSearchParams();
 
   // Search input + results
@@ -733,11 +735,21 @@ export default function CompanySearchTab() {
         })
         .catch(() => { /* columns just render without firmographics */ });
     } catch (err) {
-      const msg =
-        err?.code === 'LIMIT_EXCEEDED'
-          ? (err.message || 'Search limit reached. Upgrade to continue.')
-          : (err?.message || 'Company search failed.');
-      setError(msg);
+      // Plan-limit gate → surface the shared upgrade wall (not a dead-end
+      // toast). The modal self-logs upgrade_modal_shown / upgrade_clicked so
+      // we finally capture trial-cap buying intent (funnel audit 2026-09-18).
+      if (err?.code === 'LIMIT_EXCEEDED') {
+        const gate = err.limitExceeded || err.limit || {
+          ok: false, code: 'LIMIT_EXCEEDED', feature: 'company_search',
+          used: 0, limit: 0, plan: 'free_trial', reset_at: null,
+          upgrade_url: '/app/billing',
+          message: err.message || 'Search limit reached.',
+        };
+        showUpgrade(gate);
+        setError('You’ve reached your free-trial search limit — upgrade to keep searching.');
+      } else {
+        setError(err?.message || 'Company search failed.');
+      }
       setResults([]);
       setMapPoints([]);
       setUnmappedCount(0);
@@ -747,7 +759,7 @@ export default function CompanySearchTab() {
     } finally {
       setSearching(false);
     }
-  }, [query, setSp, searchMode, region, navigate]);
+  }, [query, setSp, searchMode, region, navigate, showUpgrade]);
 
   const onSubmit = useCallback((e) => {
     e?.preventDefault?.();

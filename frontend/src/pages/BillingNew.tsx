@@ -29,6 +29,7 @@ import EmbeddedCheckoutModal, {
 import { STRIPE_PUBLISHABLE_KEY } from '@/components/billing/stripeLoader';
 import type { InvoiceRow } from '@/components/billing/sections/BillingInvoices';
 import { supabase } from '@/lib/supabase';
+import { trackEvent } from '@/lib/track';
 import {
   getPlanConfig,
   getTotalPrice,
@@ -81,6 +82,13 @@ export default function Billing() {
   const { user, loading, access, isSuperAdmin } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+
+  // Funnel instrumentation — record every in-app billing-page open so we can
+  // finally see who explores billing / pricing (funnel audit 2026-09-18: this
+  // surface had ZERO tracking, so "who viewed billing" was unanswerable).
+  useEffect(() => {
+    trackEvent("billing_viewed", { source: searchParams.get("src") || "app" });
+  }, []);
 
   const [subscription, setSubscription] = useState<any>(null);
   // Authoritative billing-status snapshot from get-billing-status edge fn.

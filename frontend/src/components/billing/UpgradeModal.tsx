@@ -11,9 +11,10 @@
 // 2. App-level: wrap the app in <UpgradeModalProvider> and call
 //    showUpgradeModal(limit) from anywhere via useUpgradeModal().
 
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Lock, Sparkles, X } from "lucide-react";
 import { FEATURE_LABELS, type FeatureKey, type LimitExceeded } from "@/lib/usage";
+import { trackEvent } from "@/lib/track";
 
 interface UpgradeModalProps {
   limit: LimitExceeded | null;
@@ -22,6 +23,20 @@ interface UpgradeModalProps {
 }
 
 export function UpgradeModal({ limit, onClose, upgradeHref }: UpgradeModalProps) {
+  // Funnel instrumentation: fire once whenever the wall actually renders for a
+  // feature. Keyed on feature so re-hitting a different cap re-logs. This is
+  // the single choke point every upgrade surface flows through, so logging
+  // here captures ALL upgrade-wall impressions app-wide (audit 2026-09-18).
+  useEffect(() => {
+    if (!limit) return;
+    trackEvent("upgrade_modal_shown", {
+      feature: limit.feature,
+      plan: limit.plan,
+      used: limit.used,
+      limit: limit.limit,
+    });
+  }, [limit?.feature, limit?.plan]);
+
   if (!limit) return null;
 
   const featureKey = limit.feature as FeatureKey;
@@ -123,6 +138,14 @@ export function UpgradeModal({ limit, onClose, upgradeHref }: UpgradeModalProps)
           </button>
           <a
             href={href}
+            onClick={() =>
+              trackEvent("upgrade_clicked", {
+                feature: limit.feature,
+                plan: limit.plan,
+                used: limit.used,
+                limit: limit.limit,
+              })
+            }
             className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700"
           >
             View plans
