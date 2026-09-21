@@ -99,6 +99,14 @@ serve(async (req) => {
     const filtered = userAlerts.filter((a: any) =>
       (a.alert_type === "volume"    && prefs.volume_alerts) ||
       (a.alert_type === "shipment"  && prefs.shipment_alerts) ||
+      // arrival_window is the "a saved company has a shipment arriving soon"
+      // signal — currently the ONLY alert type still being generated (volume/
+      // shipment/lane generation stopped ~2026-08-15) and the single best
+      // reason for a trial user to return. It was missing from this allow-list,
+      // so all ~2,100 arrival alerts were stamped suppressed_by_user_pref and
+      // never emailed (funnel audit 2026-09-18). Gate it on shipment_alerts
+      // (an arrival IS a shipment event; default true).
+      (a.alert_type === "arrival_window" && prefs.shipment_alerts) ||
       (a.alert_type === "lane"      && prefs.lane_alerts) ||
       (a.alert_type === "benchmark" && prefs.benchmark_alerts) ||
       (a.alert_type === "baseline")

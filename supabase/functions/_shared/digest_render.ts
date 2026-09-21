@@ -41,7 +41,7 @@ function tintedIcon(svg: string, color: string, sizePx = 16): string {
   return `<span style="color:${color}; display:inline-block; line-height:0; vertical-align:-3px;">${sized}</span>`;
 }
 
-export type DigestAlertType = "volume" | "shipment" | "lane" | "benchmark" | "baseline";
+export type DigestAlertType = "volume" | "shipment" | "arrival_window" | "lane" | "benchmark" | "baseline";
 
 export interface DigestAlert {
   alert_type: DigestAlertType;
@@ -66,6 +66,7 @@ export function renderDigestHtml(args: RenderDigestArgs): string {
 
   const buckets = {
     volume: alerts.filter((a) => a.alert_type === "volume"),
+    arrival: alerts.filter((a) => a.alert_type === "arrival_window"),
     shipment: alerts.filter((a) => a.alert_type === "shipment"),
     lane: alerts.filter((a) => a.alert_type === "lane"),
     benchmark: alerts.filter((a) => a.alert_type === "benchmark"),
@@ -119,6 +120,8 @@ const C_VOLUME = "#2563EB";
 const C_VOLUME_BG = "#EFF6FF";
 const C_SHIPMENT = "#0891B2";
 const C_SHIPMENT_BG = "#ECFEFF";
+const C_ARRIVAL = "#059669";
+const C_ARRIVAL_BG = "#ECFDF5";
 const C_LANE = "#7C3AED";
 const C_LANE_BG = "#F5F3FF";
 const C_BASELINE = "#D97706";
@@ -146,6 +149,7 @@ interface DigestArgs {
   firstName: string;
   buckets: {
     volume: DigestAlert[];
+    arrival: DigestAlert[];
     shipment: DigestAlert[];
     lane: DigestAlert[];
     benchmark: DigestAlert[];
@@ -165,6 +169,20 @@ function buildDigestHtml(args: DigestArgs): string {
   const safeDate = htmlEscape(dateLabel);
 
   const sections: string[] = [];
+
+  // Arrivals first — most time-sensitive + the primary "come back to LIT"
+  // signal for trial users (a saved company has freight landing this week).
+  if (buckets.arrival.length > 0) {
+    sections.push(renderSection({
+      label: "Arriving Soon",
+      count: buckets.arrival.length,
+      color: C_ARRIVAL,
+      rows: buckets.arrival.map((a) => ({
+        icon: tintedIcon(SERVICE_SVG.fcl, C_ARRIVAL),
+        html: renderArrivalRow(a),
+      })),
+    }));
+  }
 
   if (buckets.volume.length > 0) {
     sections.push(renderSection({
@@ -506,9 +524,13 @@ function pctPill(pct: any): string {
   return `<span style="display:inline-block; padding:5px 11px; font-size:13px; font-weight:700; color:${color}; background:${bg}; border-radius:999px; max-width:100%; overflow:hidden; ${TAB_NUM}">${htmlEscape(formatPct(pct))}</span>`;
 }
 
-function countPill(n: any, label: string, color: string, bg: string): string {
-  const num = typeof n === "number" && isFinite(n) ? Math.round(n).toLocaleString("en-US") : "—";
-  return `<span style="display:inline-block; padding:5px 11px; font-size:13px; font-weight:700; color:${color}; background:${bg}; border-radius:999px; max-width:100%; overflow:hidden; ${TAB_NUM}"><strong style="font-weight:800;">${htmlEscape(num)}</strong> <span style="font-weight:500; opacity:0.8;">${htmlEscape(label)}</span></span>`;
+function countPill(n: any, label: string, color: string, bg: string, textOverride?: string): string {
+  // textOverride: render arbitrary pill text (e.g. an ETA date) instead of the
+  // number+label pair — used by the arrival card where the headline is a date.
+  const inner = textOverride
+    ? `<strong style="font-weight:800;">${htmlEscape(textOverride)}</strong>`
+    : `<strong style="font-weight:800;">${htmlEscape(typeof n === "number" && isFinite(n) ? Math.round(n).toLocaleString("en-US") : "—")}</strong> <span style="font-weight:500; opacity:0.8;">${htmlEscape(label)}</span>`;
+  return `<span style="display:inline-block; padding:5px 11px; font-size:13px; font-weight:700; color:${color}; background:${bg}; border-radius:999px; max-width:100%; overflow:hidden; ${TAB_NUM}">${inner}</span>`;
 }
 
 function moneyStrip(amountUsd: number, lowUsd: number | undefined, highUsd: number | undefined, containers: number | undefined): string {
@@ -575,6 +597,40 @@ function renderShipmentRow(alert: DigestAlert): string {
     loc,
     pillHtml: countPill(newCount, "shipments", C_SHIPMENT, C_SHIPMENT_BG),
     metaHtml: `<strong style="color:${TEXT}; font-weight:700; ${TAB_NUM}">${htmlEscape(newCountText)}&nbsp;new shipments</strong> detected in the past 14 days`,
+    ctaHref: `https://app.logisticintel.com/app/search?q=${encodeURIComponent(p.company_name || "")}`,
+    ctaLabel: "View company",
+    severity: alert.severity,
+  });
+}
+
+function renderArrivalRow(alert: DigestAlert): string {
+  const p = alert.payload || {};
+  const name = htmlEscape(p.company_name || "Saved company");
+  const loc = formatLocation(p);
+  const fmt = (d: any) => {
+    if (!d) return null;
+    const t = new Date(d).getTime();
+    if (!isFinite(t)) return null;
+    return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  };
+  const eta = fmt(p.estimated_arrival_date);
+  const low = fmt(p.estimated_arrival_low);
+  const high = fmt(p.estimated_arrival_high);
+  const window = low && high ? `${low}–${high}` : null;
+  const containers = typeof p.container_count === "number" && p.container_count > 0
+    ? `${Math.round(p.container_count).toLocaleString("en-US")} container${p.container_count === 1 ? "" : "s"}`
+    : null;
+  const shipper = p.shipper_name ? `from&nbsp;${htmlEscape(String(p.shipper_name))}` : null;
+  const detail = [containers, shipper].filter(Boolean).join(" &middot; ");
+  const etaText = eta
+    ? `Arriving&nbsp;~${htmlEscape(eta)}${window ? ` <span style="color:${TEXT_DIM};">(${htmlEscape(window)})</span>` : ""}`
+    : "Shipment arriving soon";
+
+  return renderRowBody({
+    name,
+    loc,
+    pillHtml: eta ? countPill(null, "", C_ARRIVAL, C_ARRIVAL_BG, eta) : "",
+    metaHtml: `<strong style="color:${TEXT}; font-weight:700;">${etaText}</strong>${detail ? ` &middot; ${detail}` : ""}`,
     ctaHref: `https://app.logisticintel.com/app/search?q=${encodeURIComponent(p.company_name || "")}`,
     ctaLabel: "View company",
     severity: alert.severity,
