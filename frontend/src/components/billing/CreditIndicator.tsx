@@ -15,10 +15,15 @@ import { useEntitlements } from "@/hooks/useEntitlements";
  * Restrained by design — a low-key status chip, not an aggressive upsell.
  */
 export default function CreditIndicator({ className = "" }: { className?: string }) {
-  const { creditBalance } = useEntitlements();
+  const { creditBalance, creditsMeteringEnabled } = useEntitlements();
   const navigate = useNavigate();
 
+  // While Credits-v2 metering is dark, the balance governs nothing — showing
+  // "25 credits" only misleads trial users (owner-reported 2026-09-19). Hide
+  // the chip until metering is live; it reappears automatically when the flag
+  // flips on. Unlimited (enterprise) still shows regardless.
   if (!creditBalance) return null;
+  if (!creditsMeteringEnabled && !creditBalance.unlimited) return null;
 
   const unlimited = Boolean(creditBalance.unlimited);
   const total = creditBalance.total_remaining ?? 0;

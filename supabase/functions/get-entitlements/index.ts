@@ -188,9 +188,31 @@ serve(async (req) => {
     }
   }
 
+  // Credits-v2 metering flag. The LIT Credits UI (header chip, Credit Usage
+  // page, Purchase CTA) should only appear once metering is actually live —
+  // otherwise a trial user sees "25 credits" and assumes that's what governs
+  // access (owner-reported confusion 2026-09-19). Emit the resolved flag so the
+  // UI can hide the credit surfaces while metering is dark, and reveal them
+  // automatically when it's switched on. Enabled = not killed AND rolled out.
+  let creditsMeteringEnabled = false;
+  try {
+    const { data: flagRow } = await adminClient
+      .from("lit_feature_flags")
+      .select("global_kill, rollout")
+      .eq("key", "credits_metering_enabled")
+      .maybeSingle();
+    if (flagRow) {
+      const gk = (flagRow as Record<string, unknown>).global_kill === true;
+      const rollout = Number((flagRow as Record<string, unknown>).rollout ?? 0) || 0;
+      creditsMeteringEnabled = !gk && rollout > 0;
+    }
+  } catch (_) {
+    // flags table absent in this env — leave metering disabled (safe default).
+  }
+
   const entitlements =
     data && typeof data === "object"
-      ? { ...(data as Record<string, unknown>), credits, credit_balance: creditBalance, crm_enabled: crmEnabled, crm_seats: crmSeats }
+      ? { ...(data as Record<string, unknown>), credits, credit_balance: creditBalance, credits_metering_enabled: creditsMeteringEnabled, crm_enabled: crmEnabled, crm_seats: crmSeats }
       : data;
 
   // Fold saved_map_view into the limits/used maps so the UI gate + Billing

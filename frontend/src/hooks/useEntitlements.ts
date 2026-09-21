@@ -135,6 +135,11 @@ export function useEntitlements() {
   const crmEnabled = Boolean(entitlements?.crm_enabled);
   const crmSeats = entitlements?.crm_seats ?? 0;
 
+  // Credits-v2 metering flag (server-derived). While false, the LIT Credits UI
+  // is hidden so trial users aren't misled by a cosmetic balance that governs
+  // nothing (metering is dark). Auto-reveals when the flag flips on.
+  const creditsMeteringEnabled = Boolean(entitlements?.credits_metering_enabled);
+
   return {
     canAccessFeature,
     checkUsageLimit,
@@ -146,6 +151,7 @@ export function useEntitlements() {
     entitlements,
     credits,
     creditBalance,
+    creditsMeteringEnabled,
     crmEnabled,
     crmSeats,
   };
