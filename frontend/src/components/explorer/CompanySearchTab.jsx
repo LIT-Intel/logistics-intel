@@ -71,6 +71,7 @@ import { FolderPlus, Sparkles as SparklesIcon } from 'lucide-react';
 import { enrichCompanyLive } from '@/api/ai';
 import { looksLikeCompanyName, parseExploreQuery, localExtractFilters, parsedToFilters, hasAnyFilter, detectNaOrigin, stripStateTypoTokens } from '@/api/pulse-explore-parse';
 import { useExploreAccounts } from '@/features/pulse/explore/useExploreAccounts';
+import { gateMarketSearch, PulseExploreLimitError } from '@/api/pulse-explore';
 import { lookupCoords } from '@/features/pulse/explore/coordLookup';
 // Lazy-loaded so maplibre-gl (~800KB) ships in its own chunk instead of the
 // first-load bundle for this default landing route.
@@ -449,6 +450,24 @@ export default function CompanySearchTab() {
     // updates land too late for THIS invocation, so thread it through opts.
     const resolvedRegion = opts?.region ?? region;
     if (resolvedRegion !== region) setRegion(resolvedRegion);
+
+    // Trial search wall — an EXPLICIT market search consumes one unified trial
+    // search server-side (shared budget with Companies mode). Companies mode
+    // is already gated inside importyeti-proxy; this closes the market-mode
+    // hole (a trial could otherwise browse the directory forever). Over-budget
+    // → upgrade modal, don't run. Fails open on gate-infra errors.
+    if (resolvedMode === 'market') {
+      try {
+        await gateMarketSearch();
+      } catch (gateErr) {
+        if (gateErr instanceof PulseExploreLimitError) {
+          showUpgrade(gateErr.limit);
+          setSearching(false);
+          return;
+        }
+        /* any other error: fail open, continue the search */
+      }
+    }
 
     // ── NA cross-border dataset (US companies importing FROM Mexico/Canada)
     //    via the lit_na_market_search RPC. Reached two ways: the MX region

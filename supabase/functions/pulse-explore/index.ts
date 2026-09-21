@@ -934,6 +934,41 @@ Deno.serve(async (req: Request) => {
   try { body = (await req.json()) as Body; } catch { /* keep defaults */ }
   const filters: Filters = body.filters ?? {};
 
+  // ── Trial search wall ──────────────────────────────────────────────────
+  // An EXPLICIT market search from the Intelligence Explorer passes
+  // { gate_only: true }: consume ONE unified trial search (shared with
+  // company_search via check_usage_limit's free_trial budget) and block once
+  // spent. Incidental browsing — filter tweaks, viewport pans, "Load more",
+  // the default post-login Explorer load — does NOT pass gate_only, so it
+  // stays free (gating every fetch would nuke a trial's budget instantly;
+  // that's why browsing was made free 2026-08-06). Paid plans resolve their
+  // own pulse_search limit (or unlimited); platform admins bypass. Fails
+  // OPEN on gate-infra errors so a hiccup never walls a paying user.
+  if ((body as unknown as { gate_only?: boolean }).gate_only === true) {
+    let orgId: string | null = null;
+    try {
+      const { data: om } = await admin
+        .from("org_members").select("org_id").eq("user_id", userId).limit(1).maybeSingle();
+      orgId = (om as { org_id?: string } | null)?.org_id ?? null;
+    } catch { /* count by user_id alone */ }
+    const { data: gate, error: gateErr } = await admin.rpc("check_usage_limit", {
+      p_org_id: orgId, p_user_id: userId, p_feature_key: "pulse_search", p_quantity: 1,
+    });
+    if (!gateErr && gate && gate.ok === false) {
+      return jsonResponse(gate, 403);
+    }
+    if (!gateErr && gate && gate.ok === true && gate.limit != null) {
+      // Only meter when there's a finite limit (trial). Unlimited plans skip.
+      try {
+        await admin.rpc("consume_usage", {
+          p_org_id: orgId, p_user_id: userId, p_feature_key: "pulse_search",
+          p_quantity: 1, p_metadata: { source: "market_search" },
+        });
+      } catch (_e) { /* non-fatal: never fail a search on a ledger write */ }
+    }
+    return jsonResponse({ ok: true, gated: true, used: gate?.used ?? null, limit: gate?.limit ?? null });
+  }
+
   // Explorer browsing is free as of 2026-08-06. This endpoint is a pure
   // Supabase query — no external provider cost — yet it used to consume a
   // `pulse_search` credit unconditionally BEFORE running, on every filter
