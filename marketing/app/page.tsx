@@ -15,13 +15,21 @@ import { FEATURED_LEAD_MAGNETS } from "@/lib/leadMagnets";
 
 export const revalidate = 600;
 
-export const metadata: Metadata = buildMetadata({
-  path: "/",
-  title: "Freight Sales Intelligence & CRM | Logistics Intel",
-  description:
-    "Find active shippers, research shipment activity, reach verified contacts, and manage every opportunity in a freight-native CRM.",
-  eyebrow: "Logistics sales intelligence",
-});
+export const metadata: Metadata = {
+  ...buildMetadata({
+    path: "/",
+    title: "Freight Prospecting Software & Shipper Data",
+    description:
+      "Find active shippers with live customs & bill-of-lading data, reach verified decision-makers, and manage every deal in a freight-native CRM. Free 7-day trial.",
+    eyebrow: "Logistics sales intelligence",
+  }),
+  // The homepage shares the root layout's route segment, so Next.js does NOT
+  // apply the "%s | Logistics Intel" title template here (templates apply to
+  // CHILD segments only). Without an absolute title the SERP rendered
+  // "Freight Sales Intelligence & CRM" with no brand and a weak keyword
+  // (SEO audit 2026-09-21). Set the full branded, keyword-led title explicitly.
+  title: { absolute: "Freight Prospecting Software & Shipper Data | Logistics Intel" },
+};
 
 const customerLogos = [
   { domain: "chrobinson.com", name: "C.H. Robinson" },

@@ -3,8 +3,8 @@ import { SearchDemandPage, type SearchDemandPageData } from "@/components/sectio
 import { buildMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = buildMetadata({
-  title: "Bill of Lading Database for Freight Sales Teams",
-  description: "Search bill of lading data by importer, supplier, lane, port, carrier, and product, then connect shipment evidence to freight sales accounts and contacts.",
+  title: "Bill of Lading Database & US Customs Data",
+  description: "Search bill of lading and US customs data by importer, supplier, lane, port, carrier, and product — then turn shipment evidence into freight sales accounts and verified contacts.",
   path: "/bill-of-lading-database",
   eyebrow: "Bill of lading database",
 });

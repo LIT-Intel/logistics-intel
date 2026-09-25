@@ -9,9 +9,9 @@ import { MarketingGlobe } from "@/components/sections/MarketingGlobe";
 import { buildMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = buildMetadata({
-  title: "Trade Intelligence for Logistics Prospecting | LIT",
+  title: "US Import Data & Trade Intelligence for Sales",
   description:
-    "Search import/export activity, shipment records, trade lanes, TEU, suppliers, and company movement to find better logistics prospects.",
+    "Search US import/export activity, shipment records, trade lanes, TEU, suppliers, and company movement to find active shippers and better logistics prospects.",
   path: "/trade-intelligence",
   eyebrow: "Trade Intelligence",
 });
