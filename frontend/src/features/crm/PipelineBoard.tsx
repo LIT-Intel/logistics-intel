@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { motion, useReducedMotion } from "framer-motion";
 import { Loader2, Plus, Clock, CheckSquare, Linkedin } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
@@ -110,9 +111,26 @@ export default function PipelineBoard({ viewAsUserId = "" }: { viewAsUserId?: st
   const [creating, setCreating] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOverStage, setDragOverStage] = useState<string | null>(null);
+  // True whenever a card is being pointer-dragged — lets columns drop their
+  // clip (overflow) so the lifted card isn't cut off as it crosses columns.
+  const [anyDragging, setAnyDragging] = useState(false);
   // Deal id currently playing the muted "lost" dim-pulse (cleared after the animation).
   const [lostPulseId, setLostPulseId] = useState<string | null>(null);
   const [linkedinPending, setLinkedinPending] = useState(0);
+  const reduce = useReducedMotion();
+  // Live column rects for pointer hit-testing during a fluid drag.
+  const columnRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const dragOverRef = useRef<string | null>(null);
+
+  // Which stage column is under the pointer right now (viewport coords).
+  const hitTestStage = useCallback((x: number, y: number): string | null => {
+    for (const [stageId, el] of Object.entries(columnRefs.current)) {
+      if (!el) continue;
+      const r = el.getBoundingClientRect();
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return stageId;
+    }
+    return null;
+  }, []);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -181,27 +199,6 @@ export default function PipelineBoard({ viewAsUserId = "" }: { viewAsUserId?: st
     [stages, toast],
   );
 
-  async function handleDrop(stageId: string) {
-    const id = dragId;
-    setDragId(null);
-    setDragOverStage(null);
-    if (!id) return;
-    const deal = deals.find((d) => d.id === id);
-    if (!deal || deal.stage_id === stageId) return;
-    const fromStageId = deal.stage_id;
-    // optimistic move
-    setDeals((prev) => prev.map((d) => (d.id === id ? { ...d, stage_id: stageId } : d)));
-    celebrateMove(deal, fromStageId, stageId);
-    try {
-      await moveDealStage(id, stageId);
-      // refresh so derived status (won/lost) + activity are current
-      reload();
-    } catch (e: any) {
-      toast({ title: "Move failed", description: e?.message, variant: "destructive" });
-      reload();
-    }
-  }
-
   // Click-to-move fallback (accessible + mobile-friendly): move a card via a
   // small stage menu from the card footer. Native DnD is the primary path.
   async function handleClickMove(dealId: string, stageId: string) {
@@ -217,6 +214,33 @@ export default function PipelineBoard({ viewAsUserId = "" }: { viewAsUserId?: st
     }
   }
 
+  // ── Fluid pointer-drag handlers (framer-motion) ──────────────────────────
+  const onCardDragStart = useCallback((dealId: string) => {
+    setDragId(dealId);
+    setAnyDragging(true);
+    dragOverRef.current = null;
+    setDragOverStage(null);
+  }, []);
+
+  const onCardDrag = useCallback((x: number, y: number) => {
+    const s = hitTestStage(x, y);
+    if (s !== dragOverRef.current) {
+      dragOverRef.current = s;
+      setDragOverStage(s);
+    }
+  }, [hitTestStage]);
+
+  const onCardDragEnd = useCallback((dealId: string) => {
+    const target = dragOverRef.current;
+    setAnyDragging(false);
+    setDragId(null);
+    setDragOverStage(null);
+    dragOverRef.current = null;
+    const deal = deals.find((d) => d.id === dealId);
+    // Reuse the proven optimistic move (celebrate + moveDealStage + reload).
+    if (target && deal && deal.stage_id !== target) void handleClickMove(dealId, target);
+  }, [deals]);
+
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: theme.bg }}>
       <style>{`
@@ -225,20 +249,14 @@ export default function PipelineBoard({ viewAsUserId = "" }: { viewAsUserId?: st
           35%  { box-shadow: 0 0 0 3px rgba(100,116,139,0.28); background: ${theme.panelMuted}; }
           100% { box-shadow: 0 1px 2px ${theme.shadow}; background: ${theme.panel}; }
         }
-        /* Apple-design micro-interactions (CRM Phase 1): instant press feedback +
-           hover lift. Response ~0.14s, compositor-only transforms. These work
-           regardless of the native-DnD ghost; the full fluid pointer-drag is a
-           separate branch. */
-        .lit-deal-card {
-          transition: transform 140ms cubic-bezier(0.2,0,0,1), box-shadow 160ms cubic-bezier(0.2,0,0,1);
-          will-change: transform;
-        }
-        .lit-deal-card:hover { transform: translateY(-1px); box-shadow: 0 6px 18px ${theme.shadow}; }
-        .lit-deal-card:active { transform: scale(0.985); cursor: grabbing; }
+        /* Apple-design fluid drag (CRM Phase 1, framer-motion): framer owns all
+           transforms (drag follow, whileDrag lift, layout reflow), so hover here
+           is SHADOW-ONLY to avoid fighting framer's inline transform. */
+        .lit-deal-card { transition: box-shadow 160ms cubic-bezier(0.2,0,0,1); }
+        .lit-deal-card:hover { box-shadow: 0 6px 18px ${theme.shadow}; }
         @media (prefers-reduced-motion: reduce) {
           @keyframes litLostPulse { from {} to {} }
-          .lit-deal-card { transition: none; will-change: auto; }
-          .lit-deal-card:hover, .lit-deal-card:active { transform: none; }
+          .lit-deal-card { transition: none; }
         }
       `}</style>
       {/* Header */}
@@ -281,12 +299,7 @@ export default function PipelineBoard({ viewAsUserId = "" }: { viewAsUserId?: st
               return (
                 <div
                   key={stage.id}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    if (dragOverStage !== stage.id) setDragOverStage(stage.id);
-                  }}
-                  onDragLeave={() => dragOverStage === stage.id && setDragOverStage(null)}
-                  onDrop={() => handleDrop(stage.id)}
+                  ref={(el) => { columnRefs.current[stage.id] = el; }}
                   style={{
                     width: 288,
                     flexShrink: 0,
@@ -295,7 +308,9 @@ export default function PipelineBoard({ viewAsUserId = "" }: { viewAsUserId?: st
                     background: isOver ? theme.accentSoft : theme.panelAlt,
                     border: isOver ? `1.5px dashed ${theme.accentBorder}` : `1px solid ${theme.border}`,
                     borderRadius: 14,
-                    overflow: "hidden",
+                    // Clip normally, but un-clip while a card is in flight so the
+                    // lifted card can cross column boundaries without being cut.
+                    overflow: anyDragging ? "visible" : "hidden",
                     transition: "background 120ms, border-color 120ms",
                   }}
                 >
@@ -310,7 +325,7 @@ export default function PipelineBoard({ viewAsUserId = "" }: { viewAsUserId?: st
                   </div>
 
                   {/* Cards */}
-                  <div style={{ flex: 1, overflowY: "auto", padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                  <div style={{ flex: 1, overflowY: anyDragging ? "visible" : "auto", padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
                     {cards.length === 0 ? (
                       <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: theme.textFaint, textAlign: "center", padding: "16px 0" }}>Drop deals here</div>
                     ) : (
@@ -321,8 +336,10 @@ export default function PipelineBoard({ viewAsUserId = "" }: { viewAsUserId?: st
                           stages={stages}
                           dragging={dragId === deal.id}
                           lostPulse={lostPulseId === deal.id}
-                          onDragStart={() => setDragId(deal.id)}
-                          onDragEnd={() => setDragId(null)}
+                          reduce={!!reduce}
+                          onDragStartCard={onCardDragStart}
+                          onDragCard={onCardDrag}
+                          onDragEndCard={onCardDragEnd}
                           onOpen={() => setActiveDeal(deal)}
                           onMove={handleClickMove}
                         />
@@ -357,8 +374,10 @@ function DealCardView({
   stages,
   dragging,
   lostPulse,
-  onDragStart,
-  onDragEnd,
+  reduce,
+  onDragStartCard,
+  onDragCard,
+  onDragEndCard,
   onOpen,
   onMove,
 }: {
@@ -366,12 +385,16 @@ function DealCardView({
   stages: DealStage[];
   dragging: boolean;
   lostPulse: boolean;
-  onDragStart: () => void;
-  onDragEnd: () => void;
+  reduce: boolean;
+  onDragStartCard: (dealId: string) => void;
+  onDragCard: (x: number, y: number) => void;
+  onDragEndCard: (dealId: string) => void;
   onOpen: () => void;
   onMove: (dealId: string, stageId: string) => void;
 }) {
   const { theme, mode } = useCrmTheme();
+  // Suppress the click-to-open when a real drag happened (pointer moved).
+  const movedRef = useRef(false);
   const days = daysBetween(deal.updated_at);
   const overdueTask = deal.nextTaskDue && isOverdue(deal.nextTaskDue);
   const serviceLabel = deal.service_type ? DEAL_SERVICE_TYPE_LABELS[deal.service_type] : null;
@@ -380,20 +403,29 @@ function DealCardView({
       ? `${deal.origin} → ${deal.destination}`
       : deal.origin || deal.destination || null;
   return (
-    <div
+    <motion.div
       className="lit-deal-card"
-      draggable
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
-      onClick={onOpen}
+      layout={!reduce}
+      drag
+      dragSnapToOrigin
+      dragElastic={0.14}
+      dragMomentum={false}
+      whileDrag={reduce ? undefined : { scale: 1.03, boxShadow: `0 14px 30px ${theme.shadow}`, cursor: "grabbing", zIndex: 50 }}
+      transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 520, damping: 34, mass: 0.6 }}
+      onDragStart={() => { movedRef.current = true; onDragStartCard(deal.id); }}
+      onDrag={(_e, info) => onDragCard(info.point.x, info.point.y)}
+      onDragEnd={() => { onDragEndCard(deal.id); window.setTimeout(() => { movedRef.current = false; }, 0); }}
+      onClick={() => { if (!movedRef.current) onOpen(); }}
       style={{
+        position: "relative",
         background: theme.panel,
         border: `1px solid ${theme.border}`,
         borderRadius: 12,
         padding: 11,
         cursor: "grab",
         boxShadow: `0 1px 2px ${theme.shadow}`,
-        opacity: dragging ? 0.5 : 1,
+        opacity: dragging ? 0.92 : 1,
+        touchAction: "none",
         animation: lostPulse ? "litLostPulse 900ms ease-out" : undefined,
       }}
     >
@@ -505,7 +537,7 @@ function DealCardView({
           </option>
         ))}
       </select>
-    </div>
+    </motion.div>
   );
 }
 
