@@ -59,12 +59,12 @@ export const LEAD_MAGNETS: LeadMagnet[] = [
     icon: ListChecks,
   },
   {
-    href: "/freight-revenue-calculator",
-    slug: "freight-revenue-calculator",
-    name: "Freight Account Revenue Calculator",
+    href: "/roi-calculator",
+    slug: "roi-calculator",
+    name: "Freight ROI Calculator",
     blurb:
-      "Estimate the annual freight revenue, gross profit, and probability-adjusted opportunity of any account in seconds. No signup.",
-    ctaLabel: "Calculate freight revenue",
+      "See what Logistics Intel is worth to your brokerage — added gross profit, cost, and first-year ROI from winning more active shippers. No signup.",
+    ctaLabel: "Calculate your ROI",
     category: "Sales planning",
     icon: Calculator,
   },

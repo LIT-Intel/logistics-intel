@@ -160,6 +160,12 @@ const nextConfig = {
       // Pulse Explorer V2 rebuild). The redirect catches inbound links and
       // cached Google results while consolidating equity onto the canonical.
       { source: "/features/company-intelligence", destination: "/company-intelligence", permanent: true },
+      // Owner 2026-09-25: retire the per-account /freight-revenue-calculator
+      // and replace it with the platform /roi-calculator. 301 preserves any
+      // inbound link equity onto the new tool. (The two tools differ — the old
+      // one estimated a single account's revenue — but the owner chose one
+      // calculator; the page is also removed from the lead-magnet list.)
+      { source: "/freight-revenue-calculator", destination: "/roi-calculator", permanent: true },
       // SEO keyword-target aliases (lit_seo_keyword_targets pointed at these
       // top-level URLs before the canonical pages existed). Each consolidates
       // onto the page that already targets the keyword.
