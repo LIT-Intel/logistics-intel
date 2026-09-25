@@ -12,6 +12,48 @@ import { SignalJourney } from "@/components/sections/SignalJourney";
 import { APP_SIGNUP_URL } from "@/lib/app-urls";
 import { buildMetadata } from "@/lib/seo";
 import { FEATURED_LEAD_MAGNETS } from "@/lib/leadMagnets";
+import { FaqSection } from "@/components/sections/FaqSection";
+
+// Homepage FAQ — written to describe EVERY LIT tool and how it works, in the
+// concise Q&A shape Google AI Overviews and LLM search cite (SEO strategy
+// 2026-09). Also emitted as FAQPage JSON-LD below for FAQ rich results.
+const HOME_FAQS = [
+  {
+    question: "What is Logistics Intel?",
+    answer:
+      "Logistics Intel (LIT) is freight prospecting and sales-intelligence software for freight brokers, freight forwarders, and 3PL sales teams. It combines live US customs and bill-of-lading shipment data, trade-lane and supplier intelligence, verified decision-maker contacts, and a freight-native CRM in one platform — so you can find active shippers, research their freight, reach the right people, and manage the deal without switching tools.",
+  },
+  {
+    question: "How does Logistics Intel help freight brokers find shippers?",
+    answer:
+      "Pulse Explorer searches customs and bill-of-lading records by industry, geography, trade lane, commodity, and shipment volume to surface active importers and exporters. You can save qualified accounts, see their lanes, suppliers, products, and shipment cadence, enrich verified contacts, and move them straight into the CRM to work the opportunity.",
+  },
+  {
+    question: "What data does Logistics Intel use?",
+    answer:
+      "US customs and bill-of-lading shipment records, trade lanes, TEU and shipment volumes, suppliers, products, and company movement — enriched with verified company firmographics and decision-maker contact details (name, title, email). Re-opening a company you have already unlocked is always free.",
+  },
+  {
+    question: "Does Logistics Intel include a CRM?",
+    answer:
+      "Yes. LIT includes a freight-native CRM with accounts, deals, tasks, weighted forecasting, and outreach — with the shipment context attached to every record, so reps keep the freight story in front of them instead of losing it in a generic CRM.",
+  },
+  {
+    question: "Who is Logistics Intel for?",
+    answer:
+      "Freight brokers, freight forwarders, 3PL sales teams, and customs brokers who need to find active shippers, qualify them with real shipment evidence, and run outreach and pipeline in one place.",
+  },
+  {
+    question: "Is there a free trial, and how much does Logistics Intel cost?",
+    answer:
+      "Yes — every account starts with a free 7-day trial, no card required. Paid plans scale by search, save, enrichment, and seat volume for brokers, forwarders, and 3PLs.",
+  },
+  {
+    question: "How is Logistics Intel different from ImportYeti, ImportGenius, or Apollo?",
+    answer:
+      "Those tools solve one piece each — trade data, or a contact database, or a generic CRM. Logistics Intel unifies customs/bill-of-lading trade data, verified logistics contacts, a freight-native CRM, and AI-assisted outreach in a single workflow built for freight sales, so you are not stitching three subscriptions together.",
+  },
+];
 
 export const revalidate = 600;
 
@@ -67,6 +109,11 @@ export default function HomePage() {
         <CapabilityBand />
         <FreeToolsBand />
         <AudienceSection />
+        <FaqSection
+          eyebrow="Freight prospecting FAQ"
+          title="How Logistics Intel works"
+          faqs={HOME_FAQS}
+        />
         <FinalCta />
       </main>
       <Footer />
@@ -81,6 +128,20 @@ export default function HomePage() {
             operatingSystem: "Web",
             description: "Logistics sales intelligence and freight-native CRM for freight brokers, freight forwarders, and 3PL sales teams.",
             offers: { "@type": "Offer", price: "0", priceCurrency: "USD", description: "7-day trial available." },
+          }),
+        }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "FAQPage",
+            mainEntity: HOME_FAQS.map((f) => ({
+              "@type": "Question",
+              name: f.question,
+              acceptedAnswer: { "@type": "Answer", text: f.answer },
+            })),
           }),
         }}
       />
