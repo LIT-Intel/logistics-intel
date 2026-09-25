@@ -225,8 +225,20 @@ export default function PipelineBoard({ viewAsUserId = "" }: { viewAsUserId?: st
           35%  { box-shadow: 0 0 0 3px rgba(100,116,139,0.28); background: ${theme.panelMuted}; }
           100% { box-shadow: 0 1px 2px ${theme.shadow}; background: ${theme.panel}; }
         }
+        /* Apple-design micro-interactions (CRM Phase 1): instant press feedback +
+           hover lift. Response ~0.14s, compositor-only transforms. These work
+           regardless of the native-DnD ghost; the full fluid pointer-drag is a
+           separate branch. */
+        .lit-deal-card {
+          transition: transform 140ms cubic-bezier(0.2,0,0,1), box-shadow 160ms cubic-bezier(0.2,0,0,1);
+          will-change: transform;
+        }
+        .lit-deal-card:hover { transform: translateY(-1px); box-shadow: 0 6px 18px ${theme.shadow}; }
+        .lit-deal-card:active { transform: scale(0.985); cursor: grabbing; }
         @media (prefers-reduced-motion: reduce) {
           @keyframes litLostPulse { from {} to {} }
+          .lit-deal-card { transition: none; will-change: auto; }
+          .lit-deal-card:hover, .lit-deal-card:active { transform: none; }
         }
       `}</style>
       {/* Header */}
@@ -369,6 +381,7 @@ function DealCardView({
       : deal.origin || deal.destination || null;
   return (
     <div
+      className="lit-deal-card"
       draggable
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
