@@ -118,3 +118,45 @@ Buyers now search via Google AI Overviews and ChatGPT (the owner's own screensho
 
 ## Sources
 Live research 2026-09-21: getoptimus.ai (title "Optimus | Sales Intelligence & CRM for Freight Brokers", H1 "The Unfair Advantage for Freight Brokers", 70k+ shippers, no schema); FreightWaves + PR.com Optimus coverage; Salesdash + Revenue Vessel ranking blog posts; ImportGenius/Descartes/PIERS for trade-data queries; LIT live site head/robots/sitemap + marketing repo.
+
+---
+
+## SHIPPED (2026-09-21/25) + revised state
+
+**Phase 1 + 2a done & verified live on logisticintel.com:**
+- Homepage `<title>` fixed at the source: root-segment title-template gap (Next.js
+  doesn't apply a layout title template to its OWN page) + buildMetadata brand-strip
+  left the homepage brandless. Now absolute: "Freight Prospecting Software & Shipper
+  Data | Logistics Intel" (commit 0fdf37a6). BOL + trade-intel re-titled to lead
+  with searched terms.
+- Favicon/logo UNIFIED: marketing shipped a cyan set while frontend/public holds the
+  canonical WHITE LIT mark (favicon-lit.svg + icon_*.png). Copied canonical assets
+  into marketing/public (favicon.svg, icon-512, icon-192, apple-touch); Org JSON-LD
+  logo → /icon-512.png (now white). Verified live (commit 48bbe8fa). Legacy
+  favicon.ico still cyan (no rasterizer in env; SVG/PNG is what Google+modern
+  browsers use — low priority).
+- Homepage FAQ + FAQPage JSON-LD describing the full toolset (commit b239e810) —
+  AI-Overview + rich-result fuel. Verified live.
+
+**Revised finding — the on-page foundation was already stronger than the audit assumed:**
+- All SearchDemandPage-based money pages (BOL, CRM, every *-leads page) ALREADY emit
+  FAQPage + WebPage + BreadcrumbList schema via the shared component (faqs is a
+  required field). company-intelligence has its own FAQ+schema. Root has
+  Organization + WebSite schema.
+- /alternatives covers importyeti, importgenius, panjiva, zoominfo, apollo,
+  revenue-vessel, datamyne, tradeatlas, AND optimus. /vs/[slug] + /best lists exist.
+- 80 pages, sitemap, robots all present.
+
+**So the remaining gap is NOT code — it's CONTENT + AUTHORITY + DISTRIBUTION:**
+1. CONTENT (needs voice sign-off): Sanity blog is thin. Competitors (Salesdash,
+   Revenue Vessel, Optimus) rank the money queries via informational guides that also
+   feed AI Overviews. Write the cluster-G guides in Sanity.
+2. AUTHORITY (owner-led): PR/backlinks. LIT's 55K NA cross-border dataset + Mexico
+   trade intel is newsworthy → pitch FreightWaves / JOC (how Optimus built authority).
+3. PAID (owner budget): Optimus's omnipresence is partly Google ADS (Sponsored).
+   Small budget on top ~5 money terms blunts it while organic compounds.
+4. GSC (owner action, blocks measurement): submit sitemap + request re-index of home
+   (picks up new title + white favicon in days). Cannot be done from repo.
+
+Bottom line: technical SEO is done; ranking now moves via content + authority + GSC,
+not more on-page edits.
