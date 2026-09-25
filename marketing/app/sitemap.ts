@@ -6,6 +6,7 @@ import { SOLUTION_PAGES } from "./solutions/_data";
 import { ALTERNATIVE_PAGES } from "./alternatives/_data";
 import { BEST_LIST_PAGES } from "./best/_data";
 import { INDUSTRIES as FREIGHT_LEAD_INDUSTRIES } from "./freight-leads/_industries";
+import { LEAD_MAGNETS } from "@/lib/leadMagnets";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://logisticintel.com";
 
@@ -121,6 +122,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${SITE_URL}/industries`, lastModified: now, changeFrequency: "weekly", priority: 0.7 },
     { url: `${SITE_URL}/tools`, lastModified: now, changeFrequency: "monthly", priority: 0.65 },
     { url: `${SITE_URL}/tools/tariff-calculator`, lastModified: now, changeFrequency: "weekly", priority: 0.8 },
+    // Top-level lead-magnet money-pages (/roi-calculator, /free-shipper-report,
+    // /top-shippers, /free-freight-prospects, /import-risk-scanner). These are
+    // hand-coded Next routes (not Sanity docs), so they must be listed here or
+    // they never reach Google. Driven from LEAD_MAGNETS so the list can't drift.
+    ...LEAD_MAGNETS.map((m) => ({
+      url: `${SITE_URL}${m.href}`,
+      lastModified: now,
+      changeFrequency: "weekly" as const,
+      priority: 0.8,
+    })),
     { url: `${SITE_URL}/contact`, lastModified: now, changeFrequency: "monthly", priority: 0.5 },
     { url: `${SITE_URL}/demo`, lastModified: now, changeFrequency: "monthly", priority: 0.6 },
     { url: `${SITE_URL}/legal/privacy`, lastModified: now, changeFrequency: "yearly", priority: 0.3 },
