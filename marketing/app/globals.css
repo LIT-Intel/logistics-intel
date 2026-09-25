@@ -1265,3 +1265,51 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #cfd7e6; border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* ── ROI calculator sliders (Apple-design: 1:1 native range, brand fill,
+   instant press feedback). --pct is set inline per slider for the fill. ── */
+.roi-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    #2563eb 0%,
+    #0891b2 var(--pct, 50%),
+    #e2e8f0 var(--pct, 50%),
+    #e2e8f0 100%
+  );
+  outline: none;
+  cursor: pointer;
+}
+.roi-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 2px solid #2563eb;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.18), 0 0 0 0 rgba(37, 99, 235, 0.25);
+  transition: box-shadow 120ms ease-out, transform 100ms ease-out;
+}
+.roi-slider::-webkit-slider-thumb:active {
+  transform: scale(1.12);
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.22), 0 0 0 6px rgba(37, 99, 235, 0.18);
+}
+.roi-slider::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 2px solid #2563eb;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.18);
+  transition: transform 100ms ease-out;
+}
+.roi-slider::-moz-range-thumb:active { transform: scale(1.12); }
+.roi-slider:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.35); }
+@media (prefers-reduced-motion: reduce) {
+  .roi-slider::-webkit-slider-thumb,
+  .roi-slider::-moz-range-thumb { transition: none; }
+}
