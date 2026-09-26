@@ -12,6 +12,7 @@ import { UpgradeGate } from "@/components/common/UpgradeGate";
 import { canAccessFeature, normalizePlan } from "@/lib/planLimits";
 
 const Landing = lazy(() => import("@/pages/LandingPage"));
+const CompanyProfileV2Preview = lazy(() => import("@/pages/CompanyProfileV2Preview"));
 const Dashboard = lazy(() => import("@/pages/Dashboard"));
 const LITDashboard = lazy(() => import("./components/dashboard/LITDashboard.jsx"));
 const ContactsPage = lazy(() => import("@/pages/Contacts"));
@@ -281,6 +282,13 @@ export default function App() {
         <Route
           path="/company/:id"
           element={<LegacyCompanyRedirect />}
+        />
+
+        {/* Public, read-only design preview of Company Profile v2 (baked-in
+            demo dataset, no auth, no Supabase reads) — owner review link. */}
+        <Route
+          path="/preview/company-profile-v2"
+          element={<CompanyProfileV2Preview />}
         />
 
         <Route

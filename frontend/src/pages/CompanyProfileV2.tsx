@@ -49,7 +49,13 @@ import {
   ChevronRight,
   FileText,
   Plus,
+  LayoutDashboard,
+  Route,
+  History,
 } from "lucide-react";
+import CompanyProfileWorkspace, {
+  type WorkspaceTab,
+} from "@/features/company-profile/CompanyProfileWorkspace";
 import AddToCampaignModal from "@/components/command-center/AddToCampaignModal";
 import AddToListPicker from "@/features/pulse/AddToListPicker";
 import CreateDealModal, { type CreateDealPrefill } from "@/features/crm/CreateDealModal";
@@ -323,6 +329,12 @@ function buildShellCompany(companyId: string | null, stored: any): any {
 // Pulse AI / Rate Benchmark / Revenue Opportunity live in More because
 // they're high-signal but low-frequency on a typical demo path.
 const VISIBLE_TABS = [
+  // Company Profile v2 (2026-09 handoff): Overview / Trade Lanes / Lane
+  // History are the new BOL-reconciled workspace — one shipment-archive
+  // fetch, every number traceable to its rows via the Data-trace drawer.
+  { id: "overview", label: "Overview", Icon: LayoutDashboard },
+  { id: "lanes", label: "Trade Lanes", Icon: Route },
+  { id: "history", label: "Lane History", Icon: History },
   { id: "supply", label: "Supply Chain", Icon: Workflow },
   // Trade Graph — the relationship view (suppliers ↔ competitors ↔ forwarders
   // ↔ commodities ↔ lanes ↔ facilities) from the company's own BOLs. Flagship
@@ -699,18 +711,18 @@ function ProfilePanel({ rawId }: { rawId: string }) {
   const initialTab: TabId = (() => {
     const t0 = String(searchParams?.get("tab") || "").toLowerCase();
     const t = t0 === "suppliers" ? "graph" : t0; // legacy Suppliers tab → Trade Graph
-    return (["supply", "graph", "live", "rates", "contacts", "research", "activity", "inbox", "quotes"] as const).includes(
+    return (["overview", "lanes", "history", "supply", "graph", "live", "rates", "contacts", "research", "activity", "inbox", "quotes"] as const).includes(
       t as TabId,
     )
       ? (t as TabId)
-      : "supply";
+      : "overview";
   })();
   const [tab, setTab] = useState<TabId>(initialTab);
   useEffect(() => {
     const t0 = String(searchParams?.get("tab") || "").toLowerCase();
     const t = t0 === "suppliers" ? "graph" : t0; // legacy Suppliers tab → Trade Graph
     if (
-      (["supply", "graph", "live", "rates", "contacts", "research", "activity", "inbox", "quotes"] as const).includes(
+      (["overview", "lanes", "history", "supply", "graph", "live", "rates", "contacts", "research", "activity", "inbox", "quotes"] as const).includes(
         t as TabId,
       )
     ) {
@@ -2617,6 +2629,37 @@ function ProfilePanel({ rawId }: { rawId: string }) {
       {/* Body */}
       <div className="flex flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
         <div className="min-w-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4 sm:py-4 md:px-6">
+          {/* Company Profile v2 — Overview / Trade Lanes / Lane History.
+              One shipment-archive fetch (lit_unified_shipments, ImportYeti
+              snapshot fallback); every number reconciles against BOL rows
+              via the Data-trace drawer. Brings its own Insight Rail, so the
+              page's CDPDetailsPanel is suppressed on these tabs. */}
+          {(tab === "overview" || tab === "lanes" || tab === "history") && (
+            <CompanyProfileWorkspace
+              tab={tab as WorkspaceTab}
+              companyKey={
+                (bundle?.identity as any)?.source_company_key ??
+                (bundle?.identity as any)?.sourceCompanyKey ??
+                (activeProfile as any)?.source_company_key ??
+                companyId ??
+                null
+              }
+              companyName={companyName}
+              recentBols={(profile as any)?.recentBols ?? null}
+              meta={{
+                hq: companyAddress || null,
+                website: companyWebsite || companyDomain || null,
+                phone: companyPhone || null,
+                ownerName: ownerName || null,
+                stage:
+                  bundle?.identity?.sources?.saved?.present === true
+                    ? (bundle?.identity?.sources?.saved?.stage ?? null)
+                    : null,
+              }}
+              savedContacts={Array.isArray(savedContacts) ? savedContacts.length : 0}
+              onSwitchTab={(t) => setTab(t as TabId)}
+            />
+          )}
           {tab === "supply" && (
             isMxCompany ? (
               // MX identity — pedimento-backed trade intel replaces the
@@ -2945,7 +2988,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
             <CompanyQuotesTab companyId={companyId} />
           )}
         </div>
-        {panelOpen && (
+        {panelOpen && !["overview", "lanes", "history"].includes(tab) && (
           <CDPDetailsPanel
             company={
               {
