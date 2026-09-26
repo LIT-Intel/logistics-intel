@@ -139,7 +139,10 @@ export function CompanyProfileWorkspace({
     );
   }
 
-  const firstMonthLabel = miLabel(dataset.rows.length ? dataset.rows[0].mi : 0, dataset.firstYear);
+  const firstDocMi = dataset.rows.length ? dataset.rows[0].mi : Number.POSITIVE_INFINITY;
+  const firstRollupMi = dataset.rollup?.firstMi ?? Number.POSITIVE_INFINITY;
+  const firstMi = Math.min(firstDocMi, firstRollupMi);
+  const firstMonthLabel = miLabel(Number.isFinite(firstMi) ? firstMi : 0, dataset.firstYear);
 
   const handleOpenTab = (t: "lanes" | "history" | "contacts" | "shipments") => {
     if (t === "shipments") {

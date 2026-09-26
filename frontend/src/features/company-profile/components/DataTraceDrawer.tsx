@@ -106,6 +106,14 @@ export function DataTraceDrawer({ view, extra }: DataTraceDrawerProps) {
               {view.traceSum}
               {anyModeled && <ModeledPill label="includes modeled values" />}
             </div>
+            {view.traceNote && (
+              <div
+                className="mt-1.5 max-w-[440px] text-[11.5px] leading-snug text-[#94a3b8]"
+                style={{ fontFamily: "'DM Sans', system-ui, sans-serif" }}
+              >
+                {view.traceNote}
+              </div>
+            )}
           </div>
           <button
             type="button"

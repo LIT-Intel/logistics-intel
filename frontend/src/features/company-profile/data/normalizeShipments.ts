@@ -68,7 +68,7 @@ const RATE_PER_TEU: Record<number, number> = {
   2015: 1400, 2016: 1300, 2017: 1500, 2018: 1650, 2019: 1500, 2020: 1950,
   2021: 4600, 2022: 4100, 2023: 2450, 2024: 3850, 2025: 3150, 2026: 2900,
 };
-const rateForYear = (y: number): number =>
+export const rateForYear = (y: number): number =>
   RATE_PER_TEU[y] ?? RATE_PER_TEU[y < 2015 ? 2015 : 2026];
 
 /** Map raw container_type values (incl. stray ISO 6346 codes) to buckets. */
@@ -118,14 +118,22 @@ const NAME_TO_ISO2: Record<string, string> = {
   laos: "LA", nicaragua: "NI", honduras: "HN", guatemala: "GT",
   "el salvador": "SV", "costa rica": "CR", "dominican republic": "DO",
 };
-const iso2FromName = (name: string | null | undefined): string | null =>
+export const iso2FromName = (name: string | null | undefined): string | null =>
   name ? NAME_TO_ISO2[name.trim().toLowerCase()] ?? null : null;
 
 interface PartialRow extends Omit<ShipmentRow, "mi"> {}
 
-function finalize(partials: PartialRow[], source: ShipmentDataset["source"], now: Date): ShipmentDataset {
+function finalize(
+  partials: PartialRow[],
+  source: ShipmentDataset["source"],
+  now: Date,
+  anchorYear?: number,
+): ShipmentDataset {
   const rows = partials.slice().sort((a, b) => a.ts - b.ts);
-  const firstYear = rows.length ? new Date(rows[0].ts).getFullYear() : now.getFullYear();
+  const docYear = rows.length ? new Date(rows[0].ts).getFullYear() : now.getFullYear();
+  // The mi anchor may be pulled earlier than the first document when monthly
+  // rollups reach further back (README: derive the range from the data).
+  const firstYear = Math.min(docYear, anchorYear ?? docYear);
   const lastMi = (now.getFullYear() - firstYear) * 12 + now.getMonth();
   let teuModeled = 0;
   let spendModeled = 0;
@@ -159,6 +167,7 @@ function finalize(partials: PartialRow[], source: ShipmentDataset["source"], now
 export function normalizeUnifiedShipments(
   dbRows: UnifiedShipmentDbRow[],
   now: Date = new Date(),
+  anchorYear?: number,
 ): ShipmentDataset {
   const partials: PartialRow[] = [];
   for (const r of dbRows) {
@@ -214,13 +223,14 @@ export function normalizeUnifiedShipments(
       supplier: clean(r.shipper_name) || "Unknown shipper",
     });
   }
-  return finalize(partials, "archive", now);
+  return finalize(partials, "archive", now, anchorYear);
 }
 
 /** Normalize ImportYeti `recentBols` (fallback when the archive is empty). */
 export function normalizeRecentBols(
   bols: RecentBolInput[],
   now: Date = new Date(),
+  anchorYear?: number,
 ): ShipmentDataset {
   const partials: PartialRow[] = [];
   let i = 0;
@@ -276,5 +286,5 @@ export function normalizeRecentBols(
       supplier: clean(b.supplier) || "Unknown shipper",
     });
   }
-  return finalize(partials, "snapshot", now);
+  return finalize(partials, "snapshot", now, anchorYear);
 }

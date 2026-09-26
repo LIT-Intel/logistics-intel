@@ -51,6 +51,21 @@ export interface ShipmentRow {
   supplier: string; // shipper of record
 }
 
+/** Monthly customs rollups saved at company-save time — the FULL history
+ *  (lit_company_time_series_monthly / lit_company_lane_months). These are
+ *  real aggregated customs records, not documents: volume surfaces blend
+ *  them in; document widgets (facets, trace) stay BOL-backed. */
+export interface RollupData {
+  /** mi → company-wide monthly totals */
+  byMi: Record<number, { shipments: number; teu: number }>;
+  /** lane key ("CN-US") → mi → lane monthly totals (only ~some companies) */
+  laneByKey: Record<string, Record<number, { shipments: number; teu: number }>>;
+  firstMi: number | null; // earliest mi with volume
+  lastMi: number | null; // latest mi with volume
+  totalShipments: number;
+  totalTeu: number;
+}
+
 /** A company's normalized shipment archive plus the derived time frame. */
 export interface ShipmentDataset {
   rows: ShipmentRow[]; // sorted ascending by ts
@@ -61,6 +76,8 @@ export interface ShipmentDataset {
   teuModeledShare: number;
   spendModeledShare: number;
   source: "archive" | "snapshot";
+  /** Saved monthly customs rollups; null/absent → document-only behavior. */
+  rollup?: RollupData | null;
 }
 
 export type Filters = Partial<Record<DimKey, string[]>>;

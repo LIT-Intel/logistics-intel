@@ -30,6 +30,13 @@ import type {
   ShipmentRow,
 } from "./types";
 import { DIMS, DIM_LABEL } from "./types";
+import {
+  blendMode,
+  blendedLaneMonth,
+  blendedMonth,
+  lastRollupActivityMi,
+  type MonthAggLike,
+} from "./rollups";
 
 // ---------------------------------------------------------------- presets
 
@@ -315,6 +322,7 @@ export interface ProfileView {
   traceRows: TraceRowVM[];
   traceTitle: string;
   traceSum: string;
+  traceNote: string;
   traceSumN: { shipments: number; teu: number; spend: number };
   heat: any[];
   hmMonths: any[];
@@ -326,6 +334,8 @@ export interface ProfileView {
   totalBols: string;
   bolsInView: string;
   hasPrior: boolean;
+  /** trust chip text: blended → "N shipments · M BOL docs", else "M of T BOLs" */
+  provenance: string;
   modeled: { teu: boolean; spend: boolean };
 }
 
@@ -362,9 +372,75 @@ export function computeView(ds: ShipmentDataset, st: ProfileState, A: ProfileAct
     const o = byMiP[r.mi + 12] || (byMiP[r.mi + 12] = { shipments: 0, teu: 0, spend: 0, containers: 0 });
     o.shipments++; o.teu += r.teu; o.spend += r.spend; o.containers += r.containers;
   }
+
+  // ── Rollup blending (saved monthly customs records; see data/rollups.ts) ──
+  // Volume surfaces use max(documents, rollup) per month; document surfaces
+  // (facets, recent, trace rows) stay BOL-backed.
+  const mode = blendMode(ds, st.f);
+  const blendOn = mode !== "docs";
+  const selLanes = st.f.lane ?? [];
+  const bm = (mi: number): MonthAggLike => blendedMonth(ds, mode, selLanes, mi, byMi[mi]);
+  const bmPrior = (mi: number): MonthAggLike => blendedMonth(ds, mode, selLanes, mi - 12, byMiP[mi]);
+  const metricOf = (a: MonthAggLike): number => (metric === "shipments" ? a.shipments : a[metric]);
+  let lastLabelOverride: string | null = null;
+  if (blendOn) {
+    let s = 0, t = 0, sp = 0, ps = 0, pt = 0, psp = 0;
+    let extraAny = false;
+    for (let mi = st.m0; mi <= st.m1; mi++) {
+      const b = bm(mi);
+      const d = byMi[mi];
+      if (b.teu > (d?.teu ?? 0) + 1e-9 || b.shipments > (d?.shipments ?? 0)) extraAny = true;
+      s += b.shipments; t += b.teu; sp += b.spend;
+      if (hasPrior) {
+        const p = bmPrior(mi);
+        ps += p.shipments; pt += p.teu; psp += p.spend;
+      }
+    }
+    const laneSet = new Set(cur.map((r) => r.lane));
+    if (mode === "full" && ds.rollup) {
+      for (const [k, months] of Object.entries(ds.rollup.laneByKey)) {
+        for (const kk of Object.keys(months)) {
+          const mi = +kk;
+          if (mi >= st.m0 && mi <= st.m1) { laneSet.add(k); break; }
+        }
+      }
+    }
+    // last activity: latest of last document vs last rollup month with volume
+    let lastTs: number | null = S.last ? S.last.ts : null;
+    const rollLast = lastRollupActivityMi(ds, st.m1);
+    if (rollLast != null && rollLast >= st.m0) {
+      const endOfMonth = Math.min(ds.todayTs, +new Date(miYear(rollLast, FY), (rollLast % 12) + 1, 0));
+      if (lastTs == null || endOfMonth > lastTs) {
+        lastTs = endOfMonth;
+        lastLabelOverride = miLabel(rollLast, FY);
+      }
+    }
+    Object.assign(S, {
+      shipments: s,
+      teu: t,
+      spend: sp,
+      lanes: laneSet.size,
+      avgTeu: s ? t / s : 0,
+      lastDays: lastTs != null ? Math.max(0, Math.round((ds.todayTs - lastTs) / 864e5)) : S.lastDays,
+      // rollup teu is a real customs figure; spend for undocumented volume
+      // stays modeled (rate × TEU) and labeled
+      teuModeled: extraAny ? false : S.teuModeled,
+      spendModeled: extraAny ? true : S.spendModeled,
+    });
+    if (hasPrior) {
+      Object.assign(P, { shipments: ps, teu: pt, spend: psp, avgTeu: ps ? pt / ps : 0 });
+    }
+  }
   const spark = (key: keyof MonthAgg): string => {
     const vals: number[] = [];
-    for (let mi = st.m0; mi <= st.m1; mi++) vals.push(byMi[mi] ? byMi[mi][key] : 0);
+    for (let mi = st.m0; mi <= st.m1; mi++)
+      vals.push(
+        blendOn && key !== "containers"
+          ? (bm(mi) as any)[key]
+          : byMi[mi]
+            ? byMi[mi][key]
+            : 0,
+      );
     const mx = Math.max(1, ...vals);
     if (vals.length < 2) return "M0 14 L100 14";
     return vals
@@ -389,7 +465,10 @@ export function computeView(ds: ShipmentDataset, st: ProfileState, A: ProfileAct
       deltaFg: tone.fg,
       deltaBg: tone.bg,
       deltaIcon: tone.icon,
-      prior: k.fmt === "days" ? (S.last ? fmtDate(S.last.ts) : "—") : "prior " + fmtK(k.fmt, (P as any)[k.id] || 0),
+      prior:
+        k.fmt === "days"
+          ? (lastLabelOverride ?? (S.last ? fmtDate(S.last.ts) : "—"))
+          : "prior " + fmtK(k.fmt, (P as any)[k.id] || 0),
       spark: ["shipments", "teu", "spend", "containers"].includes(k.id) ? spark(k.id as keyof MonthAgg) : "",
       hasSpark: ["shipments", "teu", "spend", "containers"].includes(k.id),
       pinned: !st.pins || st.pins.includes(k.id),
@@ -400,11 +479,26 @@ export function computeView(ds: ShipmentDataset, st: ProfileState, A: ProfileAct
   const targets: Record<string, number> = {};
   KDEFS.forEach((k) => { if (k.fmt !== "days") targets[k.id] = (S as any)[k.id] || 0; });
 
-  // full-history timeline (time filter skipped, facet filters respected)
-  const tl: Record<number, number> = {};
-  for (const r of ROWS) if (match(r, st, "time")) tl[r.mi] = (tl[r.mi] || 0) + mv(r);
+  // full-history timeline (time filter skipped, facet filters respected;
+  // blended with the saved monthly rollups so the brush spans the FULL
+  // history, not just the months with BOL documents)
+  const tlAgg: Record<number, MonthAggLike> = {};
+  for (const r of ROWS)
+    if (match(r, st, "time")) {
+      const o = tlAgg[r.mi] || (tlAgg[r.mi] = { shipments: 0, teu: 0, spend: 0 });
+      o.shipments++; o.teu += r.teu; o.spend += r.spend;
+    }
   const tlVals: number[] = [];
-  for (let mi = 0; mi <= LAST_MI; mi++) tlVals.push(tl[mi] || 0);
+  for (let mi = 0; mi <= LAST_MI; mi++) {
+    const docs = tlAgg[mi];
+    tlVals.push(
+      blendOn
+        ? metricOf(blendedMonth(ds, mode, selLanes, mi, docs))
+        : docs
+          ? metricOf(docs)
+          : 0,
+    );
+  }
   const tlMax = Math.max(1, ...tlVals);
   const N = LAST_MI + 1;
   const timeline = tlVals.map((v, mi) => ({
@@ -432,8 +526,8 @@ export function computeView(ds: ShipmentDataset, st: ProfileState, A: ProfileAct
   const rb: { mi: number; v: number; pv: number }[] = [];
   let rbMax = 1;
   for (let mi = st.m0; mi <= st.m1; mi++) {
-    const v = byMi[mi] ? (metric === "shipments" ? byMi[mi].shipments : byMi[mi][metric]) : 0;
-    const pv = byMiP[mi] ? (metric === "shipments" ? byMiP[mi].shipments : byMiP[mi][metric]) : 0;
+    const v = blendOn ? metricOf(bm(mi)) : byMi[mi] ? metricOf(byMi[mi]) : 0;
+    const pv = blendOn ? metricOf(bmPrior(mi)) : byMiP[mi] ? metricOf(byMiP[mi]) : 0;
     rb.push({ mi, v, pv });
     rbMax = Math.max(rbMax, v, pv);
   }
@@ -582,6 +676,7 @@ export function computeView(ds: ShipmentDataset, st: ProfileState, A: ProfileAct
   let traceRows: TraceRowVM[] = [];
   let traceTitle = "";
   let traceSum = "";
+  let traceNote = "";
   let traceSumN = { shipments: 0, teu: 0, spend: 0 };
   if (st.trace) {
     const t = st.trace;
@@ -598,6 +693,11 @@ export function computeView(ds: ShipmentDataset, st: ProfileState, A: ProfileAct
     traceSum = fmtNum(ts.shipments) + " BOLs · " + fmtNum(ts.teu) + " TEU · " + fmtMoney(ts.spend);
     traceSumN = { shipments: ts.shipments, teu: ts.teu, spend: ts.spend };
     traceRows = tr.slice(0, 150).map((r) => rowOut(ds, r, A));
+    if (blendOn && S.shipments > cur.length) {
+      traceNote =
+        "Bill-of-lading documents shown; period totals on the page also include " +
+        "the company's saved monthly customs records.";
+    }
   }
 
   // heatmap: lanes × months
@@ -610,6 +710,28 @@ export function computeView(ds: ShipmentDataset, st: ProfileState, A: ProfileAct
     const k = r.lane + "|" + r.mi;
     hmG[k] = (hmG[k] || 0) + mv(r);
     hmMax = Math.max(hmMax, hmG[k]);
+  }
+  // lane-level rollup blending for the heatmap (companies with saved
+  // lane-month history get complete cells, not just documented months)
+  if (blendOn && ds.rollup && Object.keys(ds.rollup.laneByKey).length) {
+    const curLaneMi: Record<string, MonthAggLike> = {};
+    for (const r of cur) {
+      const k = r.lane + "|" + r.mi;
+      const o = curLaneMi[k] || (curLaneMi[k] = { shipments: 0, teu: 0, spend: 0 });
+      o.shipments++; o.teu += r.teu; o.spend += r.spend;
+    }
+    for (const laneKey of Object.keys(ds.rollup.laneByKey)) {
+      if (selLanes.length && !selLanes.includes(laneKey)) continue;
+      for (let mi = st.m0; mi <= st.m1; mi++) {
+        const b = blendedLaneMonth(ds, true, laneKey, mi, curLaneMi[laneKey + "|" + mi]);
+        const v = metricOf(b);
+        if (v > 0) {
+          const k = laneKey + "|" + mi;
+          hmG[k] = Math.max(hmG[k] || 0, v);
+          hmMax = Math.max(hmMax, hmG[k]);
+        }
+      }
+    }
   }
   const heat = lanes.map((l) => ({
     label: l.label,
@@ -644,7 +766,7 @@ export function computeView(ds: ShipmentDataset, st: ProfileState, A: ProfileAct
     topShare: top ? top.share : "—",
     topCarrier: topC ? topC.label : "—",
     topCarrierShare: topC ? topC.share : "—",
-    lastDate: S.last ? fmtDate(S.last.ts) : "—",
+    lastDate: lastLabelOverride ?? (S.last ? fmtDate(S.last.ts) : "—"),
     lastDays: S.lastDays != null ? S.lastDays + " days ago" : "—",
   };
 
@@ -654,9 +776,15 @@ export function computeView(ds: ShipmentDataset, st: ProfileState, A: ProfileAct
     timeline, years, brush, cadence, readout, rbTicks,
     lanes, carriers, suppliers, products, ctypes, ctypeCoverage,
     tokens, hasTokens: tokens.length > 0, presets, metrics, recent,
-    traceOpen: !!st.trace, traceRows, traceTitle, traceSum, traceSumN,
+    traceOpen: !!st.trace, traceRows, traceTitle, traceSum, traceSumN, traceNote,
     heat, hmMonths, story, nMonths, periodLabel, priorLabel, unitM,
-    totalBols: fmtNum(ROWS.length), bolsInView: fmtNum(cur.length), hasPrior,
+    totalBols: fmtNum(ds.rollup ? Math.max(ROWS.length, ds.rollup.totalShipments) : ROWS.length),
+    bolsInView: fmtNum(cur.length),
+    hasPrior,
+    provenance:
+      blendOn && S.shipments > cur.length
+        ? fmtNum(S.shipments) + " shipments · " + fmtNum(cur.length) + " BOL docs"
+        : fmtNum(cur.length) + " of " + fmtNum(ROWS.length) + " BOLs",
     modeled: { teu: S.teuModeled, spend: S.spendModeled },
   };
 }

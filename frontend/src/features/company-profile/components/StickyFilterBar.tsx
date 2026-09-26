@@ -145,7 +145,7 @@ export function StickyFilterBar({ view, extra, companyName, mark }: StickyFilter
         >
           <ShieldCheck size={15} className="text-[#10b981]" />
           <span className="whitespace-nowrap">
-            {view.bolsInView} of {view.totalBols} BOLs
+            {view.provenance ?? `${view.bolsInView} of ${view.totalBols} BOLs`}
           </span>
           <span className="text-[#CBD5E1]">|</span>
           <span className="whitespace-nowrap">{view.periodLabel}</span>
