@@ -8,6 +8,7 @@
  */
 import React from "react";
 import { Download, ListPlus, Send, Star } from "lucide-react";
+import { getLogoCandidates } from "@/lib/logo";
 import type { ProfileView } from "../data/selectors";
 import type { TraceRowVM } from "../data/selectors";
 import { EASE_OUT, FONT_BODY, FONT_DISPLAY, FONT_MONO, useReducedMotion } from "./ui";
@@ -42,6 +43,10 @@ export interface StoryHeaderProps {
    *  + 56px H1). When false render only narrative + status card + ticker. */
   showTitle?: boolean;
   meta?: { role?: string; hq?: string; website?: string; owner?: string; stage?: string };
+  /** Company domain/website — drives the real logo via the app's logo.dev
+   *  cascade (getLogoCandidates); falls back to the monogram tile when every
+   *  provider misses. */
+  logoDomain?: string | null;
   starred?: boolean;
   onToggleStar?: () => void;
   onExport?: () => void;
@@ -57,6 +62,7 @@ export function StoryHeader({
   mark,
   showTitle = false,
   meta,
+  logoDomain,
   starred = false,
   onToggleStar,
   onExport,
@@ -69,6 +75,20 @@ export function StoryHeader({
   const [tickerPaused, setTickerPaused] = React.useState(false);
 
   const monogram = (mark ?? companyName.slice(0, 4)).toUpperCase();
+
+  // Real company logo — walk the app's provider cascade (logo.dev → Google
+  // favicons → Unavatar); each 404 advances to the next candidate, and when
+  // all miss we render the honest monogram tile from the design.
+  const logoCandidates = React.useMemo(
+    () => getLogoCandidates(logoDomain ?? meta?.website ?? null),
+    [logoDomain, meta?.website],
+  );
+  const [logoAttempt, setLogoAttempt] = React.useState(0);
+  React.useEffect(() => {
+    setLogoAttempt(0);
+  }, [logoCandidates]);
+  const logoUrl = logoAttempt < logoCandidates.length ? logoCandidates[logoAttempt] : null;
+  const hasActions = Boolean(onToggleStar || onExport || onAddToList || onStartOutreach || trailingActions);
   const story = (view?.story ?? {}) as Record<string, string>;
   const S = view?.S;
   const cadence: any[] = Array.isArray(view?.cadence) ? view!.cadence : [];
@@ -134,7 +154,8 @@ export function StoryHeader({
             )}
             {metaBits}
           </div>
-          <div className="flex items-center gap-2">
+          {hasActions && (
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               aria-label={starred ? "Unstar company" : "Star company"}
@@ -177,27 +198,43 @@ export function StoryHeader({
             </button>
             {trailingActions}
           </div>
+          )}
         </div>
       )}
 
       <div
-        className="grid items-end gap-10"
-        style={{ gridTemplateColumns: "minmax(0,1fr) auto", marginTop: showTitle ? 22 : 0 }}
+        className="grid grid-cols-1 items-end gap-6 md:grid-cols-[minmax(0,1fr)_auto] md:gap-10"
+        style={{ marginTop: showTitle ? 22 : 0 }}
       >
         <div className="min-w-0">
           {showTitle && (
-            <div className="flex items-center gap-5">
+            <div className="flex items-center gap-3 sm:gap-5">
               <div
-                className="grid h-[72px] w-[72px] flex-none place-items-center rounded-[20px] bg-[#0F172A] text-[16px] font-bold tracking-[0.05em] text-white"
+                className={
+                  "grid h-14 w-14 flex-none place-items-center overflow-hidden rounded-2xl sm:h-[72px] sm:w-[72px] sm:rounded-[20px] " +
+                  (logoUrl
+                    ? "border border-[#E5E7EB] bg-white"
+                    : "bg-[#0F172A] text-[13px] font-bold tracking-[0.05em] text-white sm:text-[16px]")
+                }
                 style={{ fontFamily: FONT_DISPLAY, boxShadow: "0 12px 30px rgba(15,23,42,0.2)" }}
               >
-                {monogram}
+                {logoUrl ? (
+                  <img
+                    src={logoUrl}
+                    alt={companyName + " logo"}
+                    loading="lazy"
+                    className="h-full w-full object-contain p-1.5 sm:p-2"
+                    onError={() => setLogoAttempt((a) => a + 1)}
+                  />
+                ) : (
+                  monogram
+                )}
               </div>
               <h1
-                className="m-0 text-[56px] font-bold text-[#0F172A]"
+                className="m-0 text-[32px] font-bold text-[#0F172A] sm:text-[44px] lg:text-[56px]"
                 style={{
                   fontFamily: FONT_DISPLAY,
-                  lineHeight: 1.02,
+                  lineHeight: 1.05,
                   letterSpacing: "-0.04em",
                   textWrap: "balance" as React.CSSProperties["textWrap"],
                 }}
@@ -208,7 +245,7 @@ export function StoryHeader({
           )}
           {view && (
           <p
-            className="mb-0 max-w-[880px] text-[19px] text-[#475569]"
+            className="mb-0 max-w-[880px] text-[16px] text-[#475569] sm:text-[19px]"
             style={{
               fontFamily: FONT_BODY,
               lineHeight: 1.55,
@@ -235,7 +272,7 @@ export function StoryHeader({
 
         {/* status card */}
         {view && (
-        <div className="flex min-w-[240px] flex-col gap-[10px] rounded-2xl border border-[#EEF2F6] bg-[#F8FAFC] px-5 py-[18px]">
+        <div className="flex w-full min-w-0 flex-col gap-[10px] rounded-2xl border border-[#EEF2F6] bg-[#F8FAFC] px-5 py-[18px] md:w-auto md:min-w-[240px]">
           <div
             className="flex items-center gap-2 text-[13px] font-semibold text-[#047857]"
             style={{ fontFamily: FONT_BODY }}

@@ -2611,6 +2611,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
             view={v2Workspace.view}
             showTitle
             companyName={companyName}
+            logoDomain={companyDomain || companyWebsite || null}
             meta={{
               role: "Receiver",
               hq: companyAddress || undefined,

@@ -51,6 +51,7 @@ export default function CompanyProfileV2Preview() {
             showTitle
             companyName="Tesla"
             mark="TSLA"
+            logoDomain="tesla.com"
             meta={{ role: "Receiver", hq: "Austin, TX", website: "tesla.com" }}
           />
           <nav className="mt-1 flex gap-1 overflow-x-auto" role="tablist" aria-label="Preview sections">

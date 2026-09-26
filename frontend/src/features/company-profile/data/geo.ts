@@ -241,3 +241,67 @@ export function portCoords(portName: string): [number, number] | null {
 export function originCoords(oPort: string, oc: string): [number, number] | null {
   return portCoords(oPort) ?? COUNTRY_CENTROIDS[oc] ?? null;
 }
+
+/** Real BOL destination fields are frequently CITIES (consignee locations
+ *  like "Fremont", "Peachtree City") or plain "United States of America",
+ *  not ports — so the dest side needs its own city table + country-centroid
+ *  fallback, otherwise whole lanes drop off the map. */
+const US_CITIES: { aliases: string[]; coords: [number, number] }[] = [
+  { aliases: ["fremont"], coords: [37.55, -121.99] },
+  { aliases: ["austin"], coords: [30.27, -97.74] },
+  { aliases: ["kyle"], coords: [29.99, -97.88] },
+  { aliases: ["sparks"], coords: [39.53, -119.75] },
+  { aliases: ["east palo alto", "palo alto"], coords: [37.44, -122.14] },
+  { aliases: ["peachtree city", "peachtree"], coords: [33.4, -84.6] },
+  { aliases: ["atlanta"], coords: [33.75, -84.39] },
+  { aliases: ["dallas"], coords: [32.78, -96.8] },
+  { aliases: ["fort worth"], coords: [32.76, -97.33] },
+  { aliases: ["memphis"], coords: [35.15, -90.05] },
+  { aliases: ["nashville"], coords: [36.16, -86.78] },
+  { aliases: ["charlotte"], coords: [35.23, -80.84] },
+  { aliases: ["columbus"], coords: [39.96, -83.0] },
+  { aliases: ["indianapolis"], coords: [39.77, -86.16] },
+  { aliases: ["kansas city"], coords: [39.1, -94.58] },
+  { aliases: ["st. louis", "saint louis"], coords: [38.63, -90.2] },
+  { aliases: ["denver"], coords: [39.74, -104.99] },
+  { aliases: ["salt lake"], coords: [40.76, -111.89] },
+  { aliases: ["phoenix"], coords: [33.45, -112.07] },
+  { aliases: ["las vegas"], coords: [36.17, -115.14] },
+  { aliases: ["reno"], coords: [39.53, -119.81] },
+  { aliases: ["sacramento"], coords: [38.58, -121.49] },
+  { aliases: ["san francisco"], coords: [37.77, -122.42] },
+  { aliases: ["san jose"], coords: [37.34, -121.89] },
+  { aliases: ["portland"], coords: [45.52, -122.68] },
+  { aliases: ["minneapolis"], coords: [44.98, -93.27] },
+  { aliases: ["milwaukee"], coords: [43.04, -87.91] },
+  { aliases: ["cleveland"], coords: [41.5, -81.69] },
+  { aliases: ["cincinnati"], coords: [39.1, -84.51] },
+  { aliases: ["pittsburgh"], coords: [40.44, -79.99] },
+  { aliases: ["louisville"], coords: [38.25, -85.76] },
+  { aliases: ["el paso"], coords: [31.76, -106.49] },
+  { aliases: ["san antonio"], coords: [29.42, -98.49] },
+  { aliases: ["orlando"], coords: [28.54, -81.38] },
+  { aliases: ["tampa"], coords: [27.95, -82.46] },
+  { aliases: ["raleigh"], coords: [35.78, -78.64] },
+  { aliases: ["richmond"], coords: [37.54, -77.44] },
+  { aliases: ["buffalo"], coords: [42.89, -78.88] },
+  { aliases: ["albany"], coords: [42.65, -73.75] },
+];
+
+function usCityCoords(name: string): [number, number] | null {
+  if (!name) return null;
+  const q = name.toLowerCase();
+  for (const c of US_CITIES) {
+    for (const a of c.aliases) {
+      if (q.includes(a)) return c.coords;
+    }
+  }
+  return null;
+}
+
+/** Destination of a lane: named port, else US-city lookup, else the dest
+ *  country's centroid — a lane must ALWAYS resolve so the map never falls
+ *  back to a blank background. */
+export function destCoords(dPort: string, dc: string): [number, number] | null {
+  return portCoords(dPort) ?? usCityCoords(dPort) ?? COUNTRY_CENTROIDS[dc] ?? COUNTRY_CENTROIDS.US;
+}

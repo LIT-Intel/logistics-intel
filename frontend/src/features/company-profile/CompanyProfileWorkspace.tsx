@@ -7,7 +7,6 @@
  * period/metric/facet change updates the whole workspace at once.
  */
 import { useMemo } from "react";
-import { Database } from "lucide-react";
 import { miLabel } from "./data/format";
 import type { RecentBolInput } from "./data/normalizeShipments";
 import type { ShipmentDataset } from "./data/types";
@@ -100,7 +99,7 @@ export function CompanyProfileWorkspace({
   refreshedNote,
   onSwitchTab,
 }: CompanyProfileWorkspaceProps) {
-  const { dataset, loading, isSnapshotFallback, state, actions, extra, view, lanesView } = workspace;
+  const { dataset, loading, state, actions, extra, view, lanesView } = workspace;
 
   if (loading && !dataset) {
     return (
@@ -120,11 +119,11 @@ export function CompanyProfileWorkspace({
     return (
       <Card className="mx-auto my-10 max-w-xl p-8 text-center">
         <div className="text-[16px] font-semibold text-[#0F172A]" style={{ fontFamily: FONT_DISPLAY }}>
-          No shipment archive yet
+          Shipment intelligence is on its way
         </div>
         <p className="mt-2 text-[13px] leading-relaxed text-[#64748b]" style={{ fontFamily: FONT_BODY }}>
-          Bills of lading for {companyName} haven&apos;t been materialized into the archive yet.
-          The Supply Chain tab still shows the live snapshot while the archive builds.
+          We&apos;re assembling the bill-of-lading history for {companyName}. In the meantime, the
+          Supply Chain tab has the live trade picture.
         </p>
         {onSwitchTab && (
           <button
@@ -154,17 +153,6 @@ export function CompanyProfileWorkspace({
 
   return (
     <div className="min-w-0">
-      {isSnapshotFallback && (
-        <div
-          className="mb-3 flex items-center gap-2 rounded-[10px] border border-[rgba(245,158,11,0.35)] bg-[rgba(245,158,11,0.10)] px-3.5 py-2.5 text-[12.5px] text-[#92400e]"
-          style={{ fontFamily: FONT_BODY }}
-        >
-          <Database className="h-4 w-4 shrink-0" />
-          Archive backfilling — showing the ImportYeti snapshot sample ({view.totalBols} BOLs).
-          Figures reconcile against these records only.
-        </div>
-      )}
-
       <StickyFilterBar view={view} extra={extra} companyName={companyName} />
 
       <div className="mt-5 grid grid-cols-1 items-start gap-5 min-[1100px]:grid-cols-[minmax(0,1fr)_320px]">

@@ -9,7 +9,7 @@
 import React from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { originCoords, portCoords } from "../../data/geo";
+import { destCoords, originCoords } from "../../data/geo";
 import type { ProfileView } from "../../data/selectors";
 import { EASE_OUT, FONT_DISPLAY, FONT_MONO, Overline, ShareBar, useReducedMotion } from "../ui";
 
@@ -80,7 +80,11 @@ export function LaneMap({
   const resolved: ResolvedLane[] = view.lanes
     .map((lane) => {
       const o = originCoords(lane.oPort, lane.oc);
-      const d = portCoords(lane.dPort);
+      // Real BOL dest fields are often consignee CITIES ("Fremont",
+      // "Peachtree City") or just "United States of America" — destCoords
+      // falls back through US-city lookup to the country centroid so lanes
+      // always draw (design spec: the map is never a blank background).
+      const d = destCoords(lane.dPort, lane.key.split("-")[1] ?? "US");
       return o && d ? { lane, o, d } : null;
     })
     .filter((x): x is ResolvedLane => x != null);

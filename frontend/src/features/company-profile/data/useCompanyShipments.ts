@@ -33,6 +33,8 @@ export const toArchiveSlug = (companyKey: string | null | undefined): string | n
   return k.replace(/^company\//, "");
 };
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export function useCompanyShipmentArchive(companyKey: string | null | undefined) {
   const slug = toArchiveSlug(companyKey);
   return useQuery<ShipmentDataset | null>({
@@ -40,10 +42,25 @@ export function useCompanyShipmentArchive(companyKey: string | null | undefined)
     enabled: Boolean(slug),
     staleTime: FIVE_MIN,
     queryFn: async () => {
+      // The page can mount with the route param (which may be the
+      // lit_companies UUID) before the identity bundle resolves the real
+      // source_company_key — resolve UUID → slug here so the archive is
+      // never missed for a company that has one. (Sany fell back to the
+      // ImportYeti sample exactly this way, 2026-09-26.)
+      let archiveKey = slug as string;
+      if (UUID_RE.test(archiveKey)) {
+        const { data: co } = await supabase
+          .from("lit_companies")
+          .select("source_company_key")
+          .eq("id", archiveKey)
+          .maybeSingle();
+        const resolved = toArchiveSlug((co as any)?.source_company_key);
+        if (resolved) archiveKey = resolved;
+      }
       const { data, error } = await supabase
         .from("lit_unified_shipments")
         .select(COLS)
-        .eq("company_id", slug)
+        .eq("company_id", archiveKey)
         .order("bol_date", { ascending: true })
         .limit(5000);
       if (error || !data || data.length === 0) return null;
