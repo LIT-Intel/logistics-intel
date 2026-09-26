@@ -16,7 +16,6 @@ import { useCountUp } from "./data/useCountUp";
 import { useShipmentDataset } from "./data/useCompanyShipments";
 import { useProfileState } from "./data/useProfileState";
 import { Card, FONT_BODY, FONT_DISPLAY } from "./components/ui";
-import { StoryHeader } from "./components/StoryHeader";
 import { StickyFilterBar } from "./components/StickyFilterBar";
 import { HistoryBrush } from "./components/HistoryBrush";
 import { DataTraceDrawer } from "./components/DataTraceDrawer";
@@ -27,38 +26,25 @@ import { LaneHistoryTab } from "./components/history/LaneHistoryTab";
 
 export type WorkspaceTab = "overview" | "lanes" | "history";
 
-export interface CompanyProfileWorkspaceProps {
-  tab: WorkspaceTab;
-  companyKey: string | null | undefined; // source_company_key / slug
-  companyName: string;
-  recentBols?: RecentBolInput[] | null; // snapshot fallback (already fetched by the page)
-  meta?: {
-    hq?: string | null;
-    website?: string | null;
-    phone?: string | null;
-    parent?: string | null;
-    ownerName?: string | null;
-    stage?: string | null;
-    lastActivity?: string | null;
-  };
-  savedContacts?: number;
-  refreshedNote?: string; // e.g. ", refreshed 2 days ago"
-  onSwitchTab?: (tabId: string) => void; // page-level tab ids ("lanes", "history", "contacts", "supply")
-  /** Pre-normalized dataset (public design preview) — skips the archive fetch. */
-  demoDataset?: ShipmentDataset | null;
+/** The page-level workspace handle: one data load + one state instance shared
+ *  by the editorial hero (above the tab bar) and every v2 tab body. */
+export interface WorkspaceHandle {
+  dataset: ShipmentDataset | null;
+  loading: boolean;
+  isSnapshotFallback: boolean;
+  state: ReturnType<typeof useProfileState>["state"];
+  actions: ReturnType<typeof useProfileState>["actions"];
+  extra: ReturnType<typeof useProfileState>["extra"];
+  ready: boolean;
+  view: ReturnType<typeof computeView> | null;
+  lanesView: ReturnType<typeof computeLanes> | null;
 }
 
-export function CompanyProfileWorkspace({
-  tab,
-  companyKey,
-  companyName,
-  recentBols,
-  meta,
-  savedContacts,
-  refreshedNote,
-  onSwitchTab,
-  demoDataset,
-}: CompanyProfileWorkspaceProps) {
+export function useCompanyProfileWorkspace(
+  companyKey: string | null | undefined,
+  recentBols?: RecentBolInput[] | null,
+  demoDataset?: ShipmentDataset | null,
+): WorkspaceHandle {
   const fetched = useShipmentDataset(demoDataset ? null : companyKey, demoDataset ? null : (recentBols ?? null));
   const dataset = demoDataset ?? fetched.dataset;
   const loading = demoDataset ? false : fetched.loading;
@@ -78,12 +64,43 @@ export function CompanyProfileWorkspace({
     [dataset, ready, state, actions, disp, baseView],
   );
   const lanesView = useMemo(
-    () =>
-      dataset && ready && (tab === "lanes" || tab === "history")
-        ? computeLanes(dataset, state, actions)
-        : null,
-    [dataset, ready, state, actions, tab],
+    () => (dataset && ready ? computeLanes(dataset, state, actions) : null),
+    [dataset, ready, state, actions],
   );
+
+  return { dataset, loading, isSnapshotFallback, state, actions, extra, ready, view, lanesView };
+}
+
+export interface CompanyProfileWorkspaceProps {
+  tab: WorkspaceTab;
+  /** From useCompanyProfileWorkspace() — owned by the page so the hero and
+   *  all tabs share one dataset + filter state. */
+  workspace: WorkspaceHandle;
+  companyName: string;
+  meta?: {
+    hq?: string | null;
+    website?: string | null;
+    phone?: string | null;
+    parent?: string | null;
+    ownerName?: string | null;
+    stage?: string | null;
+    lastActivity?: string | null;
+  };
+  savedContacts?: number;
+  refreshedNote?: string; // e.g. ", refreshed 2 days ago"
+  onSwitchTab?: (tabId: string) => void; // page-level tab ids ("lanes", "history", "contacts", "supply")
+}
+
+export function CompanyProfileWorkspace({
+  tab,
+  workspace,
+  companyName,
+  meta,
+  savedContacts,
+  refreshedNote,
+  onSwitchTab,
+}: CompanyProfileWorkspaceProps) {
+  const { dataset, loading, isSnapshotFallback, state, actions, extra, view, lanesView } = workspace;
 
   if (loading && !dataset) {
     return (
@@ -123,11 +140,6 @@ export function CompanyProfileWorkspace({
     );
   }
 
-  const mark = companyName
-    .replace(/[^A-Za-z0-9 ]/g, "")
-    .trim()
-    .slice(0, 4)
-    .toUpperCase();
   const firstMonthLabel = miLabel(dataset.rows.length ? dataset.rows[0].mi : 0, dataset.firstYear);
 
   const handleOpenTab = (t: "lanes" | "history" | "contacts" | "shipments") => {
@@ -153,9 +165,7 @@ export function CompanyProfileWorkspace({
         </div>
       )}
 
-      <StoryHeader view={view} companyName={companyName} mark={mark} />
-
-      <StickyFilterBar view={view} extra={extra} companyName={companyName} mark={mark} />
+      <StickyFilterBar view={view} extra={extra} companyName={companyName} />
 
       <div className="mt-5 grid grid-cols-1 items-start gap-5 min-[1100px]:grid-cols-[minmax(0,1fr)_320px]">
         <div className="flex min-w-0 flex-col gap-5">

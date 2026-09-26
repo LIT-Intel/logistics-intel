@@ -52,10 +52,14 @@ import {
   LayoutDashboard,
   Route,
   History,
+  MoreHorizontal,
+  Check,
 } from "lucide-react";
 import CompanyProfileWorkspace, {
+  useCompanyProfileWorkspace,
   type WorkspaceTab,
 } from "@/features/company-profile/CompanyProfileWorkspace";
+import { StoryHeader } from "@/features/company-profile/components/StoryHeader";
 import AddToCampaignModal from "@/components/command-center/AddToCampaignModal";
 import AddToListPicker from "@/features/pulse/AddToListPicker";
 import CreateDealModal, { type CreateDealPrefill } from "@/features/crm/CreateDealModal";
@@ -81,7 +85,8 @@ import { checkExportQuota } from "@/api/entitlements";
 import { capFutureDate } from "@/lib/dateUtils";
 import { supabase } from "@/lib/supabase";
 
-import CDPHeader from "@/components/company/CDPHeader";
+// CDPHeader retired 2026-09-25 — replaced by the v2 editorial hero
+// (StoryHeader showTitle) per the Company Profile v2 handoff §14.9.
 import CDPTradeGraph from "@/components/company/CDPTradeGraph";
 import CompanySignalsStrip from "@/components/company/CompanySignalsStrip";
 import OrgSaveCollisionCard from "@/components/company/OrgSaveCollisionCard";
@@ -409,6 +414,114 @@ class V2ErrorBoundary extends Component<BoundaryProps, BoundaryState> {
     }
     return this.props.children;
   }
+}
+
+/**
+ * Hero overflow menu (⋯) — carries the actions the retired CDPHeader hosted
+ * that didn't make the editorial hero's primary row: share, refresh, edit,
+ * Pulse, details-panel toggle, and the legacy-tab spend-year selector.
+ */
+function HeaderMoreMenu({
+  onShare,
+  shareLoading,
+  onRefresh,
+  refreshing,
+  onPulse,
+  onEdit,
+  panelOpen,
+  onTogglePanel,
+  years,
+  selectedYear,
+  onSelectYear,
+}: {
+  onShare: () => void;
+  shareLoading?: boolean;
+  onRefresh: () => void;
+  refreshing?: boolean;
+  onPulse?: () => void;
+  onEdit?: () => void;
+  panelOpen: boolean;
+  onTogglePanel: () => void;
+  years: number[];
+  selectedYear: number;
+  onSelectYear: (y: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onEsc);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onEsc);
+    };
+  }, [open]);
+  const item =
+    "flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-left text-[12.5px] font-medium text-slate-700 hover:bg-slate-50";
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        aria-label="More actions"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="grid h-10 w-10 cursor-pointer place-items-center rounded-[10px] border border-[#E5E7EB] bg-white text-[#475569] hover:border-[#CBD5E1] hover:bg-[#F8FAFC] active:scale-95"
+      >
+        <MoreHorizontal size={17} />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-[calc(100%+6px)] z-[500] w-[230px] rounded-[10px] border border-[#E5E7EB] bg-white p-1 shadow-lg"
+        >
+          <button type="button" role="menuitem" className={item} onClick={() => { onShare(); setOpen(false); }}>
+            {shareLoading ? "Sharing…" : "Share profile (HTML)"}
+          </button>
+          <button type="button" role="menuitem" className={item} onClick={() => { onRefresh(); setOpen(false); }}>
+            {refreshing ? "Refreshing…" : "Refresh snapshot"}
+          </button>
+          {onPulse && (
+            <button type="button" role="menuitem" className={item} onClick={() => { onPulse(); setOpen(false); }}>
+              Run Pulse AI
+            </button>
+          )}
+          {onEdit && (
+            <button type="button" role="menuitem" className={item} onClick={() => { onEdit(); setOpen(false); }}>
+              Edit company
+            </button>
+          )}
+          <button type="button" role="menuitem" className={item} onClick={() => { onTogglePanel(); setOpen(false); }}>
+            {panelOpen ? "Hide details panel" : "Show details panel"}
+          </button>
+          <div className="my-1 border-t border-slate-100" />
+          <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+            Spend year (legacy tabs)
+          </div>
+          {years.map((y) => (
+            <button
+              key={y}
+              type="button"
+              role="menuitemradio"
+              aria-checked={y === selectedYear}
+              className={item}
+              onClick={() => { onSelectYear(y); setOpen(false); }}
+            >
+              {y}
+              {y === selectedYear && <Check className="h-3.5 w-3.5 text-blue-600" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 /**
@@ -1294,6 +1407,21 @@ function ProfilePanel({ rawId }: { rawId: string }) {
       Icon: MX_MODE_ICONS[key],
     };
   }, [isMxCompany, mxProfileQuery.data?.modes]);
+
+  // ── Company Profile v2 workspace ────────────────────────────────────────
+  // One BOL-archive load + one filter-state instance, shared by the
+  // editorial hero above the tab bar and the Overview / Trade Lanes /
+  // Lane History tab bodies. Must run before the early returns below.
+  const v2CompanyKey =
+    (bundle?.identity as any)?.source_company_key ??
+    (bundle?.identity as any)?.sourceCompanyKey ??
+    (activeProfile as any)?.source_company_key ??
+    companyId ??
+    null;
+  const v2Workspace = useCompanyProfileWorkspace(
+    v2CompanyKey,
+    (profile as any)?.recentBols ?? null,
+  );
 
   // ── MX firmographics enrichment (owner-flagged empty right rail) ────────
   // Pedimentos carry zero firmographic fields, so MX identities lean on the
@@ -2462,58 +2590,66 @@ function ProfilePanel({ rawId }: { rawId: string }) {
   // ── Main layout — verbatim from Company.jsx 1148–1354 ──────────────────
   return (
     <div className="flex min-h-screen flex-col bg-[#F8FAFC]">
-      <CDPHeader
-        company={
-          {
-            id: companyId,
-            name: companyName,
-            domain: companyDomain,
-            website: companyWebsite,
-            address: companyAddress,
-            countryCode: companyCountryCode,
-            countryName: companyCountryName,
-            phone: companyPhone,
-          } as any
-        }
-        kpis={headerKpis as any}
-        starred={starred}
-        onToggleStar={handleSaveCompany}
-        isSaved={
-          bundle?.identity?.sources?.saved?.present === true || starred
-        }
-        panelOpen={panelOpen}
-        onTogglePanel={() => setPanelOpen((v) => !v)}
-        onBack={() => navigate("/app/command-center")}
-        onShare={handleShareHtmlClick}
-        onExportPdf={handleExportPdfClick}
-        onAddToList={() => setAddToListOpen(true)}
-        onStartOutreach={() => setCampaignModalOpen(true)}
-        onPulse={handlePulseClick}
-        onRefresh={handleManualRefreshClick}
-        shareLoading={shareLoading}
-        exportLoading={exportLoading}
-        refreshing={refreshing}
-        manualRefreshing={manualRefreshing}
-        snapshotUpdatedAt={snapshotUpdatedAt}
-        availableYears={(() => {
-          // Every year the snapshot's monthly_volumes actually has (back to
-          // 2015 for large shippers), unioned with the current + 2 prior so
-          // the selector is never hidden just because the snapshot lacks a
-          // recent row. CEO P0 2026-08-14: the prior 3-year cap hid real
-          // history the user needs for growth research — no cap now.
-          const cy = currentYearForSpend;
-          const base = [cy, cy - 1, cy - 2];
-          return Array.from(new Set([...base, ...years])).sort((a, b) => b - a);
-        })()}
-        selectedYear={selectedYear}
-        onSelectYear={setSelectedYear}
-        onEditCompany={
-          companyId ? () => setEditCompanyOpen(true) : undefined
-        }
-        // MX identities: header KPIs / subtitle / role chip derive from the
-        // pedimento RPC; also suppresses the "Snapshot pending" indicator.
-        mx={mxHeaderStats}
-      />
+      {/* Company Profile v2 editorial hero (design §5.3) — replaces the old
+          CDPHeader KPI strip / Add-to-pipeline row / top CRM bar. Narrative,
+          status card and BOL ticker come from the shared v2 workspace view;
+          MX and not-yet-archived companies get title + meta + actions only.
+          Everything CDPHeader hosted survives: star/save, export (download
+          icon), Add to List, Start Outreach, and the ⋯ menu (share, refresh,
+          Pulse, edit, details-panel toggle, legacy spend-year selector). */}
+      <div className="border-b border-[#E5E7EB] bg-white">
+        <div className="mx-auto w-full max-w-[1560px] px-4 pb-5 pt-5 sm:px-6 md:px-8">
+          <button
+            type="button"
+            onClick={() => navigate("/app/command-center")}
+            className="mb-3 inline-flex items-center gap-1.5 text-[12.5px] font-medium text-[#64748b] hover:text-[#0F172A]"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Command Center
+          </button>
+          <StoryHeader
+            view={v2Workspace.view}
+            showTitle
+            companyName={companyName}
+            meta={{
+              role: "Receiver",
+              hq: companyAddress || undefined,
+              website: companyDomain || undefined,
+              owner: ownerName || undefined,
+              stage:
+                bundle?.identity?.sources?.saved?.present === true
+                  ? ((bundle?.identity?.sources?.saved?.stage as string) ?? undefined)
+                  : undefined,
+            }}
+            starred={bundle?.identity?.sources?.saved?.present === true || starred}
+            onToggleStar={handleSaveCompany}
+            onExport={handleExportPdfClick}
+            onAddToList={() => setAddToListOpen(true)}
+            onStartOutreach={() => setCampaignModalOpen(true)}
+            trailingActions={
+              <HeaderMoreMenu
+                onShare={handleShareHtmlClick}
+                shareLoading={shareLoading}
+                onRefresh={handleManualRefreshClick}
+                refreshing={refreshing || manualRefreshing}
+                onPulse={handlePulseClick}
+                onEdit={companyId ? () => setEditCompanyOpen(true) : undefined}
+                panelOpen={panelOpen}
+                onTogglePanel={() => setPanelOpen((v) => !v)}
+                years={(() => {
+                  // Every year the snapshot's monthly_volumes actually has,
+                  // unioned with current + 2 prior (CEO P0 2026-08-14: no cap).
+                  const cy = currentYearForSpend;
+                  const base = [cy, cy - 1, cy - 2];
+                  return Array.from(new Set([...base, ...years])).sort((a, b) => b - a);
+                })()}
+                selectedYear={selectedYear}
+                onSelectYear={setSelectedYear}
+              />
+            }
+          />
+        </div>
+      </div>
 
       <CompanySignalsStrip
         companyId={companyId}
@@ -2531,62 +2667,6 @@ function ProfilePanel({ rawId }: { rawId: string }) {
       <OrgSaveCollisionCard
         companyUuid={bundle?.identity?.id ?? null}
         companyName={companyName}
-      />
-
-      {/* CRM Phase 1 — Add to pipeline. Creates a deal prefilled with this
-          company + its enriched contacts. Disabled until the workspace has a
-          pipeline (auto-seeded on first use elsewhere). */}
-      {dealStages.length > 0 ? (
-        <div className="px-4 md:px-6 pt-2">
-          <button
-            type="button"
-            onClick={() => setCreateDealOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-white px-3 py-1.5 text-[12.5px] font-semibold text-indigo-700 hover:bg-indigo-50 active:scale-[0.97] motion-reduce:active:scale-100"
-            style={{ fontFamily: "'Space Grotesk', sans-serif" }}
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Add to pipeline
-          </button>
-        </div>
-      ) : null}
-
-      {/* CRM / Revenue 360 panel — this company's deals, quotes, open tasks,
-          campaign membership, email threads, and quick actions. Everything is
-          real + org-scoped via @/api/companyCrm; deal rows open the
-          DealDetailDrawer in-place. */}
-      <CompanyCrmPanel
-        identity={{
-          companyUuid: bundle?.identity?.id ?? null,
-          savedCompanyId: bundle?.identity?.id ?? null,
-          sourceCompanyKey:
-            (bundle?.identity as any)?.source_company_key ??
-            (bundle?.identity as any)?.sourceCompanyKey ??
-            companyId ??
-            null,
-          companyName,
-          companyDomain,
-        }}
-        stages={dealStages}
-        onOpenDeal={(d) => setActiveDeal(d)}
-        onAddToPipeline={() => setCreateDealOpen(true)}
-        canAddToPipeline={dealStages.length > 0}
-        onOpenQuotesTab={() => setTab("quotes")}
-        onOpenInboxTab={() => setTab("inbox")}
-        onOpenContactsTab={() => setTab("contacts")}
-        onStartOutreach={() => setCampaignModalOpen(true)}
-        onOpenCampaign={(id) => navigate(`/app/campaigns/new?edit=${id}`)}
-        onOpenQuote={(id) => navigate(`/app/quoting/${id}`)}
-        onNewQuote={() =>
-          navigate(
-            `/app/quoting/new${companyId ? `?company_id=${companyId}` : ""}`,
-          )
-        }
-        onNewRfp={() =>
-          navigate(
-            `/app/rfp/new${(bundle?.identity?.id ?? companyId) ? `?company_id=${encodeURIComponent(bundle?.identity?.id ?? companyId)}` : ""}`,
-          )
-        }
-        refreshKey={crmRefreshKey}
       />
 
       {/* Tab bar — F5 trim: 5 visible + More overflow. The More dropdown
@@ -2637,15 +2717,8 @@ function ProfilePanel({ rawId }: { rawId: string }) {
           {(tab === "overview" || tab === "lanes" || tab === "history") && (
             <CompanyProfileWorkspace
               tab={tab as WorkspaceTab}
-              companyKey={
-                (bundle?.identity as any)?.source_company_key ??
-                (bundle?.identity as any)?.sourceCompanyKey ??
-                (activeProfile as any)?.source_company_key ??
-                companyId ??
-                null
-              }
+              workspace={v2Workspace}
               companyName={companyName}
-              recentBols={(profile as any)?.recentBols ?? null}
               meta={{
                 hq: companyAddress || null,
                 website: companyWebsite || companyDomain || null,
@@ -2987,6 +3060,47 @@ function ProfilePanel({ rawId }: { rawId: string }) {
           {tab === "quotes" && companyId && (
             <CompanyQuotesTab companyId={companyId} />
           )}
+
+          {/* CRM / Revenue 360 panel — deals, quotes, tasks, campaigns and
+              email threads for this company. Relocated from the old header
+              stack (design §14.9) to the foot of every tab; collapsed until
+              opened, and "Add to pipeline" lives inside it. */}
+          <div className="mt-5">
+            <CompanyCrmPanel
+              identity={{
+                companyUuid: bundle?.identity?.id ?? null,
+                savedCompanyId: bundle?.identity?.id ?? null,
+                sourceCompanyKey:
+                  (bundle?.identity as any)?.source_company_key ??
+                  (bundle?.identity as any)?.sourceCompanyKey ??
+                  companyId ??
+                  null,
+                companyName,
+                companyDomain,
+              }}
+              stages={dealStages}
+              onOpenDeal={(d) => setActiveDeal(d)}
+              onAddToPipeline={() => setCreateDealOpen(true)}
+              canAddToPipeline={dealStages.length > 0}
+              onOpenQuotesTab={() => setTab("quotes")}
+              onOpenInboxTab={() => setTab("inbox")}
+              onOpenContactsTab={() => setTab("contacts")}
+              onStartOutreach={() => setCampaignModalOpen(true)}
+              onOpenCampaign={(id) => navigate(`/app/campaigns/new?edit=${id}`)}
+              onOpenQuote={(id) => navigate(`/app/quoting/${id}`)}
+              onNewQuote={() =>
+                navigate(
+                  `/app/quoting/new${companyId ? `?company_id=${companyId}` : ""}`,
+                )
+              }
+              onNewRfp={() =>
+                navigate(
+                  `/app/rfp/new${(bundle?.identity?.id ?? companyId) ? `?company_id=${encodeURIComponent(bundle?.identity?.id ?? companyId)}` : ""}`,
+                )
+              }
+              refreshKey={crmRefreshKey}
+            />
+          </div>
         </div>
         {panelOpen && !["overview", "lanes", "history"].includes(tab) && (
           <CDPDetailsPanel

@@ -31,7 +31,10 @@ function useHeroKeyframes(): void {
 const TABULAR: React.CSSProperties = { fontVariantNumeric: "tabular-nums" };
 
 export interface StoryHeaderProps {
-  view: ProfileView;
+  /** null while the shipment dataset loads (or when a company has no BOL
+   *  archive at all, e.g. MX pedimento identities) — the hero then renders
+   *  title + meta + actions only. */
+  view: ProfileView | null;
   companyName: string;
   /** Monogram override; defaults to first 4 letters of the name, upper-cased. */
   mark?: string;
@@ -44,6 +47,8 @@ export interface StoryHeaderProps {
   onExport?: () => void;
   onAddToList?: () => void;
   onStartOutreach?: () => void;
+  /** Extra buttons appended after Start Outreach (overflow menu etc.). */
+  trailingActions?: React.ReactNode;
 }
 
 export function StoryHeader({
@@ -57,15 +62,16 @@ export function StoryHeader({
   onExport,
   onAddToList,
   onStartOutreach,
+  trailingActions,
 }: StoryHeaderProps) {
   useHeroKeyframes();
   const reduced = useReducedMotion();
   const [tickerPaused, setTickerPaused] = React.useState(false);
 
   const monogram = (mark ?? companyName.slice(0, 4)).toUpperCase();
-  const story = (view.story ?? {}) as Record<string, string>;
-  const S = view.S;
-  const cadence: any[] = Array.isArray(view.cadence) ? view.cadence : [];
+  const story = (view?.story ?? {}) as Record<string, string>;
+  const S = view?.S;
+  const cadence: any[] = Array.isArray(view?.cadence) ? view!.cadence : [];
 
   // ---- status card derivations (per the design's renderVals) --------------
   const lastDays = S?.lastDays ?? null;
@@ -73,14 +79,14 @@ export function StoryHeader({
     lastDays != null && lastDays <= 45
       ? `Active shipper · ${lastDays}d since last BOL`
       : `Quiet · ${lastDays != null ? lastDays + "d since last BOL" : "no BOLs"}`;
-  const nMonths = view.nMonths || cadence.length || 1;
+  const nMonths = view?.nMonths || cadence.length || 1;
   const shipmentsN = S?.shipments ?? 0;
   const perShip = shipmentsN ? Math.round((nMonths * 30.4) / shipmentsN) : null;
   const cadenceLabel = perShip ? `1 BOL every ${perShip} days` : "—";
   const activeMonths = cadence.filter((b) => b && b.v > 0).length;
   const monthsLabel = `${activeMonths} of ${nMonths}`;
 
-  const ticker: TraceRowVM[] = (view.recent ?? []).slice(0, 8);
+  const ticker: TraceRowVM[] = (view?.recent ?? []).slice(0, 8);
   const tickerItems = reduced ? ticker : [...ticker, ...ticker];
 
   const metaBits: React.ReactNode[] = [];
@@ -169,6 +175,7 @@ export function StoryHeader({
               <Send size={16} />
               Start Outreach
             </button>
+            {trailingActions}
           </div>
         </div>
       )}
@@ -199,6 +206,7 @@ export function StoryHeader({
               </h1>
             </div>
           )}
+          {view && (
           <p
             className="mb-0 max-w-[880px] text-[19px] text-[#475569]"
             style={{
@@ -222,9 +230,11 @@ export function StoryHeader({
             year over year. {story.topLane} carries {story.topShare}; {story.topCarrier} moves{" "}
             {story.topCarrierShare}.
           </p>
+          )}
         </div>
 
         {/* status card */}
+        {view && (
         <div className="flex min-w-[240px] flex-col gap-[10px] rounded-2xl border border-[#EEF2F6] bg-[#F8FAFC] px-5 py-[18px]">
           <div
             className="flex items-center gap-2 text-[13px] font-semibold text-[#047857]"
@@ -260,6 +270,7 @@ export function StoryHeader({
             </span>
           </div>
         </div>
+        )}
       </div>
 
       {/* BOL ticker */}
