@@ -22,6 +22,7 @@ export function OverviewTab({
   extra,
   showPrior,
   onOpenTab,
+  onExpandMap,
   sourceNote,
 }: {
   view: ProfileView;
@@ -29,6 +30,8 @@ export function OverviewTab({
   extra: ProfileExtraActions;
   showPrior?: boolean;
   onOpenTab?: (tab: "lanes" | "history" | "contacts" | "shipments") => void;
+  /** Opens the fullscreen Cinematic trade-lanes view. */
+  onExpandMap?: () => void;
   sourceNote?: string;
 }) {
   return (
@@ -37,7 +40,7 @@ export function OverviewTab({
 
       <KpiGrid view={view} />
 
-      <LaneMap view={view} onOpenLanesTab={() => onOpenTab?.("lanes")} />
+      <LaneMap view={view} onOpenLanesTab={() => onOpenTab?.("lanes")} onExpand={onExpandMap} />
 
       <div
         className="grid gap-5"

@@ -60,6 +60,12 @@ import CompanyProfileWorkspace, {
   type WorkspaceTab,
 } from "@/features/company-profile/CompanyProfileWorkspace";
 import { StoryHeader } from "@/features/company-profile/components/StoryHeader";
+import { ContactsTab } from "@/features/company-profile/components/contacts/ContactsTab";
+// Rehomed Supply-Chain cards (that tab is now MX-only; design handoff #2):
+import BuyingIntentTile from "@/components/intent/BuyingIntentTile";
+import InlandFreightCard from "@/components/company/InlandFreightCard";
+import RelationshipIntelCard from "@/components/company/RelationshipIntelCard";
+import CDPForwarders from "@/components/company/CDPForwarders";
 import AddToCampaignModal from "@/components/command-center/AddToCampaignModal";
 import AddToListPicker from "@/features/pulse/AddToListPicker";
 import CreateDealModal, { type CreateDealPrefill } from "@/features/crm/CreateDealModal";
@@ -93,7 +99,8 @@ import OrgSaveCollisionCard from "@/components/company/OrgSaveCollisionCard";
 import CDPDetailsPanel from "@/components/company/CDPDetailsPanel";
 import PulseCoachQuotaCard from "@/components/company/PulseCoachQuotaCard";
 import LockedAccountPreview from "@/components/company/LockedAccountPreview";
-import CDPSupplyChain from "@/components/company/CDPSupplyChain";
+// CDPSupplyChain retired from routing 2026-09-26 (handoff #2) — v2 tabs +
+// rehomed cards replaced it; the file remains for rollback.
 import MxTradePanel from "@/components/company/MxTradePanel";
 import MxDeclarationsTable from "@/components/company/MxDeclarationsTable";
 import MxPartnersPanel from "@/components/company/MxPartnersPanel";
@@ -106,7 +113,8 @@ import {
   useMxCompanyProfile,
 } from "@/api/mxProfile";
 import { enrichCompanyLive } from "@/api/ai";
-import CDPContacts from "@/components/company/CDPContacts";
+// CDPContacts retired from routing 2026-09-26 — replaced by the v2
+// ContactsTab (same enrichment flow); file remains for rollback.
 import EditCompanyModal from "@/components/company/EditCompanyModal";
 import CDPResearch from "@/components/company/CDPResearch";
 import { exportPulseBriefPdf } from "@/lib/pulse/exportPulseBriefPdf";
@@ -534,9 +542,12 @@ function HeaderMoreMenu({
 function CompanyTabsRow({
   tab,
   onSelect,
+  hideIds,
 }: {
   tab: TabId;
   onSelect: (id: TabId) => void;
+  /** Tabs to omit for this company (e.g. "supply" is MX-only now). */
+  hideIds?: readonly TabId[];
 }) {
   const [moreOpen, setMoreOpen] = useState(false);
   const moreRef = useRef<HTMLDivElement | null>(null);
@@ -575,7 +586,7 @@ function CompanyTabsRow({
         aria-label="Company sections"
         className="-mb-px flex min-w-0 snap-x items-center gap-0 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
-        {VISIBLE_TABS.map((t) => {
+        {VISIBLE_TABS.filter((t) => !hideIds?.includes(t.id)).map((t) => {
           const Icon = t.Icon;
           const active = tab === t.id;
           return (
@@ -1422,6 +1433,13 @@ function ProfilePanel({ rawId }: { rawId: string }) {
     v2CompanyKey,
     (profile as any)?.recentBols ?? null,
   );
+
+  // Supply Chain tab is MX-only now (design handoff #2): non-MX deep links
+  // and stale tab state land on the v2 Overview instead.
+  useEffect(() => {
+    if (tab === "supply" && !isMxCompany && !loading) setTab("overview");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, isMxCompany, loading]);
 
   // ── MX firmographics enrichment (owner-flagged empty right rail) ────────
   // Pedimentos carry zero firmographic fields, so MX identities lean on the
@@ -2673,7 +2691,11 @@ function ProfilePanel({ rawId }: { rawId: string }) {
       {/* Tab bar — F5 trim: 5 visible + More overflow. The More dropdown
           surfaces Pulse AI / Rate Benchmark / Revenue Opportunity without
           horizontal scroll on mobile. */}
-      <CompanyTabsRow tab={tab} onSelect={setTab} />
+      <CompanyTabsRow
+        tab={tab}
+        onSelect={setTab}
+        hideIds={isMxCompany ? undefined : (["supply"] as const)}
+      />
 
 
       {refreshLimitState &&
@@ -2715,11 +2737,25 @@ function ProfilePanel({ rawId }: { rawId: string }) {
               snapshot fallback); every number reconciles against BOL rows
               via the Data-trace drawer. Brings its own Insight Rail, so the
               page's CDPDetailsPanel is suppressed on these tabs. */}
-          {(tab === "overview" || tab === "lanes" || tab === "history") && (
+          {(tab === "overview" || tab === "lanes" || tab === "history") &&
+            (isDirectoryOnly ? (
+              <DirectoryOnlyEmptyState
+                companyName={companyName}
+                onSave={handleSaveCompany}
+                saving={savingStar}
+              />
+            ) : (
             <CompanyProfileWorkspace
               tab={tab as WorkspaceTab}
               workspace={v2Workspace}
               companyName={companyName}
+              overviewTopSlot={
+                <BuyingIntentTile
+                  profile={activeProfile as any}
+                  recentBols={((profile as any)?.recentBols ?? []) as any}
+                />
+              }
+              lanesExtras={<InlandFreightCard companyId={v2CompanyKey} />}
               meta={{
                 hq: companyAddress || null,
                 website: companyWebsite || companyDomain || null,
@@ -2733,41 +2769,27 @@ function ProfilePanel({ rawId }: { rawId: string }) {
               savedContacts={Array.isArray(savedContacts) ? savedContacts.length : 0}
               onSwitchTab={(t) => setTab(t as TabId)}
             />
+            ))}
+          {/* Supply Chain is MX-ONLY now (design handoff #2): the v2
+              Overview/Trade Lanes/Lane History replaced it for archive
+              companies, its map engine lives on the Overview, and its cards
+              were rehomed (Buying Intent → Overview, Inland Freight → Trade
+              Lanes, Relationship Intel + Forwarders → Trade Graph).
+              CDPSupplyChain stays in the codebase for rollback. */}
+          {tab === "supply" && isMxCompany && (
+            <MxTradePanel companyName={mxRouteName || companyName} />
           )}
-          {tab === "supply" && (
-            isMxCompany ? (
-              // MX identity — pedimento-backed trade intel replaces the
-              // ImportYeti supply-chain tree. Everything else on the page
-              // (header, tabs, contacts, CRM, right rail) is unchanged.
-              <MxTradePanel companyName={mxRouteName || companyName} />
-            ) : isDirectoryOnly ? (
-              <DirectoryOnlyEmptyState
-                companyName={companyName}
-                onSave={handleSaveCompany}
-                saving={savingStar}
-              />
-            ) : (
-              <CDPSupplyChain
-                profile={activeProfile as any}
-                routeKpis={activeRouteKpis as any}
-                selectedYear={selectedYear}
-                years={years}
-                onSelectYear={setSelectedYear}
-                onOpenPulseLive={() => setTab("live")}
-                companyName={companyName}
-                // While the seed-backed background heal (or a refresh) is
-                // pulling the snapshot, empty modules render syncing
-                // skeletons instead of "No data yet — try Refresh Intel".
-                syncing={refreshing || manualRefreshing}
-                // UNSCOPED month-keyed series (every month back to 2015).
-                // `activeProfile` is year-scoped by buildYearScopedProfile,
-                // which truncated the cadence chart + killed YoY / past-year
-                // lane reconciliation — so pass the full series explicitly.
-                fullTimeSeries={(profile as any)?.timeSeries ?? null}
-                // Same fallback chain as PulseLIVETab — any available key
-                // (source_company_key / slug / route id) resolves the
-                // lit_company_lane_months rollup for the Lane History matrix.
-                sourceCompanyKey={
+          {tab === "graph" && isMxCompany && (
+            // MX identity — pedimento partners + customs brokers in the
+            // Trade Graph card language (was MxTradePanel's inner tab).
+            <MxPartnersPanel companyName={mxRouteName || companyName} />
+          )}
+          {tab === "graph" && !isMxCompany && (
+            <>
+              <CDPTradeGraph
+                // Same broadened key-fallback chain as Pulse LIVE so the graph
+                // resolves whenever ANY company key is available.
+                companyId={
                   (bundle?.identity as any)?.source_company_key ??
                   (bundle?.identity as any)?.sourceCompanyKey ??
                   bundle?.identity?.key ??
@@ -2778,31 +2800,15 @@ function ProfilePanel({ rawId }: { rawId: string }) {
                   companyId ??
                   null
                 }
+                companyName={companyName}
               />
-            )
-          )}
-          {tab === "graph" && isMxCompany && (
-            // MX identity — pedimento partners + customs brokers in the
-            // Trade Graph card language (was MxTradePanel's inner tab).
-            <MxPartnersPanel companyName={mxRouteName || companyName} />
-          )}
-          {tab === "graph" && !isMxCompany && (
-            <CDPTradeGraph
-              // Same broadened key-fallback chain as Pulse LIVE so the graph
-              // resolves whenever ANY company key is available.
-              companyId={
-                (bundle?.identity as any)?.source_company_key ??
-                (bundle?.identity as any)?.sourceCompanyKey ??
-                bundle?.identity?.key ??
-                (activeProfile as any)?.identity?.key ??
-                (activeProfile as any)?.source_company_key ??
-                (activeProfile as any)?.sourceCompanyKey ??
-                (activeProfile as any)?.key ??
-                companyId ??
-                null
-              }
-              companyName={companyName}
-            />
+              {/* Rehomed from the retired Supply Chain tab — the network /
+                  relationship surfaces belong with the Trade Graph. */}
+              <div className="mt-5 flex flex-col gap-5">
+                <RelationshipIntelCard companyId={v2CompanyKey} />
+                <CDPForwarders companyId={v2CompanyKey} />
+              </div>
+            </>
           )}
           {tab === "live" && isMxCompany && (
             // MX identity — pedimento declaration lines ARE the live feed
@@ -2886,21 +2892,18 @@ function ProfilePanel({ rawId }: { rawId: string }) {
               }
             />
           )}
+          {/* Company Profile v2 Contacts (design handoff §9) — replaces the
+              CDPContacts mount (component kept in the codebase for rollback).
+              Wired to the same Apollo search + enrichment orchestrator +
+              server-side credits. */}
           {tab === "contacts" && (
-            <CDPContacts
-              companyId={companyId}
+            <ContactsTab
               companyName={companyName}
               companyDomain={companyDomain}
-              companyLocation={companyAddress}
+              companyKey={v2CompanyKey}
+              companyUuid={bundle?.identity?.id ?? null}
+              onStartOutreach={() => setCampaignModalOpen(true)}
               onContactsChanged={setSavedContacts}
-              onCompanyMetaSaved={(next) => {
-                // R3: the user saved name/domain edits from the search
-                // panel. Update the canonical domain state immediately
-                // (so the header pill repaints) and refetch the bundle
-                // so KPI/profile sources stay in sync.
-                if (next.domain) setCanonicalDomain(next.domain);
-                refetchBundle?.();
-              }}
             />
           )}
           {tab === "research" && (

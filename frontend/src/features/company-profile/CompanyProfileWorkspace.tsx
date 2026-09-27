@@ -6,7 +6,7 @@
  * unit-tested selectors; every widget renders the shared view-model so any
  * period/metric/facet change updates the whole workspace at once.
  */
-import { useMemo } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { miLabel } from "./data/format";
 import type { RecentBolInput } from "./data/normalizeShipments";
 import type { ShipmentDataset } from "./data/types";
@@ -20,6 +20,7 @@ import { HistoryBrush } from "./components/HistoryBrush";
 import { DataTraceDrawer } from "./components/DataTraceDrawer";
 import { InsightRail } from "./components/InsightRail";
 import { OverviewTab } from "./components/overview/OverviewTab";
+import { TradeLanesOpenView } from "./components/overview/TradeLanesOpenView";
 import { TradeLanesTab } from "./components/lanes/TradeLanesTab";
 import { LaneHistoryTab } from "./components/history/LaneHistoryTab";
 
@@ -88,6 +89,10 @@ export interface CompanyProfileWorkspaceProps {
   savedContacts?: number;
   refreshedNote?: string; // e.g. ", refreshed 2 days ago"
   onSwitchTab?: (tabId: string) => void; // page-level tab ids ("lanes", "history", "contacts", "supply")
+  /** Rehomed Supply-Chain cards: rendered above the Overview widgets. */
+  overviewTopSlot?: ReactNode;
+  /** Rehomed Supply-Chain cards: rendered below the Trade Lanes tab. */
+  lanesExtras?: ReactNode;
 }
 
 export function CompanyProfileWorkspace({
@@ -98,8 +103,11 @@ export function CompanyProfileWorkspace({
   savedContacts,
   refreshedNote,
   onSwitchTab,
+  overviewTopSlot,
+  lanesExtras,
 }: CompanyProfileWorkspaceProps) {
   const { dataset, loading, state, actions, extra, view, lanesView } = workspace;
+  const [mapExpanded, setMapExpanded] = useState(false);
 
   if (loading && !dataset) {
     return (
@@ -163,16 +171,23 @@ export function CompanyProfileWorkspace({
           <HistoryBrush view={view} extra={extra} actions={actions} m0={state.m0} m1={state.m1} />
 
           {tab === "overview" && (
-            <OverviewTab
-              view={view}
-              ds={dataset}
-              extra={extra}
-              onOpenTab={handleOpenTab}
-              sourceNote={refreshedNote ?? ""}
-            />
+            <>
+              {overviewTopSlot}
+              <OverviewTab
+                view={view}
+                ds={dataset}
+                extra={extra}
+                onOpenTab={handleOpenTab}
+                onExpandMap={() => setMapExpanded(true)}
+                sourceNote={refreshedNote ?? ""}
+              />
+            </>
           )}
           {tab === "lanes" && lanesView && (
-            <TradeLanesTab view={view} lanesView={lanesView} hqLabel={meta?.hq ?? undefined} />
+            <>
+              <TradeLanesTab view={view} lanesView={lanesView} hqLabel={meta?.hq ?? undefined} />
+              {lanesExtras}
+            </>
           )}
           {tab === "history" && lanesView && (
             <LaneHistoryTab view={view} lanesView={lanesView} firstMonthLabel={firstMonthLabel} />
@@ -198,6 +213,16 @@ export function CompanyProfileWorkspace({
       </div>
 
       <DataTraceDrawer view={view} extra={extra} />
+
+      {mapExpanded && (
+        <TradeLanesOpenView
+          ds={dataset}
+          companyName={companyName}
+          initialM0={state.m0}
+          initialM1={state.m1}
+          onClose={() => setMapExpanded(false)}
+        />
+      )}
     </div>
   );
 }

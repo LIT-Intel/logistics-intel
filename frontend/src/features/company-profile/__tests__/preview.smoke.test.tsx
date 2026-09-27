@@ -17,6 +17,12 @@ vi.mock("leaflet", () => {
   return { __esModule: true, default: chain };
 });
 vi.mock("leaflet/dist/leaflet.css", () => ({ default: {} }));
+// The v2 map card mounts the app's real map engine (src/components/LaneMap
+// + GlobeCanvas + tiles) — stub it out; the engine has its own surface.
+vi.mock("@/components/LaneMap", () => ({
+  __esModule: true,
+  default: () => null,
+}));
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";

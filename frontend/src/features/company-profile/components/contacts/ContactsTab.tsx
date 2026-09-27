@@ -452,9 +452,16 @@ export function ContactsTab(props: {
   companyKey?: string | null;
   companyUuid?: string | null;
   onStartOutreach?: () => void;
+  /** Fires whenever the saved-contacts list (lit_contacts) reloads, so the
+   *  page keeps its rail count / details panel in sync — the same contract
+   *  the retired CDPContacts mount provided via onContactsChanged. */
+  onContactsChanged?: (contacts: any[]) => void;
 }) {
-  const { companyName, companyDomain, companyKey, companyUuid } = props;
+  const { companyName, companyDomain, companyKey, companyUuid, onContactsChanged } = props;
   const reducedMotion = useReducedMotion();
+
+  const onContactsChangedRef = React.useRef(onContactsChanged);
+  onContactsChangedRef.current = onContactsChanged;
 
   const [selectedTitles, setSelectedTitles] = React.useState<string[]>(DEFAULT_TITLES);
   const [selectedSeniorities, setSelectedSeniorities] = React.useState<Seniority[]>([...SENIORITY_OPTIONS]);
@@ -479,6 +486,10 @@ export function ContactsTab(props: {
     runSearch,
     enrichOne,
   } = useContactSearch({ companyName, companyDomain, companyKey, companyUuid, selectedTitles });
+
+  React.useEffect(() => {
+    onContactsChangedRef.current?.(saved);
+  }, [saved]);
 
   const domainGuess = normDomain(companyDomain) || "company.com";
 
