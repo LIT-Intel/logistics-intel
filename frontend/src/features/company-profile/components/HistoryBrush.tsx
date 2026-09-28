@@ -39,7 +39,13 @@ export function HistoryBrush({ view, extra, actions, m0, m1 }: HistoryBrushProps
   const N = timeline.length;
   if (!N) return null;
 
-  const clamp = (v: number) => Math.max(0, Math.min(N - 1, v));
+  // QA item 6: the visible strip is capped to the most recent 5 years, but the
+  // brush window uses REAL `mi` indices (anchored to ds.firstYear). Clamp
+  // keyboard moves to the rendered timeline's actual mi bounds, not [0, N-1],
+  // so nav stays correct when the full history exceeds the capped window.
+  const miLo = timeline[0]?.mi ?? 0;
+  const miHi = timeline[N - 1]?.mi ?? N - 1;
+  const clamp = (v: number) => Math.max(miLo, Math.min(miHi, v));
 
   const markKbNav = () => {
     setKbNav(true);
@@ -65,7 +71,8 @@ export function HistoryBrush({ view, extra, actions, m0, m1 }: HistoryBrushProps
   };
 
   const windowLabel = (mi: number): string => {
-    const raw = timeline[mi]?.label;
+    // timeline is a capped slice keyed by real `mi`, so look up by field.
+    const raw = timeline.find((b) => b?.mi === mi)?.label;
     return typeof raw === "string" ? raw.split(" · ")[0] : String(mi);
   };
 
@@ -97,9 +104,9 @@ export function HistoryBrush({ view, extra, actions, m0, m1 }: HistoryBrushProps
         <div
           role="slider"
           aria-label="Shipment history window"
-          aria-valuemin={0}
-          aria-valuemax={N - 1}
-          aria-valuenow={m0}
+          aria-valuemin={miLo}
+          aria-valuemax={miHi}
+          aria-valuenow={Math.max(miLo, Math.min(miHi, m0))}
           aria-valuetext={`${windowLabel(m0)} to ${windowLabel(m1)}`}
           tabIndex={0}
           onKeyDown={onKeyDown}

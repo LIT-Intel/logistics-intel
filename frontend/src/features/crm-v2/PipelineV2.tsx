@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import LogoTile from "@/features/dashboard/components/LogoTile";
 import CreateDealModal from "@/features/crm/CreateDealModal";
+import ViewAsFilter from "@/features/crm/ViewAsFilter";
 import { formatMoney, initials, avatarColor } from "@/features/crm/crmFormat";
 import type { DealStage } from "@/api/crm";
 import {
@@ -69,6 +70,9 @@ const LAYOUT_KEY = "lit-crm-layout-pipeline";
 export interface PipelineV2Props {
   /** Owner/admin "view as [member]" — "" = all members (RLS still applies). */
   viewAsUserId?: string;
+  /** Setter from CommandCenter — when provided, renders the compact member
+   *  selector (owner/admin only) that switches viewAsUserId + refetches. */
+  onViewAsChange?: (userId: string) => void;
   /** Optional company shipment health, keyed by lit_companies uuid. */
   healthByCompanyUuid?: Record<string, CompanyHealth>;
   /** Optional shipment intel for the deal panel, keyed by company uuid. */
@@ -77,6 +81,7 @@ export interface PipelineV2Props {
 
 export default function PipelineV2({
   viewAsUserId = "",
+  onViewAsChange,
   healthByCompanyUuid,
   intelByCompanyUuid,
 }: PipelineV2Props) {
@@ -208,6 +213,7 @@ export default function PipelineV2({
         <ToggleChip label="Stale" icon={Hourglass} on={staleOnly} onClick={() => setStaleOnly(!staleOnly)} />
         <ToggleChip label="No next step" icon={CircleAlert} on={noStepOnly} onClick={() => setNoStepOnly(!noStepOnly)} />
         <OwnerAvatars members={members} active={ownerFilter} onPick={setOwnerFilter} />
+        {onViewAsChange ? <ViewAsFilter value={viewAsUserId} onChange={onViewAsChange} /> : null}
         <span style={{ flex: 1 }} />
         <button type="button" className="crm2-cta crm2-focus" style={primaryBtnStyle()} onClick={() => setCreating(true)} disabled={!stages.length}>
           <Plus size={15} /> New deal

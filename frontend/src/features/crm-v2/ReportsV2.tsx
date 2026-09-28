@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { formatMoney } from "@/features/crm/crmFormat";
+import ViewAsFilter from "@/features/crm/ViewAsFilter";
 import { useCrmV2Data, getLayoutPref, setLayoutPref } from "./data/useCrmV2Data";
 import {
   selectForecastByMonth,
@@ -66,9 +67,12 @@ const SOURCE_ICON: Record<string, { Icon: LucideIcon; color: string; bg: string 
 
 export interface ReportsV2Props {
   viewAsUserId?: string;
+  /** Setter from CommandCenter — renders the compact member selector (owner/
+   *  admin only) that switches viewAsUserId + refetches. */
+  onViewAsChange?: (userId: string) => void;
 }
 
-export default function ReportsV2({ viewAsUserId = "" }: ReportsV2Props) {
+export default function ReportsV2({ viewAsUserId = "", onViewAsChange }: ReportsV2Props) {
   const { deals, stages, members, stageChanges, loading } = useCrmV2Data(viewAsUserId);
   const [layout, setLayout] = useState<"A" | "B">(() => getLayoutPref(LAYOUT_KEY, "A"));
   const [period, setPeriod] = useState("q");
@@ -162,6 +166,7 @@ export default function ReportsV2({ viewAsUserId = "" }: ReportsV2Props) {
           onChange={setPeriod}
         />
         <OwnerAvatars members={members} active={ownerFilter} onPick={setOwnerFilter} />
+        {onViewAsChange ? <ViewAsFilter value={viewAsUserId} onChange={onViewAsChange} /> : null}
         <span style={{ flex: 1 }} />
         <button type="button" disabled title="Coming soon" style={{ ...ghostBtnStyle(), color: "#94a3b8", cursor: "default" }}>
           <CalendarClock size={14} /> Schedule report

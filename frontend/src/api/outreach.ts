@@ -15,6 +15,13 @@ export interface OAuthStartRequest {
 
 export interface OAuthStartResponse {
   ok: boolean;
+  // The consent URL comes back under different keys per edge fn:
+  //   oauth-gmail-start / oauth-outlook-start → `url`
+  //   email-oauth-start                       → `auth_url`
+  // `redirect_url` was assumed but never emitted — callers should read
+  // `url ?? auth_url ?? redirect_url`.
+  url?: string;
+  auth_url?: string;
   redirect_url?: string;
   state?: string;
   error?: string;

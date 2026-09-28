@@ -22,6 +22,83 @@ export const CARD: CSSProperties = {
   boxShadow: "0 8px 30px rgba(15,23,42,0.06)",
 };
 
+// ── Drawer light/dark token map (item 11) ──────────────────────────────
+// Centralized so DealPanelV2 never hardcodes a color twice. `dark` mirrors
+// the original deep-slate drawer (#0F172A surface / #020617 insets); `light`
+// is the white/#F8FAFC counterpart with accessible text + border tokens.
+export type DrawerTheme = "dark" | "light";
+export type DrawerTokens = {
+  surface: string; // drawer body background
+  inset: string; // inner cards / inputs background
+  scrim: string; // backdrop
+  border: string; // primary border
+  borderInset: string; // border around inset cards
+  borderStrong: string; // input border
+  heading: string; // biggest headings
+  text: string; // body text
+  textMuted: string; // secondary text
+  textFaint: string; // tertiary / placeholder-ish
+  stageIdle: string; // idle stage-stepper background
+  stageIdleText: string;
+  chipBg: string; // small mono/origin chip background
+  chipText: string;
+};
+export const DRAWER_TOKENS: Record<DrawerTheme, DrawerTokens> = {
+  dark: {
+    surface: "#0F172A",
+    inset: "#020617",
+    scrim: "rgba(2,6,23,0.35)",
+    border: "#1F2937",
+    borderInset: "#1e293b",
+    borderStrong: "#334155",
+    heading: "#f8fafc",
+    text: "#e2e8f0",
+    textMuted: "#94a3b8",
+    textFaint: "#64748b",
+    stageIdle: "#1e293b",
+    stageIdleText: "#94a3b8",
+    chipBg: "#334155",
+    chipText: "#ffffff",
+  },
+  light: {
+    surface: "#FFFFFF",
+    inset: "#F8FAFC",
+    scrim: "rgba(15,23,42,0.35)",
+    border: "#E5E7EB",
+    borderInset: "#E5E7EB",
+    borderStrong: "#CBD5E1",
+    heading: "#0F172A",
+    text: "#0F172A",
+    textMuted: "#475569",
+    textFaint: "#94a3b8",
+    stageIdle: "#EEF2F6",
+    stageIdleText: "#64748b",
+    chipBg: "#E2E8F0",
+    chipText: "#0F172A",
+  },
+};
+
+export const DRAWER_THEME_KEY = "lit-crm-drawer-theme";
+export function getDrawerTheme(): DrawerTheme {
+  try {
+    const v = window.localStorage.getItem(DRAWER_THEME_KEY);
+    return v === "light" ? "light" : "dark";
+  } catch {
+    return "dark";
+  }
+}
+export function setDrawerThemePref(theme: DrawerTheme): void {
+  try {
+    window.localStorage.setItem(DRAWER_THEME_KEY, theme);
+  } catch {
+    /* private mode */
+  }
+}
+
+// ── Per-lane freight mode (item 12) ────────────────────────────────────
+export const LANE_MODES = ["FCL", "LCL", "FTL", "LTL", "Drayage", "Air Freight", "Intermodal", "Other"] as const;
+export type LaneMode = (typeof LANE_MODES)[number];
+
 export const CRM2_CSS = `
 .crm2-pad{padding-left:32px;padding-right:32px}
 @media (max-width:640px){.crm2-pad{padding-left:16px;padding-right:16px}}

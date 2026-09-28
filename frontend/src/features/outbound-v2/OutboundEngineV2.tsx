@@ -96,6 +96,10 @@ import {
   createDraftCampaign,
   deleteCampaignStep,
   disconnectEmailAccount,
+  getOrgSendingRules,
+  updateOrgSendingRules,
+  DEFAULT_SENDING_RULES,
+  type OrgSendingRules,
   fetchCampaignAggregates,
   fetchCampaignHeader,
   countCampaignCompanies,
@@ -110,6 +114,7 @@ import {
   listWorkspaceTemplates,
   markThreadRead,
   sendInboxReply,
+  draftInboxReply,
   setThreadIntent,
   syncInbox,
   updateCampaignStep,
@@ -2559,6 +2564,8 @@ function InboxView({
   setReply,
   onSend,
   sending,
+  onDraft,
+  drafting,
   onSetIntent,
   onArchive,
 }: {
@@ -2573,6 +2580,8 @@ function InboxView({
   setReply: (v: string) => void;
   onSend: () => void;
   sending: boolean;
+  onDraft: () => void;
+  drafting: boolean;
   onSetIntent: (intent: IntentId | null) => void;
   onArchive: (t: ThreadVM) => void;
 }) {
@@ -2793,7 +2802,30 @@ function InboxView({
                   background: "#FFFFFF",
                 }}
               />
-              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8, gap: 8, flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  onClick={onDraft}
+                  disabled={drafting || !selectedId}
+                  className="ob2-focus"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    height: 34,
+                    padding: "0 12px",
+                    borderRadius: 9,
+                    border: "1px solid rgba(0,200,212,0.4)",
+                    background: "rgba(0,240,255,0.06)",
+                    color: "#0e7490",
+                    font: `600 12px ${FB}`,
+                    cursor: drafting || !selectedId ? "default" : "pointer",
+                    opacity: drafting || !selectedId ? 0.6 : 1,
+                  }}
+                >
+                  {drafting ? <Loader2 size={13} className="ob2-spin" /> : <Sparkles size={13} />}
+                  Draft with Harvey
+                </button>
                 <PrimaryBtn onClick={onSend} disabled={sending || !reply.trim()}>
                   {sending ? <Loader2 size={14} className="ob2-spin" /> : <Send size={14} />}
                   Send reply
@@ -3061,6 +3093,58 @@ function TemplatesView({
 
 // ─────────────────────────────────────────────────────────── mailboxes tab
 
+/** iOS-style toggle bound to a real value + handler. */
+function RuleToggle({
+  on,
+  disabled,
+  onChange,
+  labelId,
+}: {
+  on: boolean;
+  disabled?: boolean;
+  onChange: (next: boolean) => void;
+  labelId?: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-labelledby={labelId}
+      disabled={disabled}
+      onClick={() => onChange(!on)}
+      className="ob2-press ob2-focus"
+      style={{
+        width: 40,
+        height: 22,
+        borderRadius: 999,
+        border: "none",
+        background: on ? "#3b82f6" : "#CBD5E1",
+        position: "relative",
+        flex: "none",
+        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.6 : 1,
+        transition: "background 180ms",
+        padding: 0,
+      }}
+    >
+      <span
+        style={{
+          position: "absolute",
+          top: 2,
+          left: on ? 20 : 2,
+          width: 18,
+          height: 18,
+          borderRadius: "50%",
+          background: "#fff",
+          boxShadow: "0 1px 3px rgba(15,23,42,0.3)",
+          transition: "left 180ms",
+        }}
+      />
+    </button>
+  );
+}
+
 function MailboxesView({
   vms,
   loading,
@@ -3069,6 +3153,10 @@ function MailboxesView({
   connecting,
   onRemove,
   removingId,
+  rules,
+  rulesReady,
+  rulesSaving,
+  onChangeRules,
 }: {
   vms: MailboxVM[];
   loading: boolean;
@@ -3077,7 +3165,13 @@ function MailboxesView({
   connecting: boolean;
   onRemove: (m: MailboxVM) => void;
   removingId: string | null;
+  rules: OrgSendingRules;
+  rulesReady: boolean;
+  rulesSaving: boolean;
+  onChangeRules: (next: OrgSendingRules) => void;
 }) {
+  const setRule = <K extends keyof OrgSendingRules>(key: K, val: OrgSendingRules[K]) =>
+    onChangeRules({ ...rules, [key]: val });
   const perAccountAvailable = stats?.perAccount != null && stats.perAccount.size > 0;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -3178,32 +3272,138 @@ function MailboxesView({
           </div>
         </div>
       </div>
-      {/* Sending rules — not backed by data yet */}
-      <div style={{ ...CARD, padding: "18px 20px", opacity: 0.75 }}>
+      {/* Sending rules — real, persisted to organizations.sending_rules jsonb.
+          Enforcement is server-side in the send orchestrator; this card sets
+          the policy the dispatcher reads. */}
+      <div style={{ ...CARD, padding: "18px 20px", opacity: rulesReady ? 1 : 0.6 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <SectionLabel icon={<ShieldCheck size={13} />}>Sending rules · all mailboxes</SectionLabel>
-          <ComingSoon />
+          {rulesSaving && <Loader2 size={13} className="ob2-spin" style={{ color: "#94a3b8" }} />}
         </div>
-        <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
-          {[
-            ["Daily cap per mailbox", "Hard stop across all campaigns"],
-            ["Ramp-up for new mailboxes", "Adds sends per day until the cap"],
-            ["Auto-pause on high bounce", "Pauses a mailbox above the bounce threshold"],
-            ["Random send delay", "Spaces sends 60–180 seconds apart"],
-          ].map(([label, sub]) => (
-            <div key={label} style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ font: `600 13px ${FB}`, color: "#334155" }}>{label}</div>
-                <div style={{ font: `400 11px ${FB}`, color: "#94a3b8" }}>{sub}</div>
-              </div>
-              <span
-                aria-disabled
-                style={{ width: 34, height: 20, borderRadius: 999, background: "#CBD5E1", position: "relative", flex: "none" }}
-              >
-                <span style={{ position: "absolute", top: 2, left: 2, width: 16, height: 16, borderRadius: "50%", background: "#fff" }} />
-              </span>
+        <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 4 }}>
+          {/* Daily cap */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 0" }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div id="rule-cap" style={{ font: `600 13px ${FB}`, color: "#334155" }}>Daily cap per mailbox</div>
+              <div style={{ font: `400 11px ${FB}`, color: "#94a3b8" }}>Hard stop across all campaigns</div>
             </div>
-          ))}
+            {rules.daily_cap_enabled && (
+              <input
+                type="number"
+                min={1}
+                max={2000}
+                value={rules.daily_cap}
+                disabled={!rulesReady || rulesSaving}
+                onChange={(e) => {
+                  const n = Math.max(1, Math.min(2000, Math.round(Number(e.target.value) || 0)));
+                  setRule("daily_cap", n);
+                }}
+                className="ob2-focus"
+                aria-label="Daily cap value"
+                style={{
+                  width: 72,
+                  height: 32,
+                  borderRadius: 8,
+                  border: "1px solid #E5E7EB",
+                  background: "#fff",
+                  padding: "0 8px",
+                  font: `500 13px ${FM}`,
+                  color: "#0F172A",
+                  textAlign: "right",
+                }}
+              />
+            )}
+            <RuleToggle
+              labelId="rule-cap"
+              on={rules.daily_cap_enabled}
+              disabled={!rulesReady || rulesSaving}
+              onChange={(v) => setRule("daily_cap_enabled", v)}
+            />
+          </div>
+          {/* Ramp-up */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 0" }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div id="rule-ramp" style={{ font: `600 13px ${FB}`, color: "#334155" }}>Ramp-up for new mailboxes</div>
+              <div style={{ font: `400 11px ${FB}`, color: "#94a3b8" }}>Adds sends per day until the cap</div>
+            </div>
+            <RuleToggle
+              labelId="rule-ramp"
+              on={rules.rampup_enabled}
+              disabled={!rulesReady || rulesSaving}
+              onChange={(v) => setRule("rampup_enabled", v)}
+            />
+          </div>
+          {/* Auto-pause on bounce */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 0" }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div id="rule-bounce" style={{ font: `600 13px ${FB}`, color: "#334155" }}>Auto-pause on high bounce</div>
+              <div style={{ font: `400 11px ${FB}`, color: "#94a3b8" }}>Pauses a mailbox above the bounce threshold</div>
+            </div>
+            {rules.autopause_bounce_enabled && (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={rules.bounce_threshold}
+                  disabled={!rulesReady || rulesSaving}
+                  onChange={(e) => {
+                    const n = Math.max(1, Math.min(100, Math.round(Number(e.target.value) || 0)));
+                    setRule("bounce_threshold", n);
+                  }}
+                  className="ob2-focus"
+                  aria-label="Bounce threshold percent"
+                  style={{
+                    width: 60,
+                    height: 32,
+                    borderRadius: 8,
+                    border: "1px solid #E5E7EB",
+                    background: "#fff",
+                    padding: "0 8px",
+                    font: `500 13px ${FM}`,
+                    color: "#0F172A",
+                    textAlign: "right",
+                  }}
+                />
+                <span style={{ font: `500 12px ${FM}`, color: "#94a3b8" }}>%</span>
+              </span>
+            )}
+            <RuleToggle
+              labelId="rule-bounce"
+              on={rules.autopause_bounce_enabled}
+              disabled={!rulesReady || rulesSaving}
+              onChange={(v) => setRule("autopause_bounce_enabled", v)}
+            />
+          </div>
+          {/* Random delay */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 0" }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div id="rule-delay" style={{ font: `600 13px ${FB}`, color: "#334155" }}>Random send delay</div>
+              <div style={{ font: `400 11px ${FB}`, color: "#94a3b8" }}>Spaces sends 60–180 seconds apart</div>
+            </div>
+            <RuleToggle
+              labelId="rule-delay"
+              on={rules.random_delay_enabled}
+              disabled={!rulesReady || rulesSaving}
+              onChange={(v) => setRule("random_delay_enabled", v)}
+            />
+          </div>
+          {/* Skip holidays */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 0" }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div id="rule-holidays" style={{ font: `600 13px ${FB}`, color: "#334155" }}>Skip holidays</div>
+              <div style={{ font: `400 11px ${FB}`, color: "#94a3b8" }}>Defers sends scheduled on US public holidays</div>
+            </div>
+            <RuleToggle
+              labelId="rule-holidays"
+              on={rules.skip_holidays_enabled}
+              disabled={!rulesReady || rulesSaving}
+              onChange={(v) => setRule("skip_holidays_enabled", v)}
+            />
+          </div>
+        </div>
+        <div style={{ marginTop: 10, font: `400 11px ${FB}`, color: "#94a3b8" }}>
+          Enforced automatically by the send orchestrator across every campaign.
         </div>
       </div>
     </div>
@@ -3448,6 +3648,7 @@ export default function OutboundEngineV2({
 
   // ── inbox interactions ──────────────────────────────────────────────
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
+  const [drafting, setDrafting] = useState(false);
   const [messages, setMessages] = useState<EmailMessageRow[]>([]);
   const [msgLoading, setMsgLoading] = useState(false);
   const [reply, setReply] = useState("");
@@ -3506,6 +3707,24 @@ export default function OutboundEngineV2({
       setSending(false);
     }
   }, [selectedThreadId, reply]);
+
+  const draftReply = useCallback(async () => {
+    if (!selectedThreadId || drafting) return;
+    setDrafting(true);
+    try {
+      const draft = await draftInboxReply(selectedThreadId);
+      if (draft) {
+        setReply(draft);
+        toast.success("Harvey drafted a reply — review before sending");
+      } else {
+        toast.error("Harvey couldn't draft a reply for this thread");
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Draft failed");
+    } finally {
+      setDrafting(false);
+    }
+  }, [selectedThreadId, drafting]);
 
   const doSync = useCallback(async () => {
     if (syncing) return;
@@ -3633,15 +3852,73 @@ export default function OutboundEngineV2({
     }
   }, []);
 
+  // ── sending rules (organizations.sending_rules jsonb) ───────────────
+  const [sendingRules, setSendingRules] = useState<OrgSendingRules>(DEFAULT_SENDING_RULES);
+  const [rulesOrgId, setRulesOrgId] = useState<string | null>(null);
+  const [rulesReady, setRulesReady] = useState(false);
+  const [rulesSaving, setRulesSaving] = useState(false);
+  const rulesSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void getOrgSendingRules()
+      .then(({ orgId, rules }) => {
+        if (!alive) return;
+        setRulesOrgId(orgId);
+        setSendingRules(rules);
+        setRulesReady(true);
+      })
+      .catch(() => {
+        if (alive) setRulesReady(true);
+      });
+    return () => {
+      alive = false;
+      if (rulesSaveTimer.current) clearTimeout(rulesSaveTimer.current);
+    };
+  }, []);
+
+  // Optimistic set + debounced persist so rapid toggles/number edits coalesce
+  // into one write. Reverts + toasts on failure.
+  const changeSendingRules = useCallback(
+    (next: OrgSendingRules) => {
+      const prev = sendingRules;
+      setSendingRules(next);
+      if (!rulesOrgId) return;
+      if (rulesSaveTimer.current) clearTimeout(rulesSaveTimer.current);
+      rulesSaveTimer.current = setTimeout(async () => {
+        setRulesSaving(true);
+        try {
+          await updateOrgSendingRules(rulesOrgId, next);
+          toast.success("Sending rules saved");
+        } catch (e) {
+          setSendingRules(prev);
+          toast.error(e instanceof Error ? e.message : "Couldn't save sending rules");
+        } finally {
+          setRulesSaving(false);
+        }
+      }, 500);
+    },
+    [sendingRules, rulesOrgId],
+  );
+
   // ── mailbox connect ─────────────────────────────────────────────────
   const [connecting, setConnecting] = useState(false);
   const connectMailbox = useCallback(async (provider: "gmail" | "outlook") => {
     setConnecting(true);
     try {
       const start = provider === "gmail" ? oauthGmailStart : oauthOutlookStart;
-      const res = await start({ return_url: window.location.href });
-      if (res.redirect_url) {
-        window.location.assign(res.redirect_url);
+      const res = (await start({ return_url: window.location.href })) as {
+        url?: string;
+        redirect_url?: string;
+        auth_url?: string;
+        error?: string;
+      };
+      // The edge fns return the consent URL under `url` (oauth-gmail/outlook-start)
+      // or `auth_url` (email-oauth-start) — NOT `redirect_url`. Reading only
+      // redirect_url is why the buttons silently did nothing.
+      const dest = res.url || res.redirect_url || res.auth_url;
+      if (dest) {
+        window.location.assign(dest);
       } else {
         throw new Error(res.error || "OAuth start failed");
       }
@@ -3907,6 +4184,8 @@ export default function OutboundEngineV2({
             setReply={setReply}
             onSend={sendReply}
             sending={sending}
+            onDraft={draftReply}
+            drafting={drafting}
             onSetIntent={retagIntent}
             onArchive={(t) => void archiveThreadAction(t)}
           />
@@ -3932,6 +4211,10 @@ export default function OutboundEngineV2({
             connecting={connecting}
             onRemove={(m) => void removeMailbox(m)}
             removingId={removingMailboxId}
+            rules={sendingRules}
+            rulesReady={rulesReady}
+            rulesSaving={rulesSaving}
+            onChangeRules={changeSendingRules}
           />
         )}
       </div>

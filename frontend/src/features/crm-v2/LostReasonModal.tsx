@@ -54,7 +54,7 @@ export default function LostReasonModal({ companyName, onCancel, onConfirm }: Lo
       style={{
         position: "fixed",
         inset: 0,
-        zIndex: 90,
+        zIndex: 1300,
         background: "rgba(2,6,23,0.45)",
         display: "grid",
         placeItems: "center",

@@ -500,26 +500,51 @@ export function computeView(ds: ShipmentDataset, st: ProfileState, A: ProfileAct
     );
   }
   const tlMax = Math.max(1, ...tlVals);
-  const N = LAST_MI + 1;
-  const timeline = tlVals.map((v, mi) => ({
-    mi,
-    v,
-    s: st.intro ? 0 : Math.max(0.02, v / tlMax),
-    sel: mi >= st.m0 && mi <= st.m1,
-    bg: mi >= st.m0 && mi <= st.m1 ? "#3b82f6" : "#CBD5E1",
-    label: miLabel(mi, FY) + " · " + fmtM(v) + " " + unitM,
-    onDown: (e?: { preventDefault?: () => void }) => { e?.preventDefault?.(); A.brushStart(mi); },
-    onEnter: () => A.brushMove(mi),
-  }));
-  const nYears = Math.ceil(N / 12);
-  const years = Array.from({ length: nYears }, (_, y) => ({
-    label: String(FY + y),
-    left: ((y * 12) / N * 100).toFixed(2) + "%",
-    width: (Math.min(12, N - y * 12) / N * 100).toFixed(2) + "%",
-  }));
+  // QA item 6: cap the shipment-history bar strip / brush to the most recent
+  // 5 years (60 months) when more history exists; if less, show what we have.
+  // `mi` indices stay ANCHORED to ds.firstYear everywhere else (cadence,
+  // heatmap, lane lifecycle keep their full-archive math) — we only trim the
+  // *rendered* window here. TL_MONTHS is the visible span; TL_START its first
+  // real mi. All strip geometry (bars, overlay, year labels) is expressed
+  // relative to TL_START so the brush keeps working inside the capped window.
+  const TL_CAP = 60;
+  const TL_START = Math.max(0, LAST_MI + 1 - TL_CAP);
+  const TL_MONTHS = LAST_MI + 1 - TL_START; // visible bar count
+  const N = TL_MONTHS;
+  const timeline = tlVals.slice(TL_START).map((v, i) => {
+    const mi = TL_START + i;
+    return {
+      mi,
+      v,
+      s: st.intro ? 0 : Math.max(0.02, v / tlMax),
+      sel: mi >= st.m0 && mi <= st.m1,
+      bg: mi >= st.m0 && mi <= st.m1 ? "#3b82f6" : "#CBD5E1",
+      label: miLabel(mi, FY) + " · " + fmtM(v) + " " + unitM,
+      onDown: (e?: { preventDefault?: () => void }) => { e?.preventDefault?.(); A.brushStart(mi); },
+      onEnter: () => A.brushMove(mi),
+    };
+  });
+  // Year labels: one tick per Jan (or the window's first month) inside the
+  // capped strip, positioned relative to TL_START.
+  const firstYearInWindow = miYear(TL_START, FY);
+  const lastYearInWindow = miYear(LAST_MI, FY);
+  const years: Array<{ label: string; left: string; width: string }> = [];
+  for (let yr = firstYearInWindow; yr <= lastYearInWindow; yr++) {
+    const yrStartMi = Math.max(TL_START, (yr - FY) * 12);
+    const yrEndMi = Math.min(LAST_MI, (yr - FY) * 12 + 11);
+    years.push({
+      label: String(yr),
+      left: (((yrStartMi - TL_START) / N) * 100).toFixed(2) + "%",
+      width: (((yrEndMi - yrStartMi + 1) / N) * 100).toFixed(2) + "%",
+    });
+  }
+  // Overlay geometry: clamp the selected window to the visible strip so a
+  // preset reaching before TL_START still renders a sensible highlight.
+  const bStart = Math.max(st.m0, TL_START);
+  const bEnd = Math.max(bStart, Math.min(st.m1, LAST_MI));
   const brush = {
-    left: ((st.m0 / N) * 100).toFixed(2) + "%",
-    width: (((st.m1 - st.m0 + 1) / N) * 100).toFixed(2) + "%",
+    left: (((bStart - TL_START) / N) * 100).toFixed(2) + "%",
+    width: (((bEnd - bStart + 1) / N) * 100).toFixed(2) + "%",
   };
 
   // cadence (range bars, current vs same-month prior year)

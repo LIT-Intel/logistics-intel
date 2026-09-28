@@ -37,6 +37,7 @@ import { resetOnboarding } from "@/lib/onboardingState";
 import { useInboxStatus } from "@/features/outbound/hooks/useInboxStatus";
 import type { LitEmailAccountRow } from "@/types/lit-outbound";
 import { useAuth } from "@/auth/AuthProvider";
+import { useOrgBranding } from "@/hooks/useOrgBranding";
 import { toast } from "sonner";
 import { fetchUserCreditLimits, setUserCreditLimit } from "@/api/entitlements";
 import {
@@ -512,6 +513,162 @@ function TeamUpgradeCard({ plan, onUpgrade }: { plan?: string | null; onUpgrade?
   );
 }
 
+// ─── BrandingCard (white-label) ──────────────────────────────────────────────
+// Growth / Scale / Enterprise orgs can replace the sidebar "Logistics Intel"
+// wordmark with their own brand name. Writes organizations.white_label_enabled
+// + brand_name. The enable toggle is only interactive on a qualifying plan;
+// otherwise it renders a plain upgrade hint. The plan gate is a UX hint — the
+// real boundary is server-side, and the effect is cosmetic (re-labels the
+// viewer's own chrome). On save we invalidate useOrgBranding so both sidebars
+// pick up the new wordmark without a reload.
+const WHITE_LABEL_PLANS: PlanCode[] = ["growth", "scale", "enterprise"];
+
+function BrandingCard({
+  orgId,
+  plan,
+  isAdmin,
+  onUpgrade,
+}: {
+  orgId: string | null;
+  plan?: string | null;
+  isAdmin?: boolean;
+  onUpgrade?: () => void;
+}) {
+  const { invalidate: invalidateBranding } = useOrgBranding();
+  const planAllows = WHITE_LABEL_PLANS.includes(normalizePlanCode(plan)) || Boolean(isAdmin);
+
+  const [enabled, setEnabled] = useState(false);
+  const [brandName, setBrandName] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!orgId) return;
+    let alive = true;
+    supabase
+      .from("organizations")
+      .select("white_label_enabled, brand_name")
+      .eq("id", orgId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!alive) return;
+        setEnabled(Boolean((data as any)?.white_label_enabled));
+        setBrandName(String((data as any)?.brand_name ?? ""));
+        setLoaded(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [orgId]);
+
+  const persist = async (next: { white_label_enabled: boolean; brand_name: string }) => {
+    if (!orgId) {
+      setErr("No organization found for this user");
+      return;
+    }
+    setErr(null);
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from("organizations")
+        .update({
+          white_label_enabled: next.white_label_enabled,
+          brand_name: next.brand_name.trim() || null,
+        })
+        .eq("id", orgId);
+      if (error) throw new Error(error.message);
+      invalidateBranding();
+      toast.success("Branding saved");
+    } catch (e: any) {
+      setErr(e?.message || "Failed saving branding");
+      throw e;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!isAdmin) return null;
+
+  return (
+    <SCard
+      title="Branding"
+      subtitle="Replace the sidebar wordmark with your company name across this workspace."
+    >
+      {!planAllows ? (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            padding: "12px 14px",
+            borderRadius: 10,
+            border: "1px solid #E2E8F0",
+            background: "#F8FAFC",
+            font: "500 13px 'DM Sans',system-ui,sans-serif",
+            color: "#475569",
+          }}
+        >
+          <Lock size={15} style={{ color: "#94a3b8", flexShrink: 0 }} />
+          <span style={{ flex: 1 }}>
+            White-label branding is available on Growth, Scale, and Enterprise plans.
+          </span>
+          <button type="button" onClick={onUpgrade} style={{ ...sBtnDark, fontSize: 12, padding: "6px 12px" }}>
+            Upgrade
+          </button>
+        </div>
+      ) : (
+        <>
+          <SToggle
+            checked={enabled}
+            disabled={saving || !loaded}
+            label="Enable white-label branding"
+            sub={
+              enabled
+                ? "On — the sidebar shows your brand name when expanded (the LIT icon stays when collapsed)."
+                : "Off — the sidebar shows the default Logistics Intel wordmark."
+            }
+            onChange={async (next: boolean) => {
+              const prev = enabled;
+              setEnabled(next);
+              try {
+                await persist({ white_label_enabled: next, brand_name: brandName });
+              } catch {
+                setEnabled(prev);
+              }
+            }}
+          />
+          <div style={{ marginTop: 14 }}>
+            <SField
+              label="Brand name"
+              hint="Shown as the top-left wordmark when the sidebar is expanded."
+            >
+              <SInput
+                value={brandName}
+                disabled={saving}
+                maxLength={40}
+                placeholder="Acme Logistics"
+                onChange={(e) => setBrandName(e.target.value)}
+              />
+            </SField>
+          </div>
+          <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end" }}>
+            <button
+              type="button"
+              disabled={saving || !loaded}
+              onClick={() => void persist({ white_label_enabled: enabled, brand_name: brandName }).catch(() => {})}
+              style={{ ...sBtnDark, opacity: saving || !loaded ? 0.6 : 1 }}
+            >
+              {saving ? "Saving…" : "Save branding"}
+            </button>
+          </div>
+        </>
+      )}
+      {err ? <StatusMsg error={err} /> : null}
+    </SCard>
+  );
+}
+
 export function WorkspaceSection(props: {
   workspaceName?: string;
   workspaceRole?: string;
@@ -789,6 +946,14 @@ export function WorkspaceSection(props: {
           {sharingErr ? <StatusMsg error={sharingErr} /> : null}
         </SCard>
       ) : null}
+
+      {/* White-label branding (Growth/Scale/Enterprise) — owner/admin only. */}
+      <BrandingCard
+        orgId={orgId}
+        plan={props.plan}
+        isAdmin={props.isAdmin}
+        onUpgrade={props.onUpgrade}
+      />
 
       {!allowed ? (
         <TeamUpgradeCard plan={props.plan} onUpgrade={props.onUpgrade} />

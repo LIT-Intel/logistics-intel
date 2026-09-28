@@ -6,6 +6,7 @@ import {
   PulseCoachProvider,
   PulseCoachFloating,
 } from "@/features/coach/PulseCoachWidget";
+import { CommandPalette } from "@/features/nav";
 
 const SIDEBAR_STORAGE_KEY = "lit:sidebarOpen";
 
@@ -93,6 +94,10 @@ export default function AppLayout({ children }) {
           "Ask Harvey" panel grounded in the current results, so the
           global pill would be a duplicate Harvey (owner-flagged). */}
       {pageContext !== "search" ? <PulseCoachFloating /> : null}
+      {/* Global ⌘K / Ctrl+K command palette — mounted once so it (and its
+          global keyboard listener, incl. ⌥1–⌥4 Command-Center tab switching)
+          is available across every /app route. */}
+      <CommandPalette />
     </PulseCoachProvider>
   );
 }

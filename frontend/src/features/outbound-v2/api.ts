@@ -13,10 +13,93 @@
  *   - api/outreach.ts                           → OAuth starts, queue-campaign-recipients
  */
 import { supabase } from "@/lib/supabase";
+import { resolveActiveOrgId } from "@/api/crm";
 import {
   saveCampaignDraft,
   type SaveCampaignDraftStep,
 } from "@/features/outbound/api/campaignActions";
+
+// ────────────────────────────────────────────────────────── sending rules
+//
+// organizations.sending_rules jsonb — workspace-wide deliverability guardrails
+// the dispatcher/orchestrator ENFORCES server-side. This UI just reads + writes
+// the shape; it never gates sends itself. Missing keys default to safe/off so
+// an org that never touched the card behaves exactly as before.
+
+export interface OrgSendingRules {
+  daily_cap_enabled: boolean;
+  daily_cap: number;
+  rampup_enabled: boolean;
+  autopause_bounce_enabled: boolean;
+  bounce_threshold: number; // percent (0–100)
+  random_delay_enabled: boolean;
+  skip_holidays_enabled: boolean;
+}
+
+export const DEFAULT_SENDING_RULES: OrgSendingRules = {
+  daily_cap_enabled: false,
+  daily_cap: 50,
+  rampup_enabled: false,
+  autopause_bounce_enabled: false,
+  bounce_threshold: 5,
+  random_delay_enabled: false,
+  skip_holidays_enabled: false,
+};
+
+function coerceRules(raw: unknown): OrgSendingRules {
+  const r = (raw ?? {}) as Record<string, unknown>;
+  const num = (v: unknown, d: number) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : d;
+  };
+  return {
+    daily_cap_enabled: Boolean(r.daily_cap_enabled),
+    daily_cap: Math.max(1, Math.round(num(r.daily_cap, DEFAULT_SENDING_RULES.daily_cap))),
+    rampup_enabled: Boolean(r.rampup_enabled),
+    autopause_bounce_enabled: Boolean(r.autopause_bounce_enabled),
+    bounce_threshold: Math.min(
+      100,
+      Math.max(1, Math.round(num(r.bounce_threshold, DEFAULT_SENDING_RULES.bounce_threshold))),
+    ),
+    random_delay_enabled: Boolean(r.random_delay_enabled),
+    skip_holidays_enabled: Boolean(r.skip_holidays_enabled),
+  };
+}
+
+/** Read the active org's sending_rules jsonb (defaults when unset / no org). */
+export async function getOrgSendingRules(): Promise<{
+  orgId: string | null;
+  rules: OrgSendingRules;
+}> {
+  const orgId = await resolveActiveOrgId();
+  if (!orgId) return { orgId: null, rules: { ...DEFAULT_SENDING_RULES } };
+  const { data, error } = await supabase
+    .from("organizations")
+    .select("sending_rules")
+    .eq("id", orgId)
+    .maybeSingle();
+  if (error || !data) return { orgId, rules: { ...DEFAULT_SENDING_RULES } };
+  return { orgId, rules: coerceRules((data as any).sending_rules) };
+}
+
+/** Persist the sending_rules jsonb for the active org. */
+export async function updateOrgSendingRules(
+  orgId: string,
+  rules: OrgSendingRules,
+): Promise<void> {
+  if (!orgId) throw new Error("updateOrgSendingRules: orgId required");
+  const { data, error } = await supabase
+    .from("organizations")
+    .update({ sending_rules: coerceRules(rules) })
+    .eq("id", orgId)
+    .select("id");
+  if (error) throw new Error(`updateOrgSendingRules: ${error.message}`);
+  if (!Array.isArray(data) || data.length === 0) {
+    throw new Error(
+      "updateOrgSendingRules: not found or you don't have permission to change workspace sending rules.",
+    );
+  }
+}
 
 // ────────────────────────────────────────────────────────── steps CRUD
 
@@ -524,6 +607,22 @@ export async function sendInboxReply(
   if (data && (data as any).ok === false) {
     throw new Error((data as any).error || "send_failed");
   }
+}
+
+/**
+ * "Draft with Harvey" — a customer-safe Claude reply draft for an inbox
+ * thread (outbound-reply-draft edge fn; RLS-scoped, never sends, separate
+ * from Harvey's internal lead-CRM handler). Returns the draft text.
+ */
+export async function draftInboxReply(threadId: string): Promise<string> {
+  const { data, error } = await supabase.functions.invoke("outbound-reply-draft", {
+    body: { thread_id: threadId },
+  });
+  if (error) throw new Error(error.message || "draft_failed");
+  if (!data || (data as any).ok === false) {
+    throw new Error((data as any)?.error || "draft_failed");
+  }
+  return String((data as any).draft ?? "");
 }
 
 export async function syncInbox(): Promise<void> {

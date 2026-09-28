@@ -25,10 +25,6 @@ import {
   KanbanSquare,
   CheckSquare,
   BarChart3,
-  DollarSign,
-  Briefcase,
-  TrendingUp,
-  Trophy,
 } from "lucide-react";
 import AddToCampaignModal from "./AddToCampaignModal";
 import CommandCenterV2 from "@/features/command-center/CommandCenterV2";
@@ -37,9 +33,9 @@ import PipelineGate from "@/features/crm/PipelineGate";
 import TasksView from "@/features/crm/TasksView";
 import PipelineReports from "@/features/crm/PipelineReports";
 import CreateDealModal, { type CreateDealPrefill } from "@/features/crm/CreateDealModal";
-import ViewAsFilter from "@/features/crm/ViewAsFilter";
 import { listStages, type DealStage, myOverdueTaskCount } from "@/api/crm";
-import { loadCommandCenterKpis, type CommandCenterKpis } from "@/api/commandCenterKpis";
+import { openDealCount } from "@/features/crm-v2/api";
+import { CC_SET_TAB_EVENT, type CcTabKey } from "@/features/nav";
 import {
   CommandCenterThemeProvider,
   CrmThemeToggle,
@@ -296,51 +292,50 @@ function CommandCenterInner() {
   const [view, setView] = useState<CrmView>("accounts");
   const [overdueCount, setOverdueCount] = useState(0);
   // Owner/admin "view as [member]" filter. Empty string = All members (whole
-  // org). Threaded into the KPI RPC + every CRM view (pipeline/tasks/reports).
-  // The ViewAsFilter control renders nothing for regular members, so this stays
-  // "" for them and every read falls back to their own RLS-scoped rows.
+  // org). Threaded into every CRM v2 view (pipeline/tasks/reports), which each
+  // render their own compact ViewAsFilter in-toolbar and refetch on change.
+  // The control renders nothing for regular members, so this stays "" for them
+  // and every read falls back to their own RLS-scoped rows.
   const [viewAsUserId, setViewAsUserId] = useState<string>("");
-  // Header KPI snapshot — one org-scoped lit_pipeline_summary() call. Starts
-  // at clean zeros so the bar renders 0s (never blanks) before data lands and
-  // on any empty/error state.
-  const [kpis, setKpis] = useState<CommandCenterKpis>({
-    openPipelineValue: 0,
-    activeDealCount: 0,
-    weightedForecast: 0,
-    wonMtdValue: 0,
-    overdueTaskCount: 0,
-  });
+  // Pipeline tab badge — cheap head-count of open deals (item 5).
+  const [openDeals, setOpenDeals] = useState(0);
 
-  // Load the viewer's overdue-task count for the Tasks tab badge.
+  // Load the viewer's overdue-task count (Tasks badge) + open-deal count
+  // (Pipeline badge). Both are cheap head-counts; refreshed on tab switch.
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        const n = await myOverdueTaskCount();
-        if (alive) setOverdueCount(n);
+        const [overdue, open] = await Promise.all([
+          myOverdueTaskCount().catch(() => 0),
+          openDealCount(viewAsUserId || null).catch(() => 0),
+        ]);
+        if (alive) {
+          setOverdueCount(overdue);
+          setOpenDeals(open);
+        }
       } catch {
-        /* badge is cosmetic */
+        /* badges are cosmetic */
       }
     })();
     return () => {
       alive = false;
     };
-  }, [view]);
-
-  // Load header KPIs once (org-scoped RPC). Refreshed on tab switches so the
-  // numbers stay current after the viewer edits deals/tasks in another view.
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      // Forward the owner/admin "view as" filter so the header KPIs match the
-      // filtered board. Ignored server-side for regular members.
-      const k = await loadCommandCenterKpis(viewAsUserId || null);
-      if (alive) setKpis(k);
-    })();
-    return () => {
-      alive = false;
-    };
   }, [view, viewAsUserId]);
+
+  // CC tab bridge (item 5): the global palette / ⌥1–⌥4 listener + sidebar
+  // flyout ask us to switch the active tab via a window event, since this
+  // component owns `view` (the tab lives in state, not the URL).
+  useEffect(() => {
+    const onSetTab = (e: Event) => {
+      const key = (e as CustomEvent<CcTabKey>).detail;
+      if (key === "accounts" || key === "pipeline" || key === "tasks" || key === "reports") {
+        setView(key);
+      }
+    };
+    window.addEventListener(CC_SET_TAB_EVENT, onSetTab);
+    return () => window.removeEventListener(CC_SET_TAB_EVENT, onSetTab);
+  }, []);
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: theme.bg }}>
@@ -348,7 +343,7 @@ function CommandCenterInner() {
           tabs + the theme toggle stay reachable on narrow phones. */}
       <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "10px 16px 0", background: theme.panel, borderBottom: `1px solid ${theme.border}`, flexShrink: 0, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
         <ViewTab active={view === "accounts"} onClick={() => setView("accounts")} icon={<LayoutGrid style={{ width: 14, height: 14 }} />} label="Saved companies" />
-        <ViewTab active={view === "pipeline"} onClick={() => setView("pipeline")} icon={<KanbanSquare style={{ width: 14, height: 14 }} />} label="Pipeline" />
+        <ViewTab active={view === "pipeline"} onClick={() => setView("pipeline")} icon={<KanbanSquare style={{ width: 14, height: 14 }} />} label="Pipeline" badge={openDeals || undefined} badgeTone="neutral" />
         <ViewTab active={view === "tasks"} onClick={() => setView("tasks")} icon={<CheckSquare style={{ width: 14, height: 14 }} />} label="Tasks" badge={overdueCount || undefined} />
         <ViewTab active={view === "reports"} onClick={() => setView("reports")} icon={<BarChart3 style={{ width: 14, height: 14 }} />} label="Reports" />
         {/* Theme toggle lives at the end of the tab row so it's always visible
@@ -358,19 +353,12 @@ function CommandCenterInner() {
         </div>
       </div>
 
-      {/* KPI header bar — below the tabs, above the content. Compact colored
-          KpiChip idiom (icon square + tone + bold number + small label), same
-          as the dashboard. Reflows to 2-up on phones, one row on desktop. */}
-      {/* The v2 workspace brings its own KPI header — the CRM KPI strip only
-          renders on the deal-centric views to avoid stacked headers. */}
-      {view !== "accounts" && (
-        <KpiHeaderBar
-          kpis={kpis}
-          overdueForViewer={overdueCount}
-          viewAsUserId={viewAsUserId}
-          onViewAsChange={setViewAsUserId}
-        />
-      )}
+      {/* QA item 9: the redundant KpiHeaderBar was REMOVED here. Each CRM v2
+          view (PipelineV2 / TasksV2 / ReportsV2) already renders its own KPI
+          hero, so KpiHeaderBar produced two stacked KPI rows. The owner/admin
+          "View · All members" selector is preserved by threading viewAsUserId
+          + setViewAsUserId into each v2 view (compact ViewAsFilter in-toolbar),
+          so switching a member still refetches. Accounts keeps no KPI strip. */}
 
       {view === "accounts" ? (
         /* Command Center v2 (design handoff 2026-09-27): Saved companies +
@@ -383,116 +371,30 @@ function CommandCenterInner() {
            legacy PipelineBoard/TasksView/PipelineReports kept for rollback. */
         <PipelineGate viewAsUserId={viewAsUserId}>
           <div style={{ flex: 1, overflowY: "auto" }}>
-            <PipelineV2 viewAsUserId={viewAsUserId} />
+            <PipelineV2 viewAsUserId={viewAsUserId} onViewAsChange={setViewAsUserId} />
           </div>
         </PipelineGate>
       ) : view === "tasks" ? (
         <div style={{ flex: 1, overflowY: "auto" }}>
-          <TasksV2 viewAsUserId={viewAsUserId} />
+          <TasksV2 viewAsUserId={viewAsUserId} onViewAsChange={setViewAsUserId} />
         </div>
       ) : (
         <div style={{ flex: 1, overflowY: "auto" }}>
-          <ReportsV2 viewAsUserId={viewAsUserId} />
+          <ReportsV2 viewAsUserId={viewAsUserId} onViewAsChange={setViewAsUserId} />
         </div>
       )}
     </div>
   );
 }
 
-// ── Header KPI bar ──────────────────────────────────────────────────────────
-// Mirrors the dashboard's KpiChip: a colored icon square + bold mono number +
-// small uppercase label. Tasteful and compact — a workspace header strip, not
-// the deep analytics view (Reports tab owns that).
-const KPI_TONES: Record<string, string> = {
-  blue: "bg-blue-50 text-blue-600 dark:bg-blue-500/15 dark:text-blue-300",
-  indigo: "bg-indigo-50 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300",
-  violet: "bg-violet-50 text-violet-600 dark:bg-violet-500/15 dark:text-violet-300",
-  amber: "bg-amber-50 text-amber-600 dark:bg-amber-500/15 dark:text-amber-300",
-  emerald: "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-300",
-};
+// ── (QA item 9) Header KPI bar REMOVED ───────────────────────────────────────
+// The KpiHeaderBar / KpiChip / KPI_TONES header strip was deleted: each CRM v2
+// view (PipelineV2 / TasksV2 / ReportsV2) renders its own KPI hero, so this
+// produced two stacked KPI rows. The member "View as" selector it used to host
+// now lives inside each v2 view's toolbar (compact ViewAsFilter) bound to
+// CommandCenter's viewAsUserId + setViewAsUserId.
 
-function KpiChip({
-  label,
-  value,
-  hint,
-  icon: Icon,
-  tone = "blue",
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-  icon: React.ComponentType<{ className?: string }>;
-  tone?: keyof typeof KPI_TONES;
-}) {
-  return (
-    <div className="flex min-w-0 items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:shadow-none">
-      <span
-        className={[
-          "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
-          KPI_TONES[tone] || KPI_TONES.blue,
-        ].join(" ")}
-      >
-        <Icon className="h-4 w-4" />
-      </span>
-      <div className="min-w-0">
-        <div className="font-mono truncate text-[18px] font-bold leading-none tracking-tight text-slate-900 dark:text-slate-100">
-          {value}
-        </div>
-        <div className="mt-1 truncate text-[9.5px] font-semibold uppercase tracking-[0.07em] text-slate-400 dark:text-slate-500" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-          {label}
-        </div>
-        {hint ? (
-          <div className="mt-0.5 truncate text-[10px] text-slate-400 dark:text-slate-500" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-            {hint}
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function KpiHeaderBar({
-  kpis,
-  overdueForViewer,
-  viewAsUserId,
-  onViewAsChange,
-}: {
-  kpis: CommandCenterKpis;
-  overdueForViewer: number;
-  viewAsUserId: string;
-  onViewAsChange: (userId: string) => void;
-}) {
-  // "Tasks due" surfaces the org-scoped open-overdue count from the RPC as the
-  // primary number; the viewer's own overdue count drives the highlight hint.
-  const { theme } = useCrmTheme();
-  const tasksDue = kpis.overdueTaskCount;
-  const tasksHint = overdueForViewer > 0 ? `${formatNumber(overdueForViewer)} overdue for you` : undefined;
-
-  return (
-    <div
-      style={{
-        padding: "12px 24px",
-        background: theme.panel,
-        borderBottom: `1px solid ${theme.border}`,
-        flexShrink: 0,
-      }}
-    >
-      {/* Owner/admin "view as [member]" filter — renders nothing for members. */}
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8, minHeight: 0 }}>
-        <ViewAsFilter value={viewAsUserId} onChange={onViewAsChange} />
-      </div>
-      <div className="grid grid-cols-2 gap-2.5 sm:gap-3 md:grid-cols-5">
-        <KpiChip label="Open pipeline" value={formatCurrency(kpis.openPipelineValue)} icon={DollarSign} tone="blue" />
-        <KpiChip label="Active deals" value={formatNumber(kpis.activeDealCount)} icon={Briefcase} tone="indigo" />
-        <KpiChip label="Weighted forecast" value={formatCurrency(kpis.weightedForecast)} icon={TrendingUp} tone="violet" />
-        <KpiChip label="Tasks due" value={formatNumber(tasksDue)} hint={tasksHint} icon={CheckSquare} tone="amber" />
-        <KpiChip label="Won MTD" value={formatCurrency(kpis.wonMtdValue)} icon={Trophy} tone="emerald" />
-      </div>
-    </div>
-  );
-}
-
-function ViewTab({ active, onClick, icon, label, badge }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string; badge?: number }) {
+function ViewTab({ active, onClick, icon, label, badge, badgeTone = "danger" }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string; badge?: number; badgeTone?: "danger" | "neutral" }) {
   const { theme } = useCrmTheme();
   return (
     <button
@@ -519,7 +421,7 @@ function ViewTab({ active, onClick, icon, label, badge }: { active: boolean; onC
       {icon}
       {label}
       {badge ? (
-        <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 18, height: 18, padding: "0 5px", borderRadius: 9, background: "#dc2626", color: "#FFFFFF", fontSize: 10, fontWeight: 700 }}>{badge}</span>
+        <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 18, height: 18, padding: "0 5px", borderRadius: 9, background: badgeTone === "neutral" ? theme.accentBorder : "#dc2626", color: "#FFFFFF", fontSize: 10, fontWeight: 700 }}>{badge}</span>
       ) : null}
     </button>
   );

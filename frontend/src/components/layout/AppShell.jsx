@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/auth/AuthProvider";
 import { useEntitlements } from "@/hooks/useEntitlements";
+import { useOrgBranding } from "@/hooks/useOrgBranding";
 import { useLeadCrmAccess } from "@/hooks/useLeadCrmAccess";
 import { canAccessFeature } from "@/lib/planLimits";
 import { logout } from "@/auth/supabaseAuthClient";
@@ -141,6 +142,11 @@ export default function AppShell({ currentPageName, children }) {
   const location = useLocation();
 
   const { entitlements } = useEntitlements();
+  // White-label wordmark — org brand name when white_label_enabled AND a
+  // brand name is set; null otherwise (falls back to "Logistics Intel"). Only
+  // shown when the sidebar is expanded; the LIT icon stays when collapsed.
+  const { wordmark } = useOrgBranding();
+  const brandWordmark = wordmark || "Logistics Intel";
   // Lead CRM (standalone /app/leads workspace) — server-authoritative membership
   // gate. Same hook the desktop sidebar uses; non-members never see the link.
   const { isMember: isLeadCrmMember } = useLeadCrmAccess();
@@ -198,10 +204,11 @@ export default function AppShell({ currentPageName, children }) {
             ) : (
               <>
                 <div
-                  className="whitespace-nowrap text-[19px] font-bold leading-none tracking-[-0.02em] text-white"
+                  className="truncate whitespace-nowrap text-[19px] font-bold leading-none tracking-[-0.02em] text-white"
                   style={{ fontFamily: "Space Grotesk,sans-serif" }}
+                  title={brandWordmark}
                 >
-                  Logistics Intel
+                  {brandWordmark}
                 </div>
 
                 <button
@@ -422,10 +429,11 @@ export default function AppShell({ currentPageName, children }) {
           <div className="absolute top-0 left-0 h-full w-72 bg-gradient-to-b from-slate-800 via-slate-700 to-slate-900 shadow-2xl p-4 text-white flex flex-col">
             <div className="flex items-center justify-between mb-4">
               <span
-                className="whitespace-nowrap text-[19px] font-bold leading-none tracking-[-0.02em] text-white"
+                className="truncate whitespace-nowrap text-[19px] font-bold leading-none tracking-[-0.02em] text-white"
                 style={{ fontFamily: "Space Grotesk,sans-serif" }}
+                title={brandWordmark}
               >
-                Logistics Intel
+                {brandWordmark}
               </span>
               <button
                 className="p-2 rounded-lg border border-white/20"

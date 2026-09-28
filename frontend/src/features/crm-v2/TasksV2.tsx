@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import LogoTile from "@/features/dashboard/components/LogoTile";
+import ViewAsFilter from "@/features/crm/ViewAsFilter";
 import { formatMoney, initials, avatarColor } from "@/features/crm/crmFormat";
 import { setTaskStatus } from "@/api/crm";
 import {
@@ -86,11 +87,14 @@ const OUTCOMES = ["Connected", "Left voicemail", "No answer", "Wrong person"];
 
 export interface TasksV2Props {
   viewAsUserId?: string;
+  /** Setter from CommandCenter — renders the compact member selector (owner/
+   *  admin only) that switches viewAsUserId + refetches. */
+  onViewAsChange?: (userId: string) => void;
   healthByCompanyUuid?: Record<string, CompanyHealth>;
   intelByCompanyUuid?: Record<string, DealIntel>;
 }
 
-export default function TasksV2({ viewAsUserId = "", healthByCompanyUuid, intelByCompanyUuid }: TasksV2Props) {
+export default function TasksV2({ viewAsUserId = "", onViewAsChange, healthByCompanyUuid, intelByCompanyUuid }: TasksV2Props) {
   const { tasks, deals, stages, members, rules, loading, refetchTasks, refetchRules, refetchDeals } =
     useCrmV2Data(viewAsUserId);
   const [layout, setLayout] = useState<"A" | "B">(() => getLayoutPref(LAYOUT_KEY, "A"));
@@ -214,6 +218,7 @@ export default function TasksV2({ viewAsUserId = "", healthByCompanyUuid, intelB
           }}
         />
         <OwnerAvatars members={members} active={ownerFilter} onPick={setOwnerFilter} />
+        {onViewAsChange ? <ViewAsFilter value={viewAsUserId} onChange={onViewAsChange} /> : null}
         <span style={{ flex: 1 }} />
         <button type="button" className="crm2-cta crm2-focus" style={primaryBtnStyle()} onClick={() => setAdding(true)}>
           <Plus size={15} /> Add task
@@ -271,6 +276,12 @@ export default function TasksV2({ viewAsUserId = "", healthByCompanyUuid, intelB
             <SectionLabel icon={Workflow}>Automations</SectionLabel>
             <div style={{ font: `400 12px ${F_BODY}`, color: "#64748b", marginTop: 6 }}>
               Rules that create tasks and move deals for you.
+            </div>
+            {/* item 5: these are real toggles on lit_automation_rules; the rules
+                fire server-side on a cron (owned by the orchestrator) — nothing
+                is executed client-side here. */}
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 8, font: `600 10px ${F_DISPLAY}`, letterSpacing: "0.06em", textTransform: "uppercase", color: "#0e7490", background: "rgba(8,145,178,0.10)", borderRadius: 999, padding: "3px 9px" }}>
+              <Workflow size={11} /> Runs automatically
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: 14 }}>
               {rules.map((r) => (
@@ -706,7 +717,7 @@ function AddTaskModal({
 
   const field: CSSProperties = { width: "100%", height: 38, borderRadius: 10, border: "1px solid #E5E7EB", padding: "0 12px", font: `400 13px ${F_BODY}`, color: "#0F172A", outline: "none", background: "#fff", boxSizing: "border-box" };
   return (
-    <div onClick={onClose} className="crm2-scrim" style={{ position: "fixed", inset: 0, zIndex: 90, background: "rgba(2,6,23,0.45)", display: "grid", placeItems: "center", padding: 16 }}>
+    <div onClick={onClose} className="crm2-scrim" style={{ position: "fixed", inset: 0, zIndex: 1300, background: "rgba(2,6,23,0.45)", display: "grid", placeItems: "center", padding: 16 }}>
       <div onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" className="crm2-modal" style={{ width: 440, maxWidth: "100%", background: "#fff", borderRadius: 16, padding: 24, boxShadow: "0 30px 60px rgba(2,6,23,0.35)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ font: `700 20px ${F_DISPLAY}`, color: "#0F172A" }}>Add task</div>

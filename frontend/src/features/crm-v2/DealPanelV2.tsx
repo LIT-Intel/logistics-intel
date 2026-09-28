@@ -16,10 +16,12 @@ import {
   CircleAlert,
   GitCommitHorizontal,
   Mail,
+  Moon,
   Phone,
   Plus,
   Ship,
   StickyNote,
+  Sun,
   Trophy,
   X,
 } from "lucide-react";
@@ -48,11 +50,24 @@ import {
   suggestStep,
   stageProbability,
   dueLabel,
-  laneUnitsOf,
+  laneUnitsForMode,
   type CompanyHealth,
 } from "./data/computeCrm";
 import LostReasonModal from "./LostReasonModal";
-import { Crm2Style, CYAN, DRAWER_EASE, F_BODY, F_DISPLAY, F_MONO } from "./ui";
+import {
+  Crm2Style,
+  CYAN,
+  DRAWER_EASE,
+  DRAWER_TOKENS,
+  F_BODY,
+  F_DISPLAY,
+  F_MONO,
+  LANE_MODES,
+  getDrawerTheme,
+  setDrawerThemePref,
+  type DrawerTheme,
+  type DrawerTokens,
+} from "./ui";
 
 /** Optional company-derived shipment info (never invented when absent). */
 export type DealIntel = {
@@ -116,8 +131,8 @@ function activityIcon(a: DealActivity): { Icon: typeof Mail; color: string } {
   }
 }
 
-const label = (t: string) => (
-  <div style={{ font: `600 10px ${F_MONO}`, letterSpacing: "0.14em", textTransform: "uppercase", color: "#64748b" }}>{t}</div>
+const labelEl = (t: string, color = "#64748b") => (
+  <div style={{ font: `600 10px ${F_MONO}`, letterSpacing: "0.14em", textTransform: "uppercase", color }}>{t}</div>
 );
 
 export default function DealPanelV2({
@@ -137,7 +152,16 @@ export default function DealPanelV2({
   const [logKind, setLogKind] = useState<"call" | "email" | "note">("call");
   const [logText, setLogText] = useState("");
   const [addingLane, setAddingLane] = useState(false);
-  const [lane, setLane] = useState({ label: "", origin: "", teu: "", rate: "" });
+  const [lane, setLane] = useState({ label: "", origin: "", mode: "" as string, teu: "", rate: "" });
+  // Drawer light/dark theme (item 11) — persisted to localStorage. Drives the
+  // centralized token map so no surface color is hardcoded twice.
+  const [theme, setTheme] = useState<DrawerTheme>(() => getDrawerTheme());
+  const T: DrawerTokens = DRAWER_TOKENS[theme];
+  const toggleTheme = () => {
+    const next: DrawerTheme = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    setDrawerThemePref(next);
+  };
   const [addingMember, setAddingMember] = useState(false);
   const [pickContact, setPickContact] = useState("");
   const [manualName, setManualName] = useState("");
@@ -276,10 +300,11 @@ export default function DealPanelV2({
       await addLineItem(deal.id, {
         lane_label: lane.label.trim(),
         origin_code: lane.origin.trim() || null,
+        mode: lane.mode || null,
         teu: lane.teu ? Number(lane.teu) : null,
         rate_usd: lane.rate ? Number(lane.rate) : null,
       });
-      setLane({ label: "", origin: "", teu: "", rate: "" });
+      setLane({ label: "", origin: "", mode: "", teu: "", rate: "" });
       setAddingLane(false);
       toast("Lane added to the deal");
       void refetchLocal("line-items");
@@ -329,33 +354,37 @@ export default function DealPanelV2({
   const laneLabel =
     deal.origin && deal.destination ? `${deal.origin} → ${deal.destination}` : deal.origin || deal.destination || null;
   const serviceLabel = deal.service_type ? deal.service_type.replace(/_/g, " ") : "Deal";
-  // Service-aware line-item units (TEU / Loads / kg / Qty) — stored in the
-  // existing teu / rate_usd columns unchanged.
-  const units = laneUnitsOf(deal.service_type);
+  // Add-form units (TEU / Loads / kg / Qty) — key off the lane's SELECTED
+  // freight mode, falling back to the deal service_type. Values still persist
+  // in the existing teu / rate_usd columns unchanged.
+  const units = laneUnitsForMode(lane.mode, deal.service_type);
+  const label = (t: string) => labelEl(t, T.textFaint);
 
-  const darkInput: CSSProperties = {
-    background: "#020617",
-    border: "1px solid #334155",
+  const fieldInput: CSSProperties = {
+    background: T.inset,
+    border: `1px solid ${T.borderStrong}`,
     borderRadius: 9,
-    color: "#e2e8f0",
+    color: T.text,
     padding: "8px 10px",
     font: `400 13px ${F_BODY}`,
     outline: "none",
     minWidth: 0,
   };
   const intelCell = (l: string, v: string | null | undefined) => (
-    <div style={{ background: "#020617", border: "1px solid #1e293b", borderRadius: 10, padding: "10px 12px" }}>
+    <div style={{ background: T.inset, border: `1px solid ${T.borderInset}`, borderRadius: 10, padding: "10px 12px" }}>
       {label(l)}
-      <div style={{ marginTop: 5, font: `600 13px ${F_BODY}`, color: v ? "#e2e8f0" : "#475569" }}>{v || "—"}</div>
+      <div style={{ marginTop: 5, font: `600 13px ${F_BODY}`, color: v ? T.text : T.textFaint }}>{v || "—"}</div>
     </div>
   );
 
   return (
     <>
+      {/* item 13: scrim + drawer sit ABOVE the global Harvey FAB (z-1100) so
+          the FAB can never obscure the Won/Lost/Save footer. */}
       <div
         className="crm2-scrim"
         onClick={onClose}
-        style={{ position: "fixed", inset: 0, zIndex: 70, background: "rgba(2,6,23,0.35)" }}
+        style={{ position: "fixed", inset: 0, zIndex: 1200, background: T.scrim }}
       />
       <aside
         className="crm2-drawer"
@@ -366,12 +395,12 @@ export default function DealPanelV2({
           top: 0,
           right: 0,
           bottom: 0,
-          zIndex: 71,
+          zIndex: 1201,
           width: 600,
           maxWidth: "100vw",
-          background: "#0F172A",
-          borderLeft: "1px solid #1F2937",
-          boxShadow: "-20px 0 40px rgba(2,6,23,0.4)",
+          background: T.surface,
+          borderLeft: `1px solid ${T.border}`,
+          boxShadow: theme === "dark" ? "-20px 0 40px rgba(2,6,23,0.4)" : "-20px 0 40px rgba(15,23,42,0.14)",
           display: "flex",
           flexDirection: "column",
           transition: `transform 350ms ${DRAWER_EASE}`,
@@ -379,19 +408,19 @@ export default function DealPanelV2({
       >
         <Crm2Style />
         {/* Header */}
-        <div style={{ padding: "22px 24px 16px", borderBottom: "1px solid #1e293b" }}>
+        <div style={{ padding: "22px 24px 16px", borderBottom: `1px solid ${T.borderInset}` }}>
           <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ font: `600 10px ${F_MONO}`, letterSpacing: "0.14em", textTransform: "uppercase", color: CYAN }}>
                 Deal · {serviceLabel} · {sourceLabel}
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10 }}>
-                <LogoTile name={deal.companyName ?? deal.title} domain={deal.companyDomain} size={48} radius={12} dark />
+                <LogoTile name={deal.companyName ?? deal.title} domain={deal.companyDomain} size={48} radius={12} dark={theme === "dark"} />
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ font: `700 22px ${F_DISPLAY}`, color: "#f8fafc", letterSpacing: "-0.02em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <div style={{ font: `700 22px ${F_DISPLAY}`, color: T.heading, letterSpacing: "-0.02em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {deal.companyName ?? deal.title}
                   </div>
-                  <div style={{ font: `400 12px ${F_BODY}`, color: "#94a3b8", marginTop: 2 }}>
+                  <div style={{ font: `400 12px ${F_BODY}`, color: T.textMuted, marginTop: 2 }}>
                     {[serviceLabel !== "Deal" ? serviceLabel : null, laneLabel, closeLabel ? `closes ${closeLabel}` : null, deal.ownerName]
                       .filter(Boolean)
                       .join(" · ") || deal.title}
@@ -400,17 +429,30 @@ export default function DealPanelV2({
               </div>
             </div>
             <div style={{ textAlign: "right", flex: "none" }}>
-              <div style={{ font: `600 22px ${F_MONO}`, color: CYAN, textShadow: "0 0 12px rgba(0,240,255,0.35)" }}>
+              <div style={{ font: `600 22px ${F_MONO}`, color: theme === "dark" ? CYAN : "#0891b2", textShadow: theme === "dark" ? "0 0 12px rgba(0,240,255,0.35)" : "none" }}>
                 {formatMoney(value)}
               </div>
-              <div style={{ font: `500 11px ${F_MONO}`, color: "#94a3b8" }}>{formatMoney(value * p)} weighted</div>
+              <div style={{ font: `500 11px ${F_MONO}`, color: T.textMuted }}>{formatMoney(value * p)} weighted</div>
             </div>
+            {/* item 11: light/dark toggle — sun in dark mode, moon in light. */}
+            <button
+              type="button"
+              role="switch"
+              aria-checked={theme === "light"}
+              aria-label={theme === "dark" ? "Switch drawer to light mode" : "Switch drawer to dark mode"}
+              title={theme === "dark" ? "Light mode" : "Dark mode"}
+              onClick={toggleTheme}
+              className="crm2-press crm2-focus"
+              style={{ background: "transparent", border: `1px solid ${T.borderStrong}`, borderRadius: 9, color: T.textMuted, cursor: "pointer", padding: 6, marginLeft: 4, display: "grid", placeItems: "center", flex: "none" }}
+            >
+              {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+            </button>
             <button
               type="button"
               aria-label="Close"
               onClick={onClose}
               className="crm2-press crm2-focus"
-              style={{ background: "transparent", border: "none", color: "#94a3b8", cursor: "pointer", padding: 4, marginLeft: 4 }}
+              style={{ background: "transparent", border: "none", color: T.textMuted, cursor: "pointer", padding: 4, marginLeft: 2 }}
             >
               <X size={18} />
             </button>
@@ -433,8 +475,8 @@ export default function DealPanelV2({
                     border: "none",
                     cursor: "pointer",
                     font: `600 11px ${F_DISPLAY}`,
-                    background: on ? s.color : past ? `${s.color}40` : "#1e293b",
-                    color: on ? "#020617" : past ? "#e2e8f0" : "#94a3b8",
+                    background: on ? s.color : past ? `${s.color}40` : T.stageIdle,
+                    color: on ? "#020617" : past ? (theme === "dark" ? "#e2e8f0" : "#0F172A") : T.stageIdleText,
                     whiteSpace: "nowrap",
                     overflow: "hidden",
                     textOverflow: "ellipsis",
@@ -461,8 +503,8 @@ export default function DealPanelV2({
             <div style={{ font: `600 10px ${F_MONO}`, letterSpacing: "0.14em", textTransform: "uppercase", color: CYAN }}>
               Harvey · next best action
             </div>
-            <div style={{ font: `600 15px ${F_DISPLAY}`, color: "#f8fafc", marginTop: 8 }}>{nba.title}</div>
-            <div style={{ font: `400 13px/1.5 ${F_BODY}`, color: "#cbd5e1", marginTop: 4 }}>{nba.body}</div>
+            <div style={{ font: `600 15px ${F_DISPLAY}`, color: T.heading, marginTop: 8 }}>{nba.title}</div>
+            <div style={{ font: `400 13px/1.5 ${F_BODY}`, color: T.textMuted, marginTop: 4 }}>{nba.body}</div>
             {nba.rule === "no-step" && !isClosed ? (
               <button
                 type="button"
@@ -515,22 +557,22 @@ export default function DealPanelV2({
                     alignItems: "center",
                     gap: 10,
                     marginTop: 8,
-                    background: "#020617",
-                    border: "1px solid #1e293b",
+                    background: T.inset,
+                    border: `1px solid ${T.borderInset}`,
                     borderRadius: 10,
                     padding: "10px 12px",
                   }}
                 >
                   <CalendarCheck size={15} color="#0891b2" style={{ flex: "none" }} />
-                  <div style={{ flex: 1, minWidth: 0, font: `600 13px ${F_BODY}`, color: "#e2e8f0" }}>{deal.next_step_text}</div>
-                  <span style={{ font: `500 11px ${F_MONO}`, color: stepDueDiff != null && stepDueDiff < 0 ? "#fb7185" : "#94a3b8", flex: "none" }}>
+                  <div style={{ flex: 1, minWidth: 0, font: `600 13px ${F_BODY}`, color: T.text }}>{deal.next_step_text}</div>
+                  <span style={{ font: `500 11px ${F_MONO}`, color: stepDueDiff != null && stepDueDiff < 0 ? "#fb7185" : T.textMuted, flex: "none" }}>
                     {dueLabel(stepDueDiff)}
                   </span>
                   <button
                     type="button"
                     className="crm2-press crm2-focus"
                     onClick={doneStep}
-                    style={{ border: "1px solid #334155", background: "transparent", color: "#e2e8f0", borderRadius: 8, padding: "5px 12px", font: `600 12px ${F_DISPLAY}`, cursor: "pointer", flex: "none" }}
+                    style={{ border: `1px solid ${T.borderStrong}`, background: "transparent", color: T.text, borderRadius: 8, padding: "5px 12px", font: `600 12px ${F_DISPLAY}`, cursor: "pointer", flex: "none" }}
                   >
                     Done
                   </button>
@@ -554,7 +596,7 @@ export default function DealPanelV2({
                       onChange={(e) => setDraftStep(e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && saveStep(draftStep)}
                       placeholder="What happens next?"
-                      style={{ ...darkInput, flex: 1 }}
+                      style={{ ...fieldInput, flex: 1 }}
                     />
                     <button
                       type="button"
@@ -584,28 +626,37 @@ export default function DealPanelV2({
           {/* Lanes on this deal */}
           <div>
             {label("Lanes on this deal")}
-            <div style={{ marginTop: 8, border: "1px solid #1e293b", borderRadius: 10, overflow: "hidden" }}>
+            <div style={{ marginTop: 8, border: `1px solid ${T.borderInset}`, borderRadius: 10, overflow: "hidden" }}>
               {lanes.length === 0 && !addingLane ? (
-                <div style={{ padding: "14px 12px", font: `400 12px ${F_BODY}`, color: "#64748b" }}>
+                <div style={{ padding: "14px 12px", font: `400 12px ${F_BODY}`, color: T.textFaint }}>
                   No lane line items yet.
                 </div>
               ) : (
-                lanes.map((l) => (
+                lanes.map((l) => {
+                  // item 12: units derive from THIS lane's freight mode, falling
+                  // back to the deal service_type when the lane has no mode.
+                  const u = laneUnitsForMode(l.mode, deal.service_type);
+                  return (
                   <div
                     key={l.id}
-                    style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 76px 84px 76px 24px", gap: 8, alignItems: "center", padding: "9px 12px", borderBottom: "1px solid #1e293b" }}
+                    style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 76px 84px 76px 24px", gap: 8, alignItems: "center", padding: "9px 12px", borderBottom: `1px solid ${T.borderInset}` }}
                   >
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, flexWrap: "wrap" }}>
                       {l.origin_code ? (
-                        <span style={{ font: `600 10px ${F_MONO}`, color: "#fff", background: "#334155", borderRadius: 4, padding: "2px 5px", flex: "none" }}>
+                        <span style={{ font: `600 10px ${F_MONO}`, color: T.chipText, background: T.chipBg, borderRadius: 4, padding: "2px 5px", flex: "none" }}>
                           {l.origin_code}
                         </span>
                       ) : null}
-                      <span style={{ font: `600 12px ${F_BODY}`, color: "#e2e8f0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.lane_label}</span>
+                      {l.mode ? (
+                        <span style={{ font: `600 10px ${F_DISPLAY}`, color: "#0e7490", background: "rgba(8,145,178,0.14)", borderRadius: 999, padding: "2px 7px", flex: "none", whiteSpace: "nowrap" }}>
+                          {l.mode}
+                        </span>
+                      ) : null}
+                      <span style={{ font: `600 12px ${F_BODY}`, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{l.lane_label}</span>
                     </div>
-                    <span style={{ font: `500 11px ${F_MONO}`, color: "#94a3b8", textAlign: "right" }}>{l.teu != null ? `${l.teu} ${units.qty}` : "—"}</span>
-                    <span style={{ font: `500 11px ${F_MONO}`, color: "#94a3b8", textAlign: "right" }}>{l.rate_usd != null ? `${formatMoney(l.rate_usd)}/${units.per}` : "—"}</span>
-                    <span style={{ font: `600 12px ${F_MONO}`, color: "#e2e8f0", textAlign: "right" }}>{l.value_usd != null ? formatMoney(l.value_usd) : "—"}</span>
+                    <span style={{ font: `500 11px ${F_MONO}`, color: T.textMuted, textAlign: "right" }}>{l.teu != null ? `${l.teu} ${u.qty}` : "—"}</span>
+                    <span style={{ font: `500 11px ${F_MONO}`, color: T.textMuted, textAlign: "right" }}>{l.rate_usd != null ? `${formatMoney(l.rate_usd)}/${u.per}` : "—"}</span>
+                    <span style={{ font: `600 12px ${F_MONO}`, color: T.text, textAlign: "right" }}>{l.value_usd != null ? formatMoney(l.value_usd) : "—"}</span>
                     <button
                       type="button"
                       aria-label="Remove lane"
@@ -619,42 +670,54 @@ export default function DealPanelV2({
                           toast.error(e?.message ?? "Could not remove the lane");
                         }
                       }}
-                      style={{ background: "transparent", border: "none", color: "#475569", cursor: "pointer", padding: 2 }}
+                      style={{ background: "transparent", border: "none", color: T.textFaint, cursor: "pointer", padding: 2 }}
                     >
                       <X size={13} />
                     </button>
                   </div>
-                ))
+                  );
+                })
               )}
               {lanes.length > 0 && (
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", borderBottom: addingLane ? "1px solid #1e293b" : "none" }}>
-                  <span style={{ font: `600 11px ${F_DISPLAY}`, color: "#94a3b8" }}>Deal value</span>
-                  <span style={{ font: `600 14px ${F_MONO}`, color: CYAN }}>{formatMoney(lanesTotal)}</span>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", borderBottom: addingLane ? `1px solid ${T.borderInset}` : "none" }}>
+                  <span style={{ font: `600 11px ${F_DISPLAY}`, color: T.textMuted }}>Deal value</span>
+                  <span style={{ font: `600 14px ${F_MONO}`, color: theme === "dark" ? CYAN : "#0891b2" }}>{formatMoney(lanesTotal)}</span>
                 </div>
               )}
               {addingLane ? (
-                <div style={{ padding: 12, display: "grid", gridTemplateColumns: "minmax(0,1.4fr) 64px 64px 76px auto", gap: 6 }}>
-                  <input value={lane.label} onChange={(e) => setLane({ ...lane, label: e.target.value })} placeholder="Lane (origin → destination)" style={darkInput} />
-                  <input value={lane.origin} onChange={(e) => setLane({ ...lane, origin: e.target.value.toUpperCase() })} placeholder="CN" maxLength={3} style={darkInput} />
-                  <input value={lane.teu} onChange={(e) => setLane({ ...lane, teu: e.target.value.replace(/[^\d]/g, "") })} placeholder={units.qty} inputMode="numeric" style={darkInput} />
-                  <input value={lane.rate} onChange={(e) => setLane({ ...lane, rate: e.target.value.replace(/[^\d]/g, "") })} placeholder={`$/${units.per}`} inputMode="numeric" style={darkInput} />
-                  <button type="button" className="crm2-press crm2-focus" onClick={submitLane} style={{ border: "none", background: "#3b82f6", color: "#fff", borderRadius: 9, padding: "0 12px", font: `600 12px ${F_DISPLAY}`, cursor: "pointer" }}>
-                    Add
-                  </button>
+                <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1.4fr) 64px", gap: 6 }}>
+                    <input value={lane.label} onChange={(e) => setLane({ ...lane, label: e.target.value })} placeholder="Lane (origin → destination)" style={fieldInput} />
+                    <input value={lane.origin} onChange={(e) => setLane({ ...lane, origin: e.target.value.toUpperCase() })} placeholder="CN" maxLength={3} style={fieldInput} />
+                  </div>
+                  {/* item 12: per-lane freight mode selector — drives the units. */}
+                  <select value={lane.mode} onChange={(e) => setLane({ ...lane, mode: e.target.value })} aria-label="Freight mode" style={fieldInput}>
+                    <option value="">Freight mode…</option>
+                    {LANE_MODES.map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 6 }}>
+                    <input value={lane.teu} onChange={(e) => setLane({ ...lane, teu: e.target.value.replace(/[^\d]/g, "") })} placeholder={units.qty} inputMode="numeric" style={fieldInput} />
+                    <input value={lane.rate} onChange={(e) => setLane({ ...lane, rate: e.target.value.replace(/[^\d]/g, "") })} placeholder={`$/${units.per}`} inputMode="numeric" style={fieldInput} />
+                    <button type="button" className="crm2-press crm2-focus" onClick={submitLane} style={{ border: "none", background: "#3b82f6", color: "#fff", borderRadius: 9, padding: "0 16px", font: `600 12px ${F_DISPLAY}`, cursor: "pointer" }}>
+                      Add
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <button
                   type="button"
                   className="crm2-press crm2-focus"
                   onClick={() => setAddingLane(true)}
-                  style={{ display: "block", width: "100%", textAlign: "left", padding: "10px 12px", background: "transparent", border: "none", color: CYAN, font: `600 12px ${F_DISPLAY}`, cursor: "pointer" }}
+                  style={{ display: "block", width: "100%", textAlign: "left", padding: "10px 12px", background: "transparent", border: "none", color: theme === "dark" ? CYAN : "#0891b2", font: `600 12px ${F_DISPLAY}`, cursor: "pointer" }}
                 >
                   + Add lane
                 </button>
               )}
             </div>
             {lanes.length > 0 && (
-              <div style={{ marginTop: 6, font: `400 11px ${F_BODY}`, color: "#64748b" }}>
+              <div style={{ marginTop: 6, font: `400 11px ${F_BODY}`, color: T.textFaint }}>
                 From {lanes.length} lane line item{lanes.length > 1 ? "s" : ""}.
               </div>
             )}
@@ -678,8 +741,8 @@ export default function DealPanelV2({
                       {initials(c.name)}
                     </span>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ font: `600 13px ${F_BODY}`, color: "#e2e8f0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</div>
-                      {c.title ? <div style={{ font: `400 11px ${F_BODY}`, color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.title}</div> : null}
+                      <div style={{ font: `600 13px ${F_BODY}`, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</div>
+                      {c.title ? <div style={{ font: `400 11px ${F_BODY}`, color: T.textFaint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.title}</div> : null}
                     </div>
                     <span style={{ font: `600 10px ${F_DISPLAY}`, color: roleColor, background: `${roleColor}22`, borderRadius: 999, padding: "3px 9px", flex: "none" }}>{c.role}</span>
                     <button
@@ -694,7 +757,7 @@ export default function DealPanelV2({
                           toast.error(e?.message ?? "Could not remove");
                         }
                       }}
-                      style={{ background: "transparent", border: "none", color: "#475569", cursor: "pointer", padding: 2, flex: "none" }}
+                      style={{ background: "transparent", border: "none", color: T.textFaint, cursor: "pointer", padding: 2, flex: "none" }}
                     >
                       <X size={13} />
                     </button>
@@ -702,9 +765,9 @@ export default function DealPanelV2({
                 );
               })}
               {addingMember ? (
-                <div style={{ display: "flex", flexDirection: "column", gap: 6, background: "#020617", border: "1px solid #1e293b", borderRadius: 10, padding: 10 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, background: T.inset, border: `1px solid ${T.borderInset}`, borderRadius: 10, padding: 10 }}>
                   {(contactsQ.data?.length ?? 0) > 0 ? (
-                    <select value={pickContact} onChange={(e) => setPickContact(e.target.value)} style={{ ...darkInput }}>
+                    <select value={pickContact} onChange={(e) => setPickContact(e.target.value)} style={{ ...fieldInput }}>
                       <option value="">Pick a contact…</option>
                       {(contactsQ.data ?? []).map((c) => (
                         <option key={c.id} value={c.id}>
@@ -715,12 +778,12 @@ export default function DealPanelV2({
                     </select>
                   ) : (
                     <>
-                      <input value={manualName} onChange={(e) => setManualName(e.target.value)} placeholder="Name" style={darkInput} />
-                      <input value={manualTitle} onChange={(e) => setManualTitle(e.target.value)} placeholder="Title" style={darkInput} />
+                      <input value={manualName} onChange={(e) => setManualName(e.target.value)} placeholder="Name" style={fieldInput} />
+                      <input value={manualTitle} onChange={(e) => setManualTitle(e.target.value)} placeholder="Title" style={fieldInput} />
                     </>
                   )}
                   <div style={{ display: "flex", gap: 6 }}>
-                    <select value={pickRole} onChange={(e) => setPickRole(e.target.value)} style={{ ...darkInput, flex: 1 }}>
+                    <select value={pickRole} onChange={(e) => setPickRole(e.target.value)} style={{ ...fieldInput, flex: 1 }}>
                       {ROLES.map((r) => (
                         <option key={r} value={r}>
                           {r}
@@ -730,13 +793,13 @@ export default function DealPanelV2({
                     <button type="button" className="crm2-press crm2-focus" onClick={submitMember} style={{ border: "none", background: "#3b82f6", color: "#fff", borderRadius: 9, padding: "0 12px", font: `600 12px ${F_DISPLAY}`, cursor: "pointer" }}>
                       Add
                     </button>
-                    <button type="button" className="crm2-press crm2-focus" onClick={() => setAddingMember(false)} style={{ border: "1px solid #334155", background: "transparent", color: "#94a3b8", borderRadius: 9, padding: "0 10px", font: `600 12px ${F_DISPLAY}`, cursor: "pointer" }}>
+                    <button type="button" className="crm2-press crm2-focus" onClick={() => setAddingMember(false)} style={{ border: `1px solid ${T.borderStrong}`, background: "transparent", color: T.textMuted, borderRadius: 9, padding: "0 10px", font: `600 12px ${F_DISPLAY}`, cursor: "pointer" }}>
                       Cancel
                     </button>
                   </div>
                 </div>
               ) : (
-                <button type="button" className="crm2-press crm2-focus" onClick={() => setAddingMember(true)} style={{ alignSelf: "flex-start", background: "transparent", border: "none", color: CYAN, font: `600 12px ${F_DISPLAY}`, cursor: "pointer", padding: "4px 0" }}>
+                <button type="button" className="crm2-press crm2-focus" onClick={() => setAddingMember(true)} style={{ alignSelf: "flex-start", background: "transparent", border: "none", color: theme === "dark" ? CYAN : "#0891b2", font: `600 12px ${F_DISPLAY}`, cursor: "pointer", padding: "4px 0" }}>
                   + Add contact
                 </button>
               )}
@@ -747,7 +810,7 @@ export default function DealPanelV2({
           <div>
             {label("Activity")}
             <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
-              <div style={{ display: "flex", background: "#020617", border: "1px solid #1e293b", borderRadius: 9, padding: 2, flex: "none" }}>
+              <div style={{ display: "flex", background: T.inset, border: `1px solid ${T.borderInset}`, borderRadius: 9, padding: 2, flex: "none" }}>
                 {([
                   ["call", "Log call"],
                   ["email", "Email"],
@@ -758,7 +821,7 @@ export default function DealPanelV2({
                     type="button"
                     className="crm2-press crm2-focus"
                     onClick={() => setLogKind(k)}
-                    style={{ border: "none", cursor: "pointer", borderRadius: 7, padding: "5px 9px", background: logKind === k ? "#1e293b" : "transparent", color: logKind === k ? "#f8fafc" : "#94a3b8", font: `600 11px ${F_DISPLAY}`, whiteSpace: "nowrap" }}
+                    style={{ border: "none", cursor: "pointer", borderRadius: 7, padding: "5px 9px", background: logKind === k ? (theme === "dark" ? "#1e293b" : "#E2E8F0") : "transparent", color: logKind === k ? T.heading : T.textMuted, font: `600 11px ${F_DISPLAY}`, whiteSpace: "nowrap" }}
                   >
                     {l}
                   </button>
@@ -769,7 +832,7 @@ export default function DealPanelV2({
                 onChange={(e) => setLogText(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && saveLog()}
                 placeholder={logKind === "call" ? "Call outcome, what was agreed…" : logKind === "email" ? "Subject or summary…" : "Add a note…"}
-                style={{ ...darkInput, flex: 1 }}
+                style={{ ...fieldInput, flex: 1 }}
               />
               <button type="button" className="crm2-press crm2-focus" onClick={saveLog} style={{ border: "none", background: "#3b82f6", color: "#fff", borderRadius: 9, padding: "8px 13px", font: `600 12px ${F_DISPLAY}`, cursor: "pointer", flex: "none" }}>
                 Log
@@ -786,35 +849,37 @@ export default function DealPanelV2({
                       : a.kind;
                 return (
                   <div key={a.id} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-                    <span style={{ width: 28, height: 28, borderRadius: 8, flex: "none", display: "grid", placeItems: "center", background: "#1e293b" }}>
+                    <span style={{ width: 28, height: 28, borderRadius: 8, flex: "none", display: "grid", placeItems: "center", background: T.stageIdle }}>
                       <Icon size={13} color={color} />
                     </span>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ font: `400 13px/1.4 ${F_BODY}`, color: "#e2e8f0", overflowWrap: "anywhere" }}>{text}</div>
-                      <div style={{ font: `400 11px ${F_BODY}`, color: "#64748b", marginTop: 2 }}>
+                      <div style={{ font: `400 13px/1.4 ${F_BODY}`, color: T.text, overflowWrap: "anywhere" }}>{text}</div>
+                      <div style={{ font: `400 11px ${F_BODY}`, color: T.textFaint, marginTop: 2 }}>
                         {memberName(a.actor_user_id) ?? (a.actor_user_id ? "Teammate" : "LIT data")}
                       </div>
                     </div>
-                    <span style={{ font: `400 11px ${F_MONO}`, color: "#64748b", flex: "none" }}>{agoLabel(a.created_at)}</span>
+                    <span style={{ font: `400 11px ${F_MONO}`, color: T.textFaint, flex: "none" }}>{agoLabel(a.created_at)}</span>
                   </div>
                 );
               })}
               {!activityQ.isLoading && (activityQ.data ?? []).length === 0 && (
-                <div style={{ font: `400 12px ${F_BODY}`, color: "#64748b" }}>No activity yet.</div>
+                <div style={{ font: `400 12px ${F_BODY}`, color: T.textFaint }}>No activity yet.</div>
               )}
             </div>
           </div>
         </div>
 
-        {/* Footer */}
-        <div style={{ display: "flex", gap: 8, padding: "16px 24px", borderTop: "1px solid #1e293b" }}>
+        {/* Footer — item 13 belt-and-braces: extra right/bottom padding keeps
+            the Won/Lost/Save actions clear of the ~72px bottom-right Harvey FAB
+            zone even though the drawer already sits above it (z-1201 > 1100). */}
+        <div style={{ display: "flex", gap: 8, padding: "16px 24px", paddingRight: 24, borderTop: `1px solid ${T.borderInset}`, background: T.surface }}>
           <button
             type="button"
             className="crm2-press crm2-focus"
             disabled={!deal.companyKey}
             title={deal.companyKey ? undefined : "No company profile linked"}
             onClick={() => deal.companyKey && navigate(`/app/companies/${deal.companyKey}`)}
-            style={{ border: "1px solid #334155", background: "transparent", color: deal.companyKey ? "#e2e8f0" : "#475569", borderRadius: 10, padding: "9px 14px", font: `600 12px ${F_DISPLAY}`, cursor: deal.companyKey ? "pointer" : "default" }}
+            style={{ border: `1px solid ${T.borderStrong}`, background: "transparent", color: deal.companyKey ? T.text : T.textFaint, borderRadius: 10, padding: "9px 14px", font: `600 12px ${F_DISPLAY}`, cursor: deal.companyKey ? "pointer" : "default" }}
           >
             Company Profile →
           </button>

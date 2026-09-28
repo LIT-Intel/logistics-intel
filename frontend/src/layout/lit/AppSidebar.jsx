@@ -17,7 +17,9 @@ import {
   Bot,
 } from "lucide-react";
 import { LitAppIcon, PulseIcon } from "@/components/shared/AppIcons";
+import { SidebarFlyout } from "@/features/nav";
 import { useAuth } from "@/auth/AuthProvider";
+import { useOrgBranding } from "@/hooks/useOrgBranding";
 import { useLeadCrmAccess } from "@/hooks/useLeadCrmAccess";
 import { canAccessFeature } from "@/lib/planLimits";
 import SidebarUsageChip from "@/components/shared/SidebarUsageChip";
@@ -46,6 +48,12 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
   // link only to lead-CRM members (reps/managers/admins), resolved server-side
   // via lit_my_lead_crm_access(). Non-members never see the entry.
   const { isMember: isLeadCrmMember } = useLeadCrmAccess();
+
+  // White-label wordmark — org brand name when white_label_enabled + a brand
+  // name is set; falls back to "Logistics Intel". Only rendered in the
+  // expanded state; the LIT icon stays when the rail is minimized.
+  const { wordmark } = useOrgBranding();
+  const brandWordmark = wordmark || "Logistics Intel";
 
   const canUseCampaigns = isAdmin || canAccessFeature(plan, "campaign_builder");
   const canUsePulse = isAdmin || canAccessFeature(plan, "pulse");
@@ -88,6 +96,7 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
           label: "Command Center",
           href: "/app/command-center",
           icon: Briefcase,
+          flyout: "command-center",
           children: inCommandCenter
             ? [
                 {
@@ -119,6 +128,7 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
           href: "/app/outbound",
           icon: Megaphone,
           locked: !canUseCampaigns,
+          flyout: "outbound",
         },
         { label: "Inbox", href: "/app/outbound?tab=inbox", icon: Inbox },
         { label: "RFP & Quotes", href: "/app/rfp", icon: FileText },
@@ -180,10 +190,11 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
       >
         {sidebarOpen ? (
           <div
-            className="whitespace-nowrap text-[20px] font-bold leading-none tracking-[-0.02em] text-white"
+            className="truncate whitespace-nowrap text-[20px] font-bold leading-none tracking-[-0.02em] text-white"
             style={{ fontFamily: "Space Grotesk,sans-serif" }}
+            title={brandWordmark}
           >
-            Logistics Intel
+            {brandWordmark}
           </div>
         ) : (
           <div className="lit-logo-alive flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-950 ring-1 ring-white/10">
@@ -233,7 +244,7 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
                   currentPath === item.href ||
                   (item.href !== "/" && currentPath.startsWith(item.href));
 
-                return (
+                const node = (
                   <div key={item.label} className="group/navitem relative">
                     {/* Cyan left-edge accent strip — only renders for the
                         active item. In collapsed mode this is the primary
@@ -365,6 +376,20 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
                     )}
                   </div>
                 );
+
+                // item 5: wrap Command Center + Outbound items in a hover
+                // flyout listing their tabs (⌥1.. hints). Only when the item
+                // isn't locked and only when the rail is expanded (collapsed
+                // mode already has its own icon tooltip; the flyout would
+                // collide). Additive — the item markup above is untouched.
+                if (item.flyout && !item.locked && sidebarOpen) {
+                  return (
+                    <SidebarFlyout key={item.label} which={item.flyout}>
+                      {node}
+                    </SidebarFlyout>
+                  );
+                }
+                return node;
               })}
             </nav>
           </div>

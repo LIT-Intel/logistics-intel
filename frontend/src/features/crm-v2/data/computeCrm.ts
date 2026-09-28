@@ -565,6 +565,24 @@ export function laneUnitsOf(serviceType: string | null | undefined): LaneUnits {
   return { qty: "Qty", per: "unit" };
 }
 
+/**
+ * Units for a SINGLE lane, keyed off its own freight mode (lit_deal_line_items
+ * .mode) when present — FCL/LCL/Drayage/Intermodal → TEU, FTL/LTL → Loads,
+ * Air Freight → kg, else the generic Qty. Falls back to the deal-level
+ * service_type via laneUnitsOf when the lane has no mode set.
+ */
+export function laneUnitsForMode(
+  mode: string | null | undefined,
+  serviceType?: string | null | undefined,
+): LaneUnits {
+  const m = String(mode ?? "").trim().toLowerCase();
+  if (!m) return laneUnitsOf(serviceType);
+  if (m === "fcl" || m === "lcl" || m === "drayage" || m === "intermodal") return { qty: "TEU", per: "TEU" };
+  if (m === "ftl" || m === "ltl") return { qty: "Loads", per: "load" };
+  if (m === "air freight" || m === "air") return { qty: "kg", per: "kg" };
+  return { qty: "Qty", per: "unit" };
+}
+
 export type ServiceWinRow = {
   bucket: ServiceBucket;
   dealCount: number;

@@ -49,6 +49,8 @@ export type DealLineItem = {
   deal_id: string;
   lane_label: string;
   origin_code: string | null;
+  /** Per-lane freight mode (FCL/LCL/FTL/LTL/Drayage/Air Freight/Intermodal/Other). */
+  mode: string | null;
   teu: number | null;
   rate_usd: number | null;
   value_usd: number | null;
@@ -156,7 +158,7 @@ export async function listLineItems(dealId: string): Promise<DealLineItem[]> {
 
 export async function addLineItem(
   dealId: string,
-  input: { lane_label: string; origin_code?: string | null; teu?: number | null; rate_usd?: number | null; value_usd?: number | null },
+  input: { lane_label: string; origin_code?: string | null; mode?: string | null; teu?: number | null; rate_usd?: number | null; value_usd?: number | null },
 ): Promise<DealLineItem> {
   const orgId = await resolveActiveOrgId();
   if (!orgId) throw new Error("No active workspace.");
@@ -170,6 +172,7 @@ export async function addLineItem(
       deal_id: dealId,
       lane_label: input.lane_label,
       origin_code: input.origin_code ?? null,
+      mode: input.mode ?? null,
       teu: input.teu ?? null,
       rate_usd: input.rate_usd ?? null,
       value_usd: value,
@@ -369,6 +372,24 @@ export async function createTaskV2(input: {
     .single();
   if (error) throw new Error(error.message);
   return data as TaskV2;
+}
+
+/**
+ * Cheap head-count of OPEN deals for the org (optionally a single owner) —
+ * feeds the Pipeline tab badge (item 5). Head-only count, no rows fetched.
+ */
+export async function openDealCount(ownerUserId?: string | null): Promise<number> {
+  const orgId = await resolveActiveOrgId();
+  if (!orgId) return 0;
+  let q = supabase
+    .from("lit_deals")
+    .select("id", { count: "exact", head: true })
+    .eq("org_id", orgId)
+    .eq("status", "open");
+  if (ownerUserId) q = q.eq("owner_user_id", ownerUserId);
+  const { count, error } = await q;
+  if (error) return 0;
+  return count ?? 0;
 }
 
 export async function snoozeTask(id: string, untilDate: string): Promise<void> {
