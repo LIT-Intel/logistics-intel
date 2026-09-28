@@ -35,7 +35,7 @@ interface ViewPayload {
   laneMonths?: LaneMonthDbRow[];
 }
 
-type ErrorKind = "expired" | "invalid";
+type ErrorKind = "expired" | "invalid" | "empty";
 type State =
   | { status: "loading" }
   | { status: "error"; kind: ErrorKind }
@@ -60,9 +60,17 @@ function ErrorCard({ kind }: { kind: ErrorKind }) {
         <div
           style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 22, letterSpacing: "-0.01em", color: "#f8fafc" }}
         >
-          {kind === "expired" ? "This link has expired" : "This link is invalid"}
+          {kind === "expired"
+            ? "This link has expired"
+            : kind === "empty"
+              ? "Nothing to show yet"
+              : "This link is invalid"}
         </div>
-        <div className="mt-2 text-[14px] text-[#94a3b8]">Ask the sender for a fresh link.</div>
+        <div className="mt-2 text-[14px] text-[#94a3b8]">
+          {kind === "empty"
+            ? "This company's shipment history hasn't been assembled yet. Ask the sender to re-share once it's ready."
+            : "Ask the sender for a fresh link."}
+        </div>
         <a
           href="https://logisticintel.com"
           target="_blank"
@@ -184,7 +192,9 @@ export default function SharedLanesViewer() {
   if (state.status === "error") return <ErrorCard kind={state.kind} />;
 
   const p = state.payload;
-  if (!dataset) return <ErrorCard kind="invalid" />;
+  // Payload was valid but carried no rows (e.g. archive not built yet) —
+  // that's an empty share, not an invalid link.
+  if (!dataset) return <ErrorCard kind="empty" />;
 
   const expires = p.expires_at
     ? new Date(p.expires_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })

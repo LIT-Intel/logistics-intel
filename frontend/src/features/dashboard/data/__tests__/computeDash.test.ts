@@ -27,7 +27,7 @@ const NOW = new Date(2026, 8, 27); // Sep 2026
 const FY = 2024;
 const LAST = (2026 - FY) * 12 + 8; // Sep 2026 → mi 32
 
-function co(key: string, name: string, stage: string, lastActivityDaysAgo: number | null): DashCompany {
+function co(key: string, name: string, stage: string, lastActivityDaysAgo: number | null, ownerId = "u-vr"): DashCompany {
   return {
     key,
     uuid: null,
@@ -39,15 +39,19 @@ function co(key: string, name: string, stage: string, lastActivityDaysAgo: numbe
     topRouteFallback: "CN → US",
     lastActivityTs: lastActivityDaysAgo == null ? null : +NOW - lastActivityDaysAgo * 864e5,
     initials: name.slice(0, 2).toUpperCase(),
+    ownerId,
+    ownerName: ownerId === "u-vr" ? "Valesco Raymond" : "Jordan Mills",
+    ownerKey: ownerId === "u-vr" ? "VR" : "JM",
+    ownerColor: "#3b82f6",
   };
 }
 
 // Fixture: 4 companies with distinct behaviors.
 const COMPANIES: DashCompany[] = [
-  co("alpha", "Alpha Imports", "prospecting", 5),      // steady
-  co("bravo", "Bravo Freight", "quoting", 10),         // spiking
-  co("charlie", "Charlie Goods", "engaged", 120),      // dormant
-  co("delta", "Delta Trading", "closed won", 3),       // lane-covered
+  co("alpha", "Alpha Imports", "prospecting", 5),          // steady
+  co("bravo", "Bravo Freight", "quoting", 10),             // spiking
+  co("charlie", "Charlie Goods", "engaged", 120, "u-jm"),  // dormant, other owner
+  co("delta", "Delta Trading", "closed won", 3),           // lane-covered
 ];
 
 const coRows: CoMonthRow[] = [];
@@ -112,15 +116,29 @@ describe("computeDash", () => {
     expect(sum).toBe(coRows.reduce((s, r) => s + r.shipments, 0));
   });
 
-  it("stage facet groups canonically and pipeline = Engaged+Quoting annualized", () => {
+  it("stage facet shows all six canonical stages; pipeline = Engaged+Quoting annualized", () => {
     const v = computeDash(ds, st(), noop);
     const byLabel = Object.fromEntries(v.stages.map((s: any) => [s.label, s]));
+    expect(v.stages.map((s: any) => s.label)).toEqual(["Prospect", "Contacted", "Engaged", "Quoting", "Won", "Lost"]);
     expect(byLabel.Prospect.count).toBe(1);
     expect(byLabel.Quoting.count).toBe(1);
     expect(byLabel.Engaged.count).toBe(1);
     expect(byLabel.Won.count).toBe(1);
+    expect(byLabel.Contacted.count).toBe(0); // empty stages still render
     const pipelineKpi = v.kpis.find((k: any) => k.id === "pipeline")!;
     expect(pipelineKpi.valueN).toBeCloseTo(byLabel.Engaged.raw + byLabel.Quoting.raw, 4);
+  });
+
+  it("owners facet counts savers and the owner filter scopes everything", () => {
+    const v = computeDash(ds, st(), noop);
+    expect(v.owners.map((o: any) => [o.name, o.count])).toEqual([
+      ["Valesco Raymond", 3],
+      ["Jordan Mills", 1],
+    ]);
+    const filtered = computeDash(ds, st({ f: { owner: ["u-jm"] } }), noop);
+    expect(filtered.ranked.map((c: any) => c.key)).toEqual(["charlie"]);
+    // crossfilter: owners card still shows both owners while filtered
+    expect(filtered.owners.length).toBe(2);
   });
 
   it("lane filter keeps only lane-covered companies; lane facet reconciles", () => {

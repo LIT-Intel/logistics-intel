@@ -75,6 +75,19 @@ const normInclude = (raw: unknown): IncludeFlags => {
   };
 };
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Links can be created while the page only knows the lit_companies UUID —
+ *  resolve it to the source_company_key slug the shipment tables key on.
+ *  (Sany's first share link hit exactly this, 2026-09-27.) */
+async function resolveSlug(sb: ReturnType<typeof admin>, companyId: string): Promise<string> {
+  const raw = companyId.trim().replace(/^company\//, "");
+  if (!UUID_RE.test(raw)) return raw;
+  const { data } = await sb.from("lit_companies").select("source_company_key").eq("id", raw).maybeSingle();
+  const key = String((data as any)?.source_company_key ?? "").trim().replace(/^company\//, "");
+  return key || raw;
+}
+
 // Naive per-isolate rate limit: 60 views / token / minute.
 const hits = new Map<string, number[]>();
 const rateLimited = (token: string): boolean => {
@@ -110,7 +123,7 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: "expired" }, 410);
     }
     const include = normInclude(link.include);
-    const slug = String(link.company_id);
+    const slug = await resolveSlug(sb, String(link.company_id));
 
     const [bolsQ, tsQ, lanesQ] = await Promise.all([
       include.bols
@@ -175,7 +188,7 @@ Deno.serve(async (req) => {
   const sb = admin();
 
   if (action === "create") {
-    const companyId = String(body?.company_id ?? "").trim().replace(/^company\//, "");
+    const companyId = await resolveSlug(sb, String(body?.company_id ?? ""));
     if (!companyId) return json({ ok: false, error: "company_id required" }, 400);
     const expiresDays = body?.expires_days == null ? null : Number(body.expires_days);
     const expires_at =

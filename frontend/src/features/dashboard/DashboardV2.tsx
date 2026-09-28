@@ -424,7 +424,12 @@ export default function DashboardV2() {
                 </b>{" "}
                 in {story.period},{" "}
                 <b style={{ fontWeight: 600, color: story.deltaFg }}>{story.delta}</b> year over
-                year. {story.topLane} carries {story.topLaneShare} of it.{" "}
+                year.{" "}
+                {story.topLane !== "—" && (
+                  <>
+                    {story.topLane} carries {story.topLaneShare} of it.{" "}
+                  </>
+                )}
                 <b style={{ color: "#0F172A", fontWeight: 600 }}>{story.signals} accounts</b> need
                 attention today.
               </p>
@@ -948,8 +953,26 @@ export default function DashboardV2() {
                           >
                             {c.name}
                           </span>
-                          <span style={{ display: "block", fontSize: 11, color: "#94a3b8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                            {c.city || "—"}
+                          <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#94a3b8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                            {c.ownerId && (
+                              <span
+                                title={c.ownerName ?? undefined}
+                                style={{
+                                  width: 14,
+                                  height: 14,
+                                  flex: "none",
+                                  borderRadius: 999,
+                                  background: c.ownerColor,
+                                  color: "#fff",
+                                  display: "grid",
+                                  placeItems: "center",
+                                  font: `600 7px ${F_DISPLAY}`,
+                                }}
+                              >
+                                {c.ownerKey}
+                              </span>
+                            )}
+                            <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{c.city || "—"}</span>
                           </span>
                         </span>
                       </span>
@@ -1165,7 +1188,62 @@ export default function DashboardV2() {
               ))}
             </section>
 
-            {/* 3. Outbound Engine (dark accent card) — no Owners card: no owner data */}
+            {/* 3. Owners — saver attribution from lit_saved_companies.user_id */}
+            {(v as any).owners?.length > 0 && (
+              <section style={{ ...CARD, padding: "18px 20px 10px" }}>
+                <div
+                  style={{
+                    font: `600 11px ${F_DISPLAY}`,
+                    letterSpacing: "0.12em",
+                    textTransform: "uppercase",
+                    color: "#64748b",
+                    marginBottom: 6,
+                  }}
+                >
+                  Owners
+                </div>
+                {(v as any).owners.map((o: any) => (
+                  <div
+                    key={o.id}
+                    onClick={o.onClick}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: 8,
+                      margin: "0 -8px",
+                      borderRadius: 8,
+                      cursor: "pointer",
+                      background: o.bg,
+                      opacity: o.opacity,
+                      transition: reduced ? "none" : `background 200ms ${EASE}, opacity 200ms`,
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 26,
+                        height: 26,
+                        flex: "none",
+                        borderRadius: 999,
+                        background: o.color,
+                        color: "#fff",
+                        display: "grid",
+                        placeItems: "center",
+                        font: `600 10px ${F_DISPLAY}`,
+                      }}
+                    >
+                      {o.key}
+                    </span>
+                    <span style={{ flex: 1, fontSize: 13, fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {o.name}
+                    </span>
+                    <span style={{ font: `500 12px ${F_MONO}`, color: "#64748b" }}>{o.count}</span>
+                  </div>
+                ))}
+              </section>
+            )}
+
+            {/* 4. Outbound Engine (dark accent card) */}
             <OutboundEngineCard />
           </aside>
         </div>

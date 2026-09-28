@@ -8,7 +8,7 @@
  * laneRegionColor origin-region palette) since that conversion is not
  * exported from the coach file.
  */
-import { lazy, Suspense, useMemo } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import { type GlobeLane } from "@/components/GlobeCanvas";
 import { type LaneMapLaneColor } from "@/components/LaneMap";
 import { resolveEndpoint } from "@/lib/laneGlobe";
@@ -96,7 +96,7 @@ export default function DashLaneMapCard({ workspaceLanes, lanes, headline, unit,
 
   // Map ← filter selection: first lane-filtered dash lane, mapped back to
   // its workspace lane key so the existing LaneMap highlights it.
-  const selectedMapKey = useMemo(() => {
+  const filterMapKey = useMemo(() => {
     const active = lanes.filter((l) => l.rowBg !== "transparent").map((l) => l.key);
     if (!active.length) return null;
     const wl = workspaceLanes.find(
@@ -105,8 +105,52 @@ export default function DashLaneMapCard({ workspaceLanes, lanes, headline, unit,
     return wl?.key ?? null;
   }, [lanes, workspaceLanes]);
 
-  // Map lane click → matching computeDash lane onClick (lane filter toggle).
+  // Fallback mode: monthly lane rollups don't cover every saved company yet,
+  // so when computeDash has no lane rows the panel ranks the pulse-coach
+  // AGGREGATE lanes (the same feed the arcs already draw) — panel and map
+  // always agree. Selection then highlights on the map only.
+  const [fallbackSel, setFallbackSel] = useState<string | null>(null);
+  const fallbackMode = lanes.length === 0 && workspaceLanes.length > 0;
+  const fallbackRows = useMemo(() => {
+    if (!fallbackMode) return [];
+    const sorted = [...workspaceLanes].sort(
+      (a, b) => (b.shipments_total || 0) - (a.shipments_total || 0),
+    );
+    const tot = sorted.reduce((a, l) => a + (l.shipments_total || 0), 0) || 1;
+    const mx = sorted[0]?.shipments_total || 1;
+    return sorted.slice(0, 12).map((l) => {
+      const fromMeta = resolveEndpoint(l.from_label) || resolveEndpoint(`Port ${l.from_label}`);
+      const c = laneRegionColor(fromMeta?.countryCode);
+      const on = fallbackSel === l.key;
+      return {
+        key: l.key,
+        label: `${l.from_label} → ${l.to_label}`,
+        from: l.from_label,
+        color: c.base,
+        cos: `${l.account_count ?? "—"} ${l.account_count === 1 ? "account" : "accounts"}`,
+        val: (l.shipments_total || 0).toLocaleString("en-US"),
+        delta: Math.round(((l.shipments_total || 0) / tot) * 100) + "%",
+        deltaFg: "#64748b",
+        s: (l.shipments_total || 0) / mx,
+        opacity: fallbackSel && !on ? 0.55 : 1,
+        rowBg: on ? "rgba(59,130,246,0.07)" : "transparent",
+        onClick: () => setFallbackSel(on ? null : l.key),
+      };
+    });
+  }, [fallbackMode, workspaceLanes, fallbackSel]);
+  const shownRows = fallbackMode ? fallbackRows : lanes;
+  const shownHeadline =
+    fallbackMode && fallbackRows.length
+      ? `${fallbackRows[0].label} leads with ${fallbackRows[0].delta}`
+      : headline;
+
+  // Map lane click → matching computeDash lane onClick (lane filter toggle),
+  // or the local highlight in fallback mode.
   const onSelectLane = (laneId: string) => {
+    if (fallbackMode) {
+      setFallbackSel((cur) => (cur === laneId ? null : laneId));
+      return;
+    }
     const wl = workspaceLanes.find((w) => w.key === laneId);
     if (!wl) return;
     const k1 = dashKeyOf(wl);
@@ -122,9 +166,10 @@ export default function DashLaneMapCard({ workspaceLanes, lanes, headline, unit,
         height: 460,
         borderRadius: 14,
         overflow: "hidden",
-        border: "1px solid #E5E7EB",
-        boxShadow: "0 20px 40px rgba(15,23,42,0.10)",
-        background: "#EEF2F6",
+        // Same shell as the profile map card (owner: match the profile style)
+        border: "1px solid #1F2937",
+        boxShadow: "0 20px 40px rgba(15,23,42,0.14)",
+        background: "#0b1220",
       }}
     >
       <div style={{ position: "absolute", inset: 0 }}>
@@ -146,10 +191,10 @@ export default function DashLaneMapCard({ workspaceLanes, lanes, headline, unit,
         >
           <LaneMap
             lanes={globeLanes}
-            selectedLane={selectedMapKey}
+            selectedLane={fallbackMode ? fallbackSel : filterMapKey}
             onSelectLane={onSelectLane}
             height="fill"
-            variant="light"
+            variant="dark"
             volumeScale
             linesMode="always"
             unselectedStyle="ghost"
@@ -192,7 +237,7 @@ export default function DashLaneMapCard({ workspaceLanes, lanes, headline, unit,
           >
             Portfolio lanes · by {unit}
           </div>
-          <div style={{ font: `600 18px/1.3 ${F_DISPLAY}`, marginTop: 6 }}>{headline}</div>
+          <div style={{ font: `600 18px/1.3 ${F_DISPLAY}`, marginTop: 6 }}>{shownHeadline}</div>
         </div>
         <div
           style={{
@@ -204,12 +249,12 @@ export default function DashLaneMapCard({ workspaceLanes, lanes, headline, unit,
             scrollbarColor: "#CBD5E1 transparent",
           }}
         >
-          {lanes.length === 0 ? (
+          {shownRows.length === 0 ? (
             <div style={{ padding: "18px 14px", font: `400 13px/1.5 ${F_BODY}`, color: "#64748b" }}>
               Lane-level history is still building for your saved companies.
             </div>
           ) : (
-            lanes.map((l) => (
+            shownRows.map((l) => (
               <div
                 key={l.key}
                 onClick={l.onClick}

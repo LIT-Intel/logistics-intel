@@ -99,6 +99,39 @@ export function useDashboardData(): DashboardData {
     queryFn: () => fetchBulkMonthly(slugs),
   });
 
+  // Owner attribution: lit_saved_companies.user_id → profiles.full_name.
+  // RLS scopes rows to own + org-shared saves; missing profile names fall
+  // back to "Teammate" (never invented).
+  const savedIds = useMemo(
+    () => (savedQ.data ?? []).map((r: any) => r.saved_id).filter(Boolean),
+    [savedQ.data],
+  );
+  const ownersQ = useQuery({
+    queryKey: ["dash-owners", savedIds.join("|")],
+    enabled: savedIds.length > 0,
+    staleTime: FIVE_MIN,
+    queryFn: async () => {
+      const bySaved = new Map<string, string>();
+      for (let i = 0; i < savedIds.length; i += 200) {
+        const { data } = await supabase
+          .from("lit_saved_companies")
+          .select("id,user_id")
+          .in("id", savedIds.slice(i, i + 200));
+        (data ?? []).forEach((r: any) => r.user_id && bySaved.set(r.id, r.user_id));
+      }
+      const userIds = Array.from(new Set([...bySaved.values()]));
+      const names = new Map<string, string>();
+      for (let i = 0; i < userIds.length; i += 200) {
+        const { data } = await supabase
+          .from("profiles")
+          .select("id,full_name")
+          .in("id", userIds.slice(i, i + 200));
+        (data ?? []).forEach((r: any) => r.full_name && names.set(r.id, r.full_name));
+      }
+      return { bySaved, names };
+    },
+  });
+
   const { lanes: workspaceLanes, laneMonths, loading: lanesLoading } = useWorkspaceLanes();
 
   const ds = useMemo<DashDataset | null>(() => {
@@ -116,10 +149,16 @@ export function useDashboardData(): DashboardData {
     const firstYear = years.length ? Math.min(...years) : now.getFullYear();
     const lastMi = (now.getFullYear() - firstYear) * 12 + now.getMonth();
 
+    const ownerOf = ownersQ.data;
+    const OWNER_COLORS = ["#3b82f6", "#8b5cf6", "#10b981", "#f59e0b", "#f43f5e", "#00c8d4"];
+    const ownerColorIdx = new Map<string, number>();
     const companies: DashCompany[] = saved.map((r: any) => {
       const co = r.company ?? {};
       const key = toArchiveSlug(co.company_id ?? null) ?? String(co.company_id ?? r.saved_id);
       const lastTs = co.kpis?.last_activity ? Date.parse(co.kpis.last_activity) : NaN;
+      const ownerId = ownerOf?.bySaved.get(r.saved_id) ?? null;
+      const ownerName = ownerId ? (ownerOf?.names.get(ownerId) ?? "Teammate") : null;
+      if (ownerId && !ownerColorIdx.has(ownerId)) ownerColorIdx.set(ownerId, ownerColorIdx.size);
       return {
         key,
         uuid: co.id ?? null,
@@ -131,6 +170,12 @@ export function useDashboardData(): DashboardData {
         topRouteFallback: co.kpis?.top_route_12m ?? null,
         lastActivityTs: Number.isFinite(lastTs) ? lastTs : null,
         initials: initialsOf(co.name ?? key),
+        ownerId,
+        ownerName,
+        ownerKey: ownerName ? initialsOf(ownerName) : "—",
+        ownerColor: ownerId
+          ? OWNER_COLORS[(ownerColorIdx.get(ownerId) ?? 0) % OWNER_COLORS.length]
+          : "#94a3b8",
       };
     });
     // De-dupe by key (org shares can produce duplicates)
@@ -176,7 +221,7 @@ export function useDashboardData(): DashboardData {
     }
 
     return { companies: uniq, coRows, laneRows, firstYear, lastMi, todayTs: +now };
-  }, [savedQ.data, monthlyQ.data, laneMonths]);
+  }, [savedQ.data, monthlyQ.data, laneMonths, ownersQ.data]);
 
   return {
     ds,
@@ -237,8 +282,10 @@ export function useDashState(ds: DashDataset | null): {
     const f: DashState["f"] = {};
     const lanes = params.getAll("lane");
     const stagesSel = params.getAll("stage");
+    const ownersSel = params.getAll("owner");
     if (lanes.length) f.lane = lanes;
     if (stagesSel.length) f.stage = stagesSel;
+    if (ownersSel.length) f.owner = ownersSel;
     setSt((s) => ({ ...s, m0: p.m0, m1: p.m1, preset: p.id, metric, f, intro: true }));
     const t = setTimeout(() => setSt((s) => ({ ...s, intro: false })), 120);
     return () => clearTimeout(t);
@@ -250,11 +297,12 @@ export function useDashState(ds: DashDataset | null): {
     setParams(
       (prev) => {
         const next = new URLSearchParams(prev);
-        ["p", "m", "lane", "stage"].forEach((k) => next.delete(k));
+        ["p", "m", "lane", "stage", "owner"].forEach((k) => next.delete(k));
         if (st.preset) next.set("p", st.preset);
         if (st.metric !== "shipments") next.set("m", st.metric);
         (st.f.lane ?? []).forEach((v) => next.append("lane", v));
         (st.f.stage ?? []).forEach((v) => next.append("stage", v));
+        (st.f.owner ?? []).forEach((v) => next.append("owner", v));
         return next;
       },
       { replace: true },

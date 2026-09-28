@@ -31,6 +31,11 @@ export interface DashCompany {
   topRouteFallback: string | null; // kpis.top_route_12m when no lane rows
   lastActivityTs: number | null; // most recent shipment date (kpis)
   initials: string;
+  /** Saver attribution (lit_saved_companies.user_id → profiles.full_name). */
+  ownerId: string | null;
+  ownerName: string | null;
+  ownerKey: string; // initials, e.g. "VR"
+  ownerColor: string;
 }
 
 export interface CoMonthRow {
@@ -64,6 +69,7 @@ export interface DashDataset {
 export interface DashFilters {
   lane?: string[];
   stage?: string[];
+  owner?: string[]; // owner user ids
 }
 
 export interface DashState {
@@ -80,7 +86,7 @@ export interface DashState {
 }
 
 export interface DashActions {
-  toggle(dim: "lane" | "stage", key: string): void;
+  toggle(dim: "lane" | "stage" | "owner", key: string): void;
   preset(id: string): void;
   metric(m: DashMetric): void;
   brushStart(mi: number): void;
@@ -165,14 +171,16 @@ export function computeDash(ds: DashDataset, st: DashState, A: DashActions) {
   const N = L + 1;
   const selL = st.f.lane ?? [];
   const selS = st.f.stage ?? [];
+  const selO = st.f.owner ?? [];
   const nM = st.m1 - st.m0 + 1;
   const p0 = st.m0 - 12;
   const p1 = st.m1 - 12;
   const hasP = p0 >= 0;
 
   const coByKey = new Map(ds.companies.map((c) => [c.key, c]));
-  const coOk = (c: DashCompany, skip?: "stage") =>
-    skip === "stage" || !selS.length || selS.includes(c.stage);
+  const coOk = (c: DashCompany, skip?: "stage" | "owner") =>
+    (skip === "stage" || !selS.length || selS.includes(c.stage)) &&
+    (skip === "owner" || !selO.length || (c.ownerId != null && selO.includes(c.ownerId)));
   // Lane filter at company level: a company passes when it has ANY lane row
   // on a selected lane (companies without lane rollups pass only when no
   // lane filter is active — we can't attribute their volume to a lane).
@@ -378,8 +386,12 @@ export function computeDash(ds: DashDataset, st: DashState, A: DashActions) {
 
   // ---- pipeline by stage --------------------------------------------------
   const annual = (x: number) => (nM ? (x * 12) / nM : x);
-  const stagesPresent = STAGE_ORDER.filter((s) => coList.some((c) => c.stage === s));
-  const stages = stagesPresent.map((sName) => {
+  // All six canonical stages always render (design card shape); "Other"
+  // only when raw stages didn't map into the canon.
+  const stagesShown = STAGE_ORDER.filter(
+    (s) => s !== "Other" || coList.some((c) => c.stage === "Other"),
+  );
+  const stages = stagesShown.map((sName) => {
     const list = coList.filter((c: any) => c.stage === sName);
     const sp = list.reduce(
       (a: number, c: any) => a + (rowsByCo.get(c.key) ?? []).filter((r) => inW(r.mi)).reduce((q, r) => q + r.spend, 0),
@@ -400,6 +412,37 @@ export function computeDash(ds: DashDataset, st: DashState, A: DashActions) {
   const stMax = Math.max(1, ...stages.map((s) => s.raw));
   stages.forEach((s: any) => (s.s = st.intro ? 0 : s.raw / stMax));
   const pipeline = stages.filter((s) => ["Engaged", "Quoting"].includes(s.label)).reduce((a, s) => a + s.raw, 0);
+
+  // ---- owners (crossfilter: computed with every filter except owner) ------
+  const ownerAgg = new Map<string, { name: string; key: string; color: string; count: number }>();
+  ds.companies
+    .filter((c) => coOk(c, "owner") && laneOk(c) && c.ownerId)
+    .forEach((c) => {
+      const o = ownerAgg.get(c.ownerId!) ?? {
+        name: c.ownerName ?? "Teammate",
+        key: c.ownerKey,
+        color: c.ownerColor,
+        count: 0,
+      };
+      o.count++;
+      ownerAgg.set(c.ownerId!, o);
+    });
+  const owners = [...ownerAgg.entries()]
+    .sort((a, b) => b[1].count - a[1].count)
+    .map(([id, o]) => {
+      const on = selO.includes(id);
+      return {
+        id,
+        key: o.key,
+        name: o.name,
+        color: o.color,
+        count: o.count,
+        active: on,
+        opacity: selO.length && !on ? 0.45 : 1,
+        bg: on ? "rgba(59,130,246,0.07)" : "transparent",
+        onClick: () => A.toggle("owner", id),
+      };
+    });
 
   // ---- lanes (facet + map) ------------------------------------------------
   const laneRowsOk = ds.laneRows.filter((r) => {
@@ -543,6 +586,13 @@ export function computeDash(ds: DashDataset, st: DashState, A: DashActions) {
   const tokens: any[] = [];
   selL.forEach((k) => tokens.push({ dim: "Lane", label: laneMeta.get(k)?.label ?? k, onRemove: () => A.toggle("lane", k) }));
   selS.forEach((k) => tokens.push({ dim: "Stage", label: k, onRemove: () => A.toggle("stage", k) }));
+  selO.forEach((id) =>
+    tokens.push({
+      dim: "Owner",
+      label: ownerAgg.get(id)?.name ?? ds.companies.find((c) => c.ownerId === id)?.ownerName ?? "Teammate",
+      onRemove: () => A.toggle("owner", id),
+    }),
+  );
 
   // ---- activity ticker ----------------------------------------------------
   const activity: any[] = [];
@@ -627,6 +677,7 @@ export function computeDash(ds: DashDataset, st: DashState, A: DashActions) {
     metrics,
     tokens,
     hasTokens: tokens.length > 0,
+    owners,
     ranked,
     topAccounts: ranked.slice(0, 8),
     sorts,
