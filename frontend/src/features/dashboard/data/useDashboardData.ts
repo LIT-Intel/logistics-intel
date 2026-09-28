@@ -170,6 +170,7 @@ export function useDashboardData(): DashboardData {
         topRouteFallback: co.kpis?.top_route_12m ?? null,
         lastActivityTs: Number.isFinite(lastTs) ? lastTs : null,
         initials: initialsOf(co.name ?? key),
+        logoDomain: co.domain || co.website || null,
         ownerId,
         ownerName,
         ownerKey: ownerName ? initialsOf(ownerName) : "—",

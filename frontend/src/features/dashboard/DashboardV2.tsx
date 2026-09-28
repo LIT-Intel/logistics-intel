@@ -39,6 +39,7 @@ import { useReducedMotion } from "@/features/company-profile/components/ui";
 import { computeDash, type DashView } from "./data/computeDash";
 import { useDashboardData, useDashState } from "./data/useDashboardData";
 import DashLaneMapCard from "./components/DashLaneMapCard";
+import LogoTile from "./components/LogoTile";
 import OutboundEngineCard from "./components/OutboundEngineCard";
 import IntelligencePanel from "./components/IntelligencePanel";
 
@@ -922,22 +923,7 @@ export default function DashboardV2() {
                     >
                       <span style={{ font: `500 11px ${F_MONO}`, color: "#94a3b8" }}>{c.rank}</span>
                       <span style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-                        <span
-                          style={{
-                            width: 32,
-                            height: 32,
-                            flex: "none",
-                            borderRadius: 9,
-                            background: "#0F172A",
-                            color: "#00F0FF",
-                            boxShadow: "inset 0 0 0 1px #1e293b",
-                            display: "grid",
-                            placeItems: "center",
-                            font: `700 11px ${F_DISPLAY}`,
-                          }}
-                        >
-                          {c.initials}
-                        </span>
+                        <LogoTile name={c.name} domain={c.logoDomain} size={32} radius={9} />
                         <span style={{ minWidth: 0 }}>
                           <span
                             style={{

@@ -39,6 +39,7 @@ function co(key: string, name: string, stage: string, lastActivityDaysAgo: numbe
     topRouteFallback: "CN → US",
     lastActivityTs: lastActivityDaysAgo == null ? null : +NOW - lastActivityDaysAgo * 864e5,
     initials: name.slice(0, 2).toUpperCase(),
+    logoDomain: null,
     ownerId,
     ownerName: ownerId === "u-vr" ? "Valesco Raymond" : "Jordan Mills",
     ownerKey: ownerId === "u-vr" ? "VR" : "JM",

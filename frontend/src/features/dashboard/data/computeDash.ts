@@ -31,6 +31,8 @@ export interface DashCompany {
   topRouteFallback: string | null; // kpis.top_route_12m when no lane rows
   lastActivityTs: number | null; // most recent shipment date (kpis)
   initials: string;
+  /** domain/website for the logo.dev cascade (LogoTile). */
+  logoDomain: string | null;
   /** Saver attribution (lit_saved_companies.user_id → profiles.full_name). */
   ownerId: string | null;
   ownerName: string | null;

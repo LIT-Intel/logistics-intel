@@ -7,6 +7,7 @@
  */
 import { ArrowRight, GitBranchPlus, Moon, Send, TrendingDown, TrendingUp, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import LogoTile from "./LogoTile";
 
 const F_DISPLAY = "'Space Grotesk',sans-serif";
 const F_BODY = "'DM Sans',system-ui,sans-serif";
@@ -149,21 +150,7 @@ export default function IntelligencePanel({ open, panel, period, unit, reduced, 
                 </button>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 14 }}>
-                <span
-                  style={{
-                    width: 48,
-                    height: 48,
-                    flex: "none",
-                    borderRadius: 12,
-                    background: "#1e293b",
-                    border: "1px solid #334155",
-                    display: "grid",
-                    placeItems: "center",
-                    font: `700 14px ${F_DISPLAY}`,
-                  }}
-                >
-                  {panel.initials}
-                </span>
+                <LogoTile name={panel.name} domain={panel.logoDomain} size={48} radius={12} dark />
                 <div style={{ minWidth: 0 }}>
                   <div style={{ font: `700 22px/1.15 ${F_DISPLAY}`, letterSpacing: "-0.02em" }}>
                     {panel.name}
