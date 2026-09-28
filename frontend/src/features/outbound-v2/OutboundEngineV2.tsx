@@ -25,16 +25,20 @@ import {
 } from "react";
 import { toast } from "sonner";
 import {
+  Archive,
   ArrowLeft,
   ArrowRight,
   CalendarCheck,
   CalendarDays,
+  CalendarPlus,
+  Check,
   ChevronRight,
   CircleAlert,
   Clock,
   Crosshair,
   Eye,
   FileCheck,
+  Image as ImageIcon,
   Inbox as InboxIcon,
   Kanban,
   Library,
@@ -45,6 +49,7 @@ import {
   MailOpen,
   Megaphone,
   MessageSquare,
+  MoreHorizontal,
   PackagePlus,
   Pause,
   Phone,
@@ -63,11 +68,14 @@ import {
   Trash2,
   Trophy,
   Users,
+  Video,
   X,
   Zap,
 } from "lucide-react";
 import { useCampaigns } from "@/features/outbound/hooks/useCampaigns";
 import {
+  archiveCampaign,
+  deleteCampaign,
   pauseCampaign,
   resumeCampaign,
 } from "@/features/outbound/api/campaignActions";
@@ -76,12 +84,18 @@ import {
   oauthOutlookStart,
   queueCampaignRecipients,
 } from "@/api/outreach";
+import { supabase } from "@/lib/supabase";
+import { attachCompaniesToCampaign } from "@/lib/api";
+import { getWorkspaceSavedCompanies } from "@/api/workspace";
+import { listPulseLists, getListCompanies } from "@/features/pulse/pulseListsApi";
 import LogoTile from "@/features/dashboard/components/LogoTile";
 import type { OutboundCampaign } from "@/features/outbound/types";
 import {
+  archiveThread,
   createCampaignStep,
   createDraftCampaign,
   deleteCampaignStep,
+  disconnectEmailAccount,
   fetchCampaignAggregates,
   fetchCampaignHeader,
   countCampaignCompanies,
@@ -134,6 +148,7 @@ import {
   relTime,
   renderTokens,
   stepVMs,
+  templatePerformance,
   threadVMs,
   uiChannelOf,
   variantsOf,
@@ -167,8 +182,10 @@ const OB2_CSS = `
 @media (max-width:768px){.ob2-h1{font-size:32px}.ob2-narrative{font-size:15px}}
 @media (max-width:640px){.ob2-pad{padding-left:16px;padding-right:16px}.ob2-topbtns{width:100%}.ob2-topbtns>button{flex:1;justify-content:center}}
 .ob2-scrollx{overflow-x:auto;-webkit-overflow-scrolling:touch}
-.ob2-camprow{display:grid;grid-template-columns:minmax(280px,1.2fr) minmax(400px,2fr) 140px 20px;gap:28px;align-items:center}
+.ob2-camprow{display:grid;grid-template-columns:minmax(280px,1.2fr) minmax(400px,2fr) 140px 60px;gap:28px;align-items:center}
 @media (max-width:900px){.ob2-camprow{display:flex;flex-direction:column;align-items:stretch;gap:12px}.ob2-camprow .ob2-rowchev{display:none}}
+.ob2-menuitem{display:flex;align-items:center;gap:8px;width:100%;border:none;background:transparent;padding:8px 12px;font:600 12.5px ${FD};color:#334155;cursor:pointer;text-align:left;white-space:nowrap}
+.ob2-menuitem:hover{background:#F8FAFC}
 .ob2-grid2{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:16px;align-items:start}
 @media (max-width:1024px){.ob2-grid2{grid-template-columns:minmax(0,1fr)}}
 .ob2-inboxgrid{display:grid;grid-template-columns:minmax(300px,400px) minmax(0,1fr);gap:16px;align-items:start}
@@ -686,6 +703,104 @@ function Toolbar({ children }: { children: ReactNode }) {
 
 // ─────────────────────────────────────────────────────────── campaigns list
 
+export type CampaignRowAction = "pause" | "resume" | "archive" | "delete";
+
+/** Per-row ⋯ overflow menu — Pause/Resume/Archive/Delete via campaignActions. */
+function RowMenu({
+  campaign,
+  onAction,
+}: {
+  campaign: OutboundCampaign;
+  onAction: (c: OutboundCampaign, a: CampaignRowAction) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener("click", close);
+    window.addEventListener("keydown", close);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("keydown", close);
+    };
+  }, [open]);
+  const status = String(campaign.status).toLowerCase();
+  const item = (
+    label: string,
+    icon: ReactNode,
+    action: CampaignRowAction,
+    color?: string,
+  ) => (
+    <button
+      key={action}
+      type="button"
+      className="ob2-menuitem ob2-focus"
+      style={color ? { color } : undefined}
+      onClick={(e) => {
+        e.stopPropagation();
+        setOpen(false);
+        onAction(campaign, action);
+      }}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+  return (
+    <span style={{ position: "relative", display: "inline-flex" }} onClick={(e) => e.stopPropagation()}>
+      <button
+        type="button"
+        aria-label={`Actions for ${campaign.name}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="ob2-press ob2-focus"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+        style={{
+          width: 30,
+          height: 30,
+          borderRadius: 8,
+          border: "1px solid #E5E7EB",
+          background: "#FFFFFF",
+          color: "#64748b",
+          cursor: "pointer",
+          display: "grid",
+          placeItems: "center",
+        }}
+      >
+        <MoreHorizontal size={15} />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          style={{
+            position: "absolute",
+            right: 0,
+            top: 36,
+            zIndex: 40,
+            minWidth: 170,
+            background: "#FFFFFF",
+            border: "1px solid #E5E7EB",
+            borderRadius: 10,
+            boxShadow: "0 12px 32px rgba(15,23,42,0.16)",
+            padding: 4,
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
+          {status === "active"
+            ? item("Pause", <Pause size={13} />, "pause")
+            : item(status === "paused" ? "Resume" : "Launch", <Play size={13} />, "resume")}
+          {item("Archive", <Archive size={13} />, "archive")}
+          {item("Delete", <Trash2 size={13} />, "delete", "#e11d48")}
+        </div>
+      )}
+    </span>
+  );
+}
+
 function FunnelCells({ campaign }: { campaign: OutboundCampaign }) {
   const cells = listFunnelCells(campaign);
   return (
@@ -737,6 +852,7 @@ function CampaignsListView({
   attention,
   dealsSourced,
   onOpen,
+  onRowAction,
   onReviewMailboxes,
 }: {
   campaigns: OutboundCampaign[];
@@ -747,6 +863,7 @@ function CampaignsListView({
   attention: { show: boolean; title: string; detail: string };
   dealsSourced: DealsSourced | null;
   onOpen: (id: string) => void;
+  onRowAction: (c: OutboundCampaign, a: CampaignRowAction) => void;
   onReviewMailboxes: () => void;
 }) {
   const ql = q.trim().toLowerCase();
@@ -868,7 +985,10 @@ function CampaignsListView({
                     {sourced ? `${sourced.count} deal${sourced.count === 1 ? "" : "s"} sourced` : "no deals linked"}
                   </div>
                 </div>
-                <ChevronRight className="ob2-rowchev" size={16} color="#94a3b8" />
+                <span style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "flex-end" }}>
+                  <RowMenu campaign={c} onAction={onRowAction} />
+                  <ChevronRight className="ob2-rowchev" size={16} color="#94a3b8" />
+                </span>
               </div>
             );
           })
@@ -913,6 +1033,9 @@ function CampaignDetailView({
   onOpenStep,
   onAddStep,
   addingStep,
+  onAddAudience,
+  onArchive,
+  onDelete,
 }: {
   bundle: DetailBundle | null;
   loading: boolean;
@@ -922,6 +1045,9 @@ function CampaignDetailView({
   onOpenStep: (stepId: string) => void;
   onAddStep: (channel: UiChannel) => void;
   addingStep: boolean;
+  onAddAudience: () => void;
+  onArchive: () => void;
+  onDelete: () => void;
 }) {
   const [addOpen, setAddOpen] = useState(false);
   if (loading || !bundle) {
@@ -959,9 +1085,25 @@ function CampaignDetailView({
           </h2>
           <StatusPill status={status} />
           <div style={{ marginLeft: "auto", display: "flex", flexWrap: "wrap", gap: 8 }}>
+            <GhostBtn onClick={onArchive} title="Archive campaign">
+              <Archive size={14} />
+              Archive
+            </GhostBtn>
+            <GhostBtn
+              onClick={onDelete}
+              title="Delete campaign"
+              style={{ color: "#e11d48", borderColor: "rgba(225,29,72,0.35)" }}
+            >
+              <Trash2 size={14} />
+              Delete
+            </GhostBtn>
             <GhostBtn onClick={onStatusAction}>
               <ActionIcon size={14} />
               {actionLabel}
+            </GhostBtn>
+            <GhostBtn onClick={onAddAudience}>
+              <Plus size={14} />
+              Add audience
             </GhostBtn>
             <PrimaryBtn onClick={onEnroll} disabled={enrolling}>
               {enrolling ? <Loader2 size={14} className="ob2-spin" /> : <Users size={14} />}
@@ -1270,6 +1412,235 @@ function CampaignDetailView({
   );
 }
 
+// ─────────────────────────────────────────────────────────── add audience
+
+/**
+ * Thin adapter over the AudiencePickerDrawer enrollment path: lists REAL
+ * saved companies (getWorkspaceSavedCompanies) + pulse lists, then attaches
+ * the chosen companies via attachCompaniesToCampaign and queues recipients
+ * through the queue-campaign-recipients edge fn — the exact same pipeline
+ * the campaign builder uses. (The drawer itself is builder-state-coupled:
+ * its Confirm and Close are indistinguishable to a parent.)
+ */
+function AddAudienceModal({
+  campaignId,
+  campaignName,
+  onClose,
+  onDone,
+}: {
+  campaignId: string;
+  campaignName: string;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [companies, setCompanies] = useState<Array<{ id: string; name: string; domain: string | null }> | null>(null);
+  const [lists, setLists] = useState<Array<{ id: string; name: string; company_count: number }> | null>(null);
+  const [sel, setSel] = useState<Set<string>>(new Set());
+  const [selLists, setSelLists] = useState<Set<string>>(new Set());
+  const [filter, setFilter] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getWorkspaceSavedCompanies()
+      .then(({ rows }) => {
+        if (cancelled) return;
+        setCompanies(
+          (rows ?? [])
+            .map((r: any) => ({
+              id: r?.company?.id ? String(r.company.id) : "",
+              name: String(r?.company?.name ?? "Unknown"),
+              domain: (r?.company?.domain as string) ?? null,
+            }))
+            .filter((c: any) => c.id),
+        );
+      })
+      .catch(() => !cancelled && setCompanies([]));
+    void listPulseLists()
+      .then((res: any) => {
+        if (cancelled) return;
+        setLists(res?.ok && Array.isArray(res.rows) ? res.rows : []);
+      })
+      .catch(() => !cancelled && setLists([]));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const shown = (companies ?? []).filter(
+    (c) => !filter.trim() || c.name.toLowerCase().includes(filter.trim().toLowerCase()),
+  );
+
+  const toggle = (set: Set<string>, id: string, apply: (s: Set<string>) => void) => {
+    const next = new Set(set);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    apply(next);
+  };
+
+  const confirm = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const ids = new Set(sel);
+      for (const listId of selLists) {
+        const res: any = await getListCompanies(listId);
+        if (res?.ok && Array.isArray(res.rows)) {
+          for (const row of res.rows) if (row?.id) ids.add(String(row.id));
+        }
+      }
+      if (ids.size === 0) {
+        toast.error("Pick at least one company or list");
+        return;
+      }
+      await attachCompaniesToCampaign(campaignId, [...ids]);
+      const q = await queueCampaignRecipients({ campaign_id: campaignId });
+      if (q.ok === false) throw new Error(q.error || "queue_failed");
+      toast.success(
+        `${ids.size} compan${ids.size === 1 ? "y" : "ies"} added to "${campaignName}" · ${fmtNum(q.enqueued ?? 0)} recipient${(q.enqueued ?? 0) === 1 ? "" : "s"} queued`,
+      );
+      onDone();
+      onClose();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't add the audience");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, zIndex: 80, background: "rgba(2,6,23,0.45)", display: "grid", placeItems: "center", padding: 16 }}
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Add audience"
+        onClick={(e) => e.stopPropagation()}
+        style={{ ...CARD, width: 640, maxWidth: "100%", maxHeight: "86vh", display: "flex", flexDirection: "column", overflow: "hidden" }}
+      >
+        <div style={{ padding: "16px 20px", borderBottom: "1px solid #F1F5F9", display: "flex", alignItems: "center", gap: 10 }}>
+          <Users size={16} color="#0891b2" />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ font: `700 15px ${FD}`, color: "#0F172A" }}>Add audience</div>
+            <div style={{ font: `500 11px ${FB}`, color: "#64748b" }}>
+              Saved companies and lists enroll into “{campaignName}”. Only contacts with an email get queued.
+            </div>
+          </div>
+          <button type="button" aria-label="Close" onClick={onClose} className="ob2-focus" style={{ marginLeft: "auto", border: "none", background: "transparent", color: "#94a3b8", cursor: "pointer" }}>
+            <X size={16} />
+          </button>
+        </div>
+
+        <div style={{ flex: 1, overflowY: "auto", padding: "14px 20px", display: "flex", flexDirection: "column", gap: 16 }}>
+          {/* Lists */}
+          <div>
+            <SectionLabel icon={<Library size={12} />}>Your lists</SectionLabel>
+            <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+              {lists == null ? (
+                <div style={{ font: `500 12px ${FB}`, color: "#94a3b8" }}>Loading lists…</div>
+              ) : lists.length === 0 ? (
+                <div style={{ font: `500 12px ${FB}`, color: "#94a3b8" }}>No saved lists yet — curate them in Pulse → Lists.</div>
+              ) : (
+                lists.map((l) => {
+                  const on = selLists.has(l.id);
+                  return (
+                    <button
+                      key={l.id}
+                      type="button"
+                      className="ob2-press ob2-focus"
+                      onClick={() => toggle(selLists, l.id, setSelLists)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        border: `1px solid ${on ? "#3b82f6" : "#E5E7EB"}`,
+                        background: on ? "rgba(59,130,246,0.06)" : "#FFFFFF",
+                        borderRadius: 10,
+                        padding: "9px 12px",
+                        cursor: "pointer",
+                        textAlign: "left",
+                      }}
+                    >
+                      <span style={{ width: 18, height: 18, borderRadius: 5, border: `1px solid ${on ? "#3b82f6" : "#CBD5E1"}`, background: on ? "#3b82f6" : "#fff", color: "#fff", display: "grid", placeItems: "center", flex: "none" }}>
+                        {on && <Check size={12} />}
+                      </span>
+                      <span style={{ font: `600 13px ${FD}`, color: "#0F172A", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.name}</span>
+                      <span style={{ font: `500 11px ${FM}`, color: "#94a3b8", flex: "none" }}>
+                        {fmtNum(l.company_count ?? 0)} compan{(l.company_count ?? 0) === 1 ? "y" : "ies"}
+                      </span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* Saved companies */}
+          <div>
+            <SectionLabel icon={<Users size={12} />}>Saved companies</SectionLabel>
+            <div style={{ marginTop: 8 }}>
+              {searchBox(filter, setFilter, "Filter saved companies…")}
+            </div>
+            <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6, maxHeight: 260, overflowY: "auto" }}>
+              {companies == null ? (
+                <div style={{ font: `500 12px ${FB}`, color: "#94a3b8" }}>Loading companies…</div>
+              ) : shown.length === 0 ? (
+                <div style={{ font: `500 12px ${FB}`, color: "#94a3b8" }}>
+                  {companies.length === 0 ? "No saved companies yet — save shippers in Command Center first." : "No companies match."}
+                </div>
+              ) : (
+                shown.map((c) => {
+                  const on = sel.has(c.id);
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      className="ob2-press ob2-focus"
+                      onClick={() => toggle(sel, c.id, setSel)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        border: `1px solid ${on ? "#3b82f6" : "#E5E7EB"}`,
+                        background: on ? "rgba(59,130,246,0.06)" : "#FFFFFF",
+                        borderRadius: 10,
+                        padding: "8px 12px",
+                        cursor: "pointer",
+                        textAlign: "left",
+                      }}
+                    >
+                      <span style={{ width: 18, height: 18, borderRadius: 5, border: `1px solid ${on ? "#3b82f6" : "#CBD5E1"}`, background: on ? "#3b82f6" : "#fff", color: "#fff", display: "grid", placeItems: "center", flex: "none" }}>
+                        {on && <Check size={12} />}
+                      </span>
+                      <LogoTile name={c.name} domain={c.domain} size={26} radius={7} />
+                      <span style={{ font: `600 13px ${FD}`, color: "#0F172A", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ padding: "12px 20px", borderTop: "1px solid #F1F5F9", display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ font: `500 12px ${FM}`, color: "#64748b" }}>
+            {sel.size} compan{sel.size === 1 ? "y" : "ies"} · {selLists.size} list{selLists.size === 1 ? "" : "s"}
+          </span>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+            <GhostBtn onClick={onClose}>Cancel</GhostBtn>
+            <PrimaryBtn onClick={confirm} disabled={busy || (sel.size === 0 && selLists.size === 0)}>
+              {busy ? <Loader2 size={14} className="ob2-spin" /> : <Users size={14} />}
+              Add & queue
+            </PrimaryBtn>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────── step editor drawer
 
 const darkInput: CSSProperties = {
@@ -1380,6 +1751,11 @@ const LI_ACTION_FROM_DB = Object.fromEntries(
 interface DrawerDraft {
   title: string;
   delayDays: number;
+  delayHours: number;
+  delayMinutes: number;
+  /** "HH:MM" local send time bound to lit_campaign_steps.time_of_day_local. */
+  timeOfDay: string;
+  weekdaysOnly: boolean;
   variants: StepVariant[]; // email
   activeVar: string;
   body: string; // linkedin note / call script
@@ -1398,6 +1774,11 @@ function draftFromStep(step: OutboundStepRow, stepIndex: number): DrawerDraft {
   return {
     title: (meta.title as string) || step.subject || "",
     delayDays: step.delay_days ?? 0,
+    delayHours: step.delay_hours ?? 0,
+    delayMinutes: step.delay_minutes ?? 0,
+    // DB stores time; "HH:MM:SS" → the input's "HH:MM".
+    timeOfDay: step.time_of_day_local ? String(step.time_of_day_local).slice(0, 5) : "",
+    weekdaysOnly: Boolean(step.weekdays_only),
     variants: vars,
     activeVar: vars[0]?.key ?? "A",
     body: step.body ?? "",
@@ -1434,6 +1815,12 @@ function StepEditorDrawer({
   const meta = CHANNEL_META[channel];
   const [d, setD] = useState<DrawerDraft>(() => draftFromStep(step, stepIndex));
   const [busy, setBusy] = useState(false);
+  // Body inserts (email): calendar link / image / video link.
+  const [insertMode, setInsertMode] = useState<null | "image" | "video" | "calendar-setup">(null);
+  const [insertUrl, setInsertUrl] = useState("");
+  // undefined = not fetched yet; null = profile has no calendar_url.
+  const [calUrl, setCalUrl] = useState<string | null | undefined>(undefined);
+  const [calBusy, setCalBusy] = useState(false);
   useEffect(() => setD(draftFromStep(step, stepIndex)), [step.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -1473,6 +1860,81 @@ function StepEditorDrawer({
 
   const appendToken = (t: string) => setBodyValue(`${bodyValue.replace(/\s*$/, "")} {{${t}}}`);
 
+  // ── Body inserts (HTML — send-campaign-email renders text/html when the
+  // body contains markup; verified in its sendEmail MIME builder). ────────
+  const appendSnippet = (html: string) =>
+    setBodyValue(bodyValue.trim() ? `${bodyValue.replace(/\s*$/, "")}\n\n${html}` : html);
+
+  const calendarSnippet = (url: string) =>
+    `<a href="${url}" style="display:inline-block;background:#2563eb;color:#ffffff;padding:10px 18px;border-radius:8px;font-family:Arial,sans-serif;font-weight:600;text-decoration:none;">Book 30 minutes</a>`;
+
+  const insertCalendar = async () => {
+    if (calBusy) return;
+    setCalBusy(true);
+    try {
+      let url = calUrl;
+      if (url === undefined) {
+        const { data: auth } = await supabase.auth.getUser();
+        const uid = auth?.user?.id;
+        if (!uid) throw new Error("Not signed in");
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("calendar_url")
+          .eq("id", uid)
+          .maybeSingle();
+        if (error) throw new Error(error.message);
+        url = ((data as any)?.calendar_url as string) || null;
+        setCalUrl(url);
+      }
+      if (!url) {
+        // No saved link yet — inline input saves it to profiles first.
+        setInsertMode("calendar-setup");
+        setInsertUrl("");
+        return;
+      }
+      appendSnippet(calendarSnippet(url));
+      toast.success("Calendar link inserted");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't load your calendar link");
+    } finally {
+      setCalBusy(false);
+    }
+  };
+
+  const confirmInsert = async () => {
+    const url = insertUrl.trim();
+    if (!/^https?:\/\/\S+$/i.test(url)) {
+      toast.error("Enter a full URL starting with http(s)://");
+      return;
+    }
+    if (insertMode === "image") {
+      appendSnippet(`<img src="${url}" width="480" style="max-width:100%;height:auto;border-radius:8px;" alt="" />`);
+    } else if (insertMode === "video") {
+      appendSnippet(
+        `<a href="${url}" style="display:inline-block;background:#0F172A;color:#ffffff;padding:10px 18px;border-radius:8px;font-family:Arial,sans-serif;font-weight:600;text-decoration:none;">&#9654;&nbsp;&nbsp;Watch the video</a>`,
+      );
+    } else if (insertMode === "calendar-setup") {
+      setCalBusy(true);
+      try {
+        const { data: auth } = await supabase.auth.getUser();
+        const uid = auth?.user?.id;
+        if (!uid) throw new Error("Not signed in");
+        const { error } = await supabase.from("profiles").update({ calendar_url: url }).eq("id", uid);
+        if (error) throw new Error(error.message);
+        setCalUrl(url);
+        appendSnippet(calendarSnippet(url));
+        toast.success("Calendar link saved to your profile and inserted");
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Couldn't save your calendar link");
+        return;
+      } finally {
+        setCalBusy(false);
+      }
+    }
+    setInsertMode(null);
+    setInsertUrl("");
+  };
+
   const save = async () => {
     if (busy) return;
     setBusy(true);
@@ -1493,6 +1955,10 @@ function StepEditorDrawer({
       }
       await updateCampaignStep(step.id, {
         delay_days: d.delayDays,
+        delay_hours: Math.max(0, Math.min(23, d.delayHours || 0)),
+        delay_minutes: Math.max(0, Math.min(59, d.delayMinutes || 0)),
+        time_of_day_local: d.timeOfDay ? d.timeOfDay : null,
+        weekdays_only: d.weekdaysOnly,
         metadata: newMeta,
         ...(channel === "email"
           ? { variants: d.variants }
@@ -1611,29 +2077,103 @@ function StepEditorDrawer({
               }}
             />
           </div>
-          {/* Wait control */}
-          <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, marginTop: 12, font: `500 12px ${FB}`, color: "#94a3b8" }}>
-            Send
-            <button
-              type="button"
-              className="ob2-press ob2-focus"
-              onClick={() => patch({ delayDays: Math.max(0, d.delayDays - 1) })}
-              style={{ width: 24, height: 24, borderRadius: 6, border: "1px solid #334155", background: "#020617", color: "#e2e8f0", cursor: "pointer" }}
-            >
-              −
-            </button>
-            <span style={{ font: `600 14px ${FM}`, color: "#f8fafc", minWidth: 18, textAlign: "center" }}>{d.delayDays}</span>
-            <button
-              type="button"
-              className="ob2-press ob2-focus"
-              onClick={() => patch({ delayDays: d.delayDays + 1 })}
-              style={{ width: 24, height: 24, borderRadius: 6, border: "1px solid #334155", background: "#020617", color: "#e2e8f0", cursor: "pointer" }}
-            >
-              +
-            </button>
-            {d.delayDays === 0
-              ? "days · sends on enrollment"
-              : `day${d.delayDays > 1 ? "s" : ""} after the previous step`}
+          {/* Send timing — full dispatcher precision (delay d/h/m + local send
+              time + weekdays-only, all persisted on lit_campaign_steps). */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, font: `500 12px ${FB}`, color: "#94a3b8" }}>
+              Wait
+              <button
+                type="button"
+                className="ob2-press ob2-focus"
+                onClick={() => patch({ delayDays: Math.max(0, d.delayDays - 1) })}
+                style={{ width: 24, height: 24, borderRadius: 6, border: "1px solid #334155", background: "#020617", color: "#e2e8f0", cursor: "pointer" }}
+              >
+                −
+              </button>
+              <span style={{ font: `600 14px ${FM}`, color: "#f8fafc", minWidth: 18, textAlign: "center" }}>{d.delayDays}</span>
+              <button
+                type="button"
+                className="ob2-press ob2-focus"
+                onClick={() => patch({ delayDays: d.delayDays + 1 })}
+                style={{ width: 24, height: 24, borderRadius: 6, border: "1px solid #334155", background: "#020617", color: "#e2e8f0", cursor: "pointer" }}
+              >
+                +
+              </button>
+              days
+              <input
+                type="number"
+                min={0}
+                max={23}
+                value={d.delayHours}
+                onChange={(e) => patch({ delayHours: Math.max(0, Math.min(23, Number(e.target.value) || 0)) })}
+                aria-label="Delay hours"
+                className="ob2-focus"
+                style={{ ...darkInput, width: 58, padding: "5px 8px" }}
+              />
+              hours
+              <input
+                type="number"
+                min={0}
+                max={59}
+                value={d.delayMinutes}
+                onChange={(e) => patch({ delayMinutes: Math.max(0, Math.min(59, Number(e.target.value) || 0)) })}
+                aria-label="Delay minutes"
+                className="ob2-focus"
+                style={{ ...darkInput, width: 58, padding: "5px 8px" }}
+              />
+              minutes
+              <span style={{ color: "#64748b" }}>
+                {d.delayDays === 0 && d.delayHours === 0 && d.delayMinutes === 0
+                  ? "· sends on enrollment"
+                  : "· after the previous step"}
+              </span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, font: `500 12px ${FB}`, color: "#94a3b8" }}>
+              Send at
+              <input
+                type="time"
+                value={d.timeOfDay}
+                onChange={(e) => patch({ timeOfDay: e.target.value })}
+                aria-label="Send at local time"
+                className="ob2-focus"
+                style={{ ...darkInput, width: 110, padding: "5px 8px" }}
+              />
+              {d.timeOfDay && (
+                <button
+                  type="button"
+                  className="ob2-press ob2-focus"
+                  onClick={() => patch({ timeOfDay: "" })}
+                  style={{ border: "none", background: "transparent", color: "#64748b", cursor: "pointer", font: `600 11px ${FD}` }}
+                >
+                  Clear
+                </button>
+              )}
+              <button
+                type="button"
+                role="switch"
+                aria-checked={d.weekdaysOnly}
+                className="ob2-press ob2-focus"
+                onClick={() => patch({ weekdaysOnly: !d.weekdaysOnly })}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 7,
+                  border: `1px solid ${d.weekdaysOnly ? "rgba(16,185,129,0.5)" : "#334155"}`,
+                  background: d.weekdaysOnly ? "rgba(16,185,129,0.12)" : "#020617",
+                  color: d.weekdaysOnly ? "#34d399" : "#94a3b8",
+                  borderRadius: 999,
+                  padding: "4px 11px",
+                  font: `600 11px ${FD}`,
+                  cursor: "pointer",
+                }}
+              >
+                <CalendarCheck size={12} />
+                Weekdays only
+              </button>
+            </div>
+            <div style={{ font: `500 11px ${FM}`, color: "#64748b" }}>
+              Dispatcher runs every minute — sends fire at exactly this local time.
+            </div>
           </div>
         </div>
 
@@ -1759,6 +2299,80 @@ function StepEditorDrawer({
                   </button>
                 ))}
               </div>
+              {/* Rich inserts — appended as HTML (send-campaign-email sends
+                  text/html whenever the body contains markup). */}
+              {channel === "email" && (
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {(
+                      [
+                        ["calendar", "Insert calendar link", <CalendarPlus key="c" size={12} />, () => void insertCalendar()],
+                        ["image", "Insert image", <ImageIcon key="i" size={12} />, () => { setInsertMode("image"); setInsertUrl(""); }],
+                        ["video", "Insert video link", <Video key="v" size={12} />, () => { setInsertMode("video"); setInsertUrl(""); }],
+                      ] as Array<[string, string, ReactNode, () => void]>
+                    ).map(([key, lbl, icon, fn]) => (
+                      <button
+                        key={key}
+                        type="button"
+                        className="ob2-press ob2-focus"
+                        disabled={calBusy && key === "calendar"}
+                        onClick={fn}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          font: `600 11px ${FD}`,
+                          color: "#cbd5e1",
+                          background: "#020617",
+                          border: "1px solid #334155",
+                          borderRadius: 6,
+                          padding: "4px 10px",
+                          cursor: "pointer",
+                        }}
+                      >
+                        {calBusy && key === "calendar" ? <Loader2 size={12} className="ob2-spin" /> : icon}
+                        {lbl}
+                      </button>
+                    ))}
+                  </div>
+                  {insertMode && (
+                    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginTop: 8 }}>
+                      <input
+                        value={insertUrl}
+                        onChange={(e) => setInsertUrl(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && void confirmInsert()}
+                        placeholder={
+                          insertMode === "image"
+                            ? "https:// image URL"
+                            : insertMode === "video"
+                              ? "https:// video URL"
+                              : "https:// your booking link (saved to your profile)"
+                        }
+                        autoFocus
+                        className="ob2-focus"
+                        style={{ ...darkInput, flex: "1 1 220px" }}
+                      />
+                      <button
+                        type="button"
+                        className="ob2-press ob2-focus"
+                        onClick={() => void confirmInsert()}
+                        disabled={calBusy}
+                        style={{ border: "none", background: "#3b82f6", color: "#fff", borderRadius: 8, padding: "8px 13px", font: `600 12px ${FD}`, cursor: "pointer" }}
+                      >
+                        {insertMode === "calendar-setup" ? "Save & insert" : "Insert"}
+                      </button>
+                      <button
+                        type="button"
+                        className="ob2-press ob2-focus"
+                        onClick={() => { setInsertMode(null); setInsertUrl(""); }}
+                        style={{ border: "1px solid #334155", background: "transparent", color: "#94a3b8", borderRadius: 8, padding: "8px 11px", font: `600 12px ${FD}`, cursor: "pointer" }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -1946,6 +2560,7 @@ function InboxView({
   onSend,
   sending,
   onSetIntent,
+  onArchive,
 }: {
   vms: ThreadVM[];
   loading: boolean;
@@ -1959,6 +2574,7 @@ function InboxView({
   onSend: () => void;
   sending: boolean;
   onSetIntent: (intent: IntentId | null) => void;
+  onArchive: (t: ThreadVM) => void;
 }) {
   const sel = vms.find((v) => v.id === selectedId) ?? null;
   return (
@@ -2029,8 +2645,35 @@ function InboxView({
                     <div style={{ font: `500 11.5px ${FB}`, color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>
                       {t.subject}
                     </div>
-                    <div style={{ marginTop: 5 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 5 }}>
                       <IntentPill intent={t.intent} />
+                      <button
+                        type="button"
+                        aria-label={`Archive thread from ${t.name}`}
+                        title="Archive"
+                        className="ob2-press ob2-focus"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onArchive(t);
+                        }}
+                        style={{
+                          marginLeft: "auto",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 4,
+                          border: "1px solid #E5E7EB",
+                          background: "#FFFFFF",
+                          color: "#64748b",
+                          borderRadius: 6,
+                          padding: "2px 7px",
+                          font: `600 10px ${FD}`,
+                          cursor: "pointer",
+                          flex: "none",
+                        }}
+                      >
+                        <Archive size={11} />
+                        Archive
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -2183,6 +2826,7 @@ function TemplatesView({
   cat,
   q,
   wsTemplates,
+  campaigns,
   sel,
   setSel,
   onUse,
@@ -2191,11 +2835,54 @@ function TemplatesView({
   cat: string;
   q: string;
   wsTemplates: WorkspaceTemplateRow[];
+  campaigns: OutboundCampaign[];
   sel: TplSel;
   setSel: (s: TplSel) => void;
   onUse: (s: TplSel) => void;
   using: boolean;
 }) {
+  // Real effectiveness: join the user's campaigns by play/name match and
+  // aggregate sends vs replies. Only the single best ≥20-send template gets
+  // the "Top performer" badge; templates without data show nothing.
+  const { perf, topKey } = useMemo(
+    () =>
+      templatePerformance(
+        [
+          ...PLAYS.map((p, idx) => ({ key: `play:${idx}`, name: p.name })),
+          ...wsTemplates.map((t) => ({ key: `ws:${t.id}`, name: t.title })),
+        ],
+        campaigns,
+      ),
+    [wsTemplates, campaigns],
+  );
+  const perfLine = (key: string): ReactNode => {
+    const p = perf.get(key);
+    if (!p) return null;
+    return (
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginTop: 8 }}>
+        {topKey === key && (
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              font: `600 10px ${FD}`,
+              color: "#047857",
+              background: "rgba(16,185,129,0.14)",
+              border: "1px solid rgba(16,185,129,0.35)",
+              borderRadius: 999,
+              padding: "2px 8px",
+            }}
+          >
+            <Trophy size={10} /> Top performer · {p.ratePct}% reply
+          </span>
+        )}
+        <span style={{ font: `500 10.5px ${FM}`, color: "#64748b" }}>
+          {fmtNum(p.sent)} sends · {p.ratePct}% reply
+        </span>
+      </div>
+    );
+  };
   const ql = q.trim().toLowerCase();
   const plays = PLAYS.map((p, idx) => ({ p, idx })).filter(
     ({ p }) =>
@@ -2219,6 +2906,10 @@ function TemplatesView({
   return (
     <div className="ob2-tplgrid">
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ font: `500 11px ${FM}`, color: "#94a3b8" }}>
+          Reply stats join your own campaigns by template name. The Top performer badge needs 20+
+          sends; templates without campaign data show no stats.
+        </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(270px,1fr))", gap: 12 }}>
           {plays.map(({ p, idx }) => {
             const on = sel.kind === "play" && sel.idx === idx;
@@ -2250,6 +2941,7 @@ function TemplatesView({
                     {playStepOutline(p).length} steps
                   </span>
                 </div>
+                {perfLine(`play:${idx}`)}
               </div>
             );
           })}
@@ -2286,6 +2978,7 @@ function TemplatesView({
                         {t.subject_template}
                       </div>
                     )}
+                    {perfLine(`ws:${t.id}`)}
                   </div>
                 );
               })}
@@ -2374,12 +3067,16 @@ function MailboxesView({
   stats,
   onConnect,
   connecting,
+  onRemove,
+  removingId,
 }: {
   vms: MailboxVM[];
   loading: boolean;
   stats: MailboxStats | null;
   onConnect: (provider: "gmail" | "outlook") => void;
   connecting: boolean;
+  onRemove: (m: MailboxVM) => void;
+  removingId: string | null;
 }) {
   const perAccountAvailable = stats?.perAccount != null && stats.perAccount.size > 0;
   return (
@@ -2428,6 +3125,30 @@ function MailboxesView({
                   <CircleAlert size={13} /> Reconnect this mailbox to resume sending.
                 </div>
               )}
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+                <button
+                  type="button"
+                  className="ob2-press ob2-focus"
+                  onClick={() => onRemove(m)}
+                  disabled={removingId === m.id}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    border: "1px solid rgba(225,29,72,0.35)",
+                    background: "transparent",
+                    color: "#e11d48",
+                    borderRadius: 8,
+                    padding: "6px 12px",
+                    font: `600 12px ${FD}`,
+                    cursor: "pointer",
+                    opacity: removingId === m.id ? 0.6 : 1,
+                  }}
+                >
+                  {removingId === m.id ? <Loader2 size={13} className="ob2-spin" /> : <Trash2 size={13} />}
+                  Disconnect
+                </button>
+              </div>
             </div>
           ))
         )}
@@ -2671,6 +3392,43 @@ export default function OutboundEngineV2({
     }
   }, [bundle, campaignId, loadBundle, refresh]);
 
+  // Pause/Resume/Archive/Delete — shared by the list row menu and the
+  // detail header. Delete always confirms.
+  const campaignAction = useCallback(
+    async (c: { id: string; name: string; status: string }, action: CampaignRowAction) => {
+      try {
+        if (action === "pause") {
+          await pauseCampaign(c.id);
+          toast.success(`${c.name} paused`);
+        } else if (action === "resume") {
+          await resumeCampaign(c.id);
+          toast.success(`${c.name} is live`);
+        } else if (action === "archive") {
+          await archiveCampaign(c.id);
+          toast.success(`${c.name} archived`);
+        } else {
+          const ok = window.confirm(
+            `Delete "${c.name}" permanently? Its steps and enrollment go with it. This can't be undone.`,
+          );
+          if (!ok) return;
+          await deleteCampaign(c.id);
+          toast.success(`${c.name} deleted`);
+        }
+        if ((action === "archive" || action === "delete") && campaignId === c.id) {
+          nav("campaigns");
+        }
+        await refresh();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Action failed");
+      }
+    },
+    [campaignId, nav, refresh],
+  );
+
+  // "Add audience" adapter modal over the same enrollment path the builder
+  // uses (attachCompaniesToCampaign + queue-campaign-recipients).
+  const [audienceOpen, setAudienceOpen] = useState(false);
+
   const enroll = useCallback(async () => {
     if (!campaignId) return;
     setEnrolling(true);
@@ -2763,6 +3521,22 @@ export default function OutboundEngineV2({
     }
   }, [syncing, loadThreads]);
 
+  // Archive a thread — optimistic removal; the list filter hides archived.
+  const archiveThreadAction = useCallback(
+    async (t: ThreadVM) => {
+      setThreadsRaw((rows) => rows.filter((r) => r.id !== t.id));
+      setSelectedThreadId((cur) => (cur === t.id ? null : cur));
+      try {
+        await archiveThread(t.id);
+        toast.success("Thread archived");
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Couldn't archive the thread");
+        void loadThreads(); // reconcile the optimistic removal
+      }
+    },
+    [loadThreads],
+  );
+
   const retagIntent = useCallback(
     async (intent: IntentId | null) => {
       if (!selectedThreadId) return;
@@ -2790,8 +3564,12 @@ export default function OutboundEngineV2({
         if (sel.kind === "play") {
           const p = PLAYS[sel.idx];
           label = p.name;
+          // channel must be one of email|linkedin|call (save-campaign-draft's
+          // VALID_CHANNELS whitelist); the step_type carries the specific
+          // linkedin_invite flavor. Sending dbChannel as channel was the bug
+          // that 400'd every LinkedIn-bearing play ("Use template" broken).
           const steps = playStepOutline(p).map((s) => ({
-            channel: s.dbChannel,
+            channel: s.channel,
             step_type: s.dbChannel,
             subject: s.subject,
             body: s.body,
@@ -2835,6 +3613,25 @@ export default function OutboundEngineV2({
     },
     [wsTemplates, refresh, nav],
   );
+
+  // ── mailbox remove (soft: lit_email_accounts.status → 'disconnected') ──
+  const [removingMailboxId, setRemovingMailboxId] = useState<string | null>(null);
+  const removeMailbox = useCallback(async (m: MailboxVM) => {
+    const ok = window.confirm(
+      `Disconnect ${m.address}? Campaigns stop sending from this mailbox until you reconnect it.`,
+    );
+    if (!ok) return;
+    setRemovingMailboxId(m.id);
+    try {
+      await disconnectEmailAccount(m.id);
+      toast.success(`${m.address} disconnected`);
+      setAccounts(await listEmailAccounts());
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't disconnect the mailbox");
+    } finally {
+      setRemovingMailboxId(null);
+    }
+  }, []);
 
   // ── mailbox connect ─────────────────────────────────────────────────
   const [connecting, setConnecting] = useState(false);
@@ -3067,6 +3864,21 @@ export default function OutboundEngineV2({
               onOpenStep={setDrawerStepId}
               onAddStep={addStep}
               addingStep={addingStep}
+              onAddAudience={() => setAudienceOpen(true)}
+              onArchive={() => {
+                if (!bundle) return;
+                void campaignAction(
+                  { id: bundle.header.id, name: bundle.header.name, status: bundle.header.status },
+                  "archive",
+                );
+              }}
+              onDelete={() => {
+                if (!bundle) return;
+                void campaignAction(
+                  { id: bundle.header.id, name: bundle.header.name, status: bundle.header.status },
+                  "delete",
+                );
+              }}
             />
           ) : (
             <CampaignsListView
@@ -3078,6 +3890,7 @@ export default function OutboundEngineV2({
               attention={attention}
               dealsSourced={dealsSourced}
               onOpen={(id) => nav("campaigns", id)}
+              onRowAction={(c, a) => void campaignAction(c, a)}
               onReviewMailboxes={() => nav("mailboxes")}
             />
           ))}
@@ -3095,6 +3908,7 @@ export default function OutboundEngineV2({
             onSend={sendReply}
             sending={sending}
             onSetIntent={retagIntent}
+            onArchive={(t) => void archiveThreadAction(t)}
           />
         )}
         {tab === "templates" && (
@@ -3102,6 +3916,7 @@ export default function OutboundEngineV2({
             cat={tplCat}
             q={q}
             wsTemplates={wsTemplates}
+            campaigns={campaigns}
             sel={tplSel}
             setSel={setTplSel}
             onUse={useTemplate}
@@ -3115,9 +3930,24 @@ export default function OutboundEngineV2({
             stats={mbStats}
             onConnect={connectMailbox}
             connecting={connecting}
+            onRemove={(m) => void removeMailbox(m)}
+            removingId={removingMailboxId}
           />
         )}
       </div>
+
+      {/* Add-audience adapter modal (campaign detail) */}
+      {audienceOpen && campaignId && bundle && (
+        <AddAudienceModal
+          campaignId={campaignId}
+          campaignName={bundle.header.name}
+          onClose={() => setAudienceOpen(false)}
+          onDone={() => {
+            void loadBundle(campaignId);
+            void refresh();
+          }}
+        />
+      )}
 
       {/* Step editor drawer */}
       {drawerStep && bundle && campaignId && (

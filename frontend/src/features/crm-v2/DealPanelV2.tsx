@@ -48,6 +48,7 @@ import {
   suggestStep,
   stageProbability,
   dueLabel,
+  laneUnitsOf,
   type CompanyHealth,
 } from "./data/computeCrm";
 import LostReasonModal from "./LostReasonModal";
@@ -328,6 +329,9 @@ export default function DealPanelV2({
   const laneLabel =
     deal.origin && deal.destination ? `${deal.origin} → ${deal.destination}` : deal.origin || deal.destination || null;
   const serviceLabel = deal.service_type ? deal.service_type.replace(/_/g, " ") : "Deal";
+  // Service-aware line-item units (TEU / Loads / kg / Qty) — stored in the
+  // existing teu / rate_usd columns unchanged.
+  const units = laneUnitsOf(deal.service_type);
 
   const darkInput: CSSProperties = {
     background: "#020617",
@@ -599,8 +603,8 @@ export default function DealPanelV2({
                       ) : null}
                       <span style={{ font: `600 12px ${F_BODY}`, color: "#e2e8f0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.lane_label}</span>
                     </div>
-                    <span style={{ font: `500 11px ${F_MONO}`, color: "#94a3b8", textAlign: "right" }}>{l.teu != null ? `${l.teu} TEU` : "—"}</span>
-                    <span style={{ font: `500 11px ${F_MONO}`, color: "#94a3b8", textAlign: "right" }}>{l.rate_usd != null ? `${formatMoney(l.rate_usd)}/TEU` : "—"}</span>
+                    <span style={{ font: `500 11px ${F_MONO}`, color: "#94a3b8", textAlign: "right" }}>{l.teu != null ? `${l.teu} ${units.qty}` : "—"}</span>
+                    <span style={{ font: `500 11px ${F_MONO}`, color: "#94a3b8", textAlign: "right" }}>{l.rate_usd != null ? `${formatMoney(l.rate_usd)}/${units.per}` : "—"}</span>
                     <span style={{ font: `600 12px ${F_MONO}`, color: "#e2e8f0", textAlign: "right" }}>{l.value_usd != null ? formatMoney(l.value_usd) : "—"}</span>
                     <button
                       type="button"
@@ -630,10 +634,10 @@ export default function DealPanelV2({
               )}
               {addingLane ? (
                 <div style={{ padding: 12, display: "grid", gridTemplateColumns: "minmax(0,1.4fr) 64px 64px 76px auto", gap: 6 }}>
-                  <input value={lane.label} onChange={(e) => setLane({ ...lane, label: e.target.value })} placeholder="Lane (e.g. Shanghai → LA)" style={darkInput} />
+                  <input value={lane.label} onChange={(e) => setLane({ ...lane, label: e.target.value })} placeholder="Lane (origin → destination)" style={darkInput} />
                   <input value={lane.origin} onChange={(e) => setLane({ ...lane, origin: e.target.value.toUpperCase() })} placeholder="CN" maxLength={3} style={darkInput} />
-                  <input value={lane.teu} onChange={(e) => setLane({ ...lane, teu: e.target.value.replace(/[^\d]/g, "") })} placeholder="TEU" inputMode="numeric" style={darkInput} />
-                  <input value={lane.rate} onChange={(e) => setLane({ ...lane, rate: e.target.value.replace(/[^\d]/g, "") })} placeholder="$/TEU" inputMode="numeric" style={darkInput} />
+                  <input value={lane.teu} onChange={(e) => setLane({ ...lane, teu: e.target.value.replace(/[^\d]/g, "") })} placeholder={units.qty} inputMode="numeric" style={darkInput} />
+                  <input value={lane.rate} onChange={(e) => setLane({ ...lane, rate: e.target.value.replace(/[^\d]/g, "") })} placeholder={`$/${units.per}`} inputMode="numeric" style={darkInput} />
                   <button type="button" className="crm2-press crm2-focus" onClick={submitLane} style={{ border: "none", background: "#3b82f6", color: "#fff", borderRadius: 9, padding: "0 12px", font: `600 12px ${F_DISPLAY}`, cursor: "pointer" }}>
                     Add
                   </button>

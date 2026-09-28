@@ -540,6 +540,31 @@ export function serviceBucketOf(serviceType: string | null | undefined): Service
       return "Other";
   }
 }
+/**
+ * Line-item units for the deal panel's lane form, derived from the deal's
+ * service_type. Values still persist in the existing teu / rate_usd columns —
+ * only the labels change.
+ */
+export type LaneUnits = { qty: string; per: string };
+export function laneUnitsOf(serviceType: string | null | undefined): LaneUnits {
+  const s = String(serviceType ?? "").toLowerCase();
+  if (s === "ocean" || s === "drayage" || s === "intermodal") return { qty: "TEU", per: "TEU" };
+  if (
+    s === "truckload" ||
+    s === "ftl" ||
+    s === "dry_van" ||
+    s === "flat_bed" ||
+    s === "reefer" ||
+    s === "straight_truck" ||
+    s === "hot_shot" ||
+    s === "sprinter_van"
+  ) {
+    return { qty: "Loads", per: "load" };
+  }
+  if (s === "air") return { qty: "kg", per: "kg" };
+  return { qty: "Qty", per: "unit" };
+}
+
 export type ServiceWinRow = {
   bucket: ServiceBucket;
   dealCount: number;

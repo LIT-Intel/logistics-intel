@@ -120,6 +120,10 @@ export interface UpdateStepPatch {
   delay_days?: number;
   delay_hours?: number;
   delay_minutes?: number;
+  /** "HH:MM" local send time; null = fire purely on the delay offset. */
+  time_of_day_local?: string | null;
+  /** Defer weekend fire times to Monday (dispatcher honors this). */
+  weekdays_only?: boolean;
   metadata?: Record<string, unknown>;
   /**
    * Variants write. Legacy compatibility: when variants are provided we ALSO
@@ -444,7 +448,24 @@ export async function listInboxThreads(): Promise<EmailThreadRow[]> {
     .order("last_message_at", { ascending: false, nullsFirst: false })
     .limit(200);
   if (error) throw new Error(`listInboxThreads: ${error.message}`);
-  return (data ?? []) as unknown as EmailThreadRow[];
+  // Archived threads stay out of the inbox (client-side so NULL statuses
+  // keep flowing through unchanged).
+  return ((data ?? []) as unknown as EmailThreadRow[]).filter(
+    (t) => String(t.status ?? "").toLowerCase() !== "archived",
+  );
+}
+
+/** Archive a thread — it disappears from the inbox list. */
+export async function archiveThread(threadId: string): Promise<void> {
+  const { data, error } = await supabase
+    .from("lit_email_threads")
+    .update({ status: "archived" })
+    .eq("id", threadId)
+    .select("id");
+  if (error) throw new Error(`archiveThread: ${error.message}`);
+  if (!Array.isArray(data) || data.length === 0) {
+    throw new Error("archiveThread: not found or no permission");
+  }
 }
 
 /** Opening a thread marks it read: read_at = now, unread_count = 0. */
@@ -530,7 +551,31 @@ export async function listEmailAccounts(): Promise<MailAccountRow[]> {
     .select("id, email, provider, status, is_primary, created_at")
     .order("is_primary", { ascending: false });
   if (error) throw new Error(`listEmailAccounts: ${error.message}`);
-  return (data ?? []) as unknown as MailAccountRow[];
+  // Hide the system 'resend' sending identity (hello@updates — not a user
+  // mailbox) and anything the user explicitly disconnected.
+  return ((data ?? []) as unknown as MailAccountRow[]).filter((a) => {
+    const provider = String(a.provider ?? "").toLowerCase();
+    const status = String(a.status ?? "").toLowerCase();
+    return provider !== "resend" && status !== "disconnected";
+  });
+}
+
+/**
+ * Disconnect (remove) a mailbox. lit_email_accounts has a status column, so
+ * this is a soft update to 'disconnected' — tokens/history stay intact and
+ * listEmailAccounts filters the row out.
+ */
+export async function disconnectEmailAccount(accountId: string): Promise<void> {
+  if (!accountId) throw new Error("disconnectEmailAccount: accountId required");
+  const { data, error } = await supabase
+    .from("lit_email_accounts")
+    .update({ status: "disconnected" })
+    .eq("id", accountId)
+    .select("id");
+  if (error) throw new Error(`disconnectEmailAccount: ${error.message}`);
+  if (!Array.isArray(data) || data.length === 0) {
+    throw new Error("disconnectEmailAccount: not found or no permission");
+  }
 }
 
 export interface PerAccountStats {

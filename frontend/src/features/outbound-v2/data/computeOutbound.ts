@@ -590,6 +590,69 @@ export function renderTokens(text: string, vars: TokenVars): string {
   });
 }
 
+// ────────────────────────────────────────────────────────── template performance
+
+export interface TemplatePerf {
+  sent: number;
+  replied: number;
+  /** whole-number reply % of sends */
+  ratePct: number;
+}
+
+/**
+ * Real per-template effectiveness from the user's OWN campaigns. A template
+ * (play or workspace template) matches a campaign when the campaign's
+ * metrics.play equals the template name, or the campaign name contains it.
+ * Sends/replies come from the campaign funnel (lit_outreach_history events).
+ *
+ * `topKey` is the single best template by reply rate among templates with
+ * ≥ minSends sends — the ONLY one that earns the "Top performer" badge.
+ * Templates without data get nothing (no invented stats).
+ */
+export function templatePerformance(
+  items: Array<{ key: string; name: string }>,
+  campaigns: OutboundCampaign[],
+  minSends = 20,
+): { perf: Map<string, TemplatePerf>; topKey: string | null } {
+  const perf = new Map<string, TemplatePerf>();
+  for (const it of items) {
+    const needle = it.name.trim().toLowerCase();
+    if (!needle) continue;
+    let sent = 0;
+    let replied = 0;
+    let matched = false;
+    for (const c of campaigns) {
+      const play = String((c.metrics as any)?.play ?? "").trim().toLowerCase();
+      const cname = String(c.name ?? "").toLowerCase();
+      if (play === needle || (needle.length >= 4 && cname.includes(needle))) {
+        matched = true;
+        sent += c.funnel?.sent ?? 0;
+        replied += c.funnel?.replied ?? 0;
+      }
+    }
+    if (!matched || sent <= 0) continue;
+    perf.set(it.key, {
+      sent,
+      replied,
+      ratePct: Math.round(Math.min(100, (replied / sent) * 100)),
+    });
+  }
+  let topKey: string | null = null;
+  let best: TemplatePerf | null = null;
+  let tied = false;
+  for (const [key, p] of perf) {
+    if (p.sent < minSends) continue;
+    if (!best || p.ratePct > best.ratePct || (p.ratePct === best.ratePct && p.sent > best.sent)) {
+      tied = best != null && p.ratePct === best.ratePct && p.sent === best.sent;
+      best = p;
+      topKey = key;
+    } else if (p.ratePct === best.ratePct && p.sent === best.sent) {
+      tied = true;
+    }
+  }
+  return { perf, topKey: tied ? null : topKey };
+}
+
 // ────────────────────────────────────────────────────────── curated plays
 // Content from the design handoff (crm-data.js → PLAYS). Allowed as CONTENT
 // (name/desc/audience/step outline). Their historical reply/meeting stats

@@ -219,6 +219,16 @@ export default function CommandCenterV2({ initialTab }: CommandCenterV2Props) {
     return [...out.values()];
   }, [st.sel, accounts, contacts]);
 
+  // lit_saved_companies.id behind the selected company rows (keys are "a"+savedId).
+  const selectedSavedIds = useMemo(() => {
+    if (st.tab !== "companies") return [];
+    const valid = new Set(accounts.map((a) => String(a.co.savedId)));
+    return st.sel
+      .filter((k) => k.startsWith("a"))
+      .map((k) => k.slice(1))
+      .filter((id) => valid.has(id));
+  }, [st.sel, st.tab, accounts]);
+
   // ── CSV export (row VMs only — header Export = all filtered rows) ───
   const allCompanyRows = () => {
     const out: any[] = [];
@@ -866,6 +876,7 @@ export default function CommandCenterV2({ initialTab }: CommandCenterV2Props) {
         tab={st.tab}
         count={st.sel.length}
         companies={selectedCompanies}
+        savedIds={selectedSavedIds}
         getSelectedRows={getSelectedRows}
         onClear={() => A.set({ sel: [] })}
         reduced={reduced}

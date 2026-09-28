@@ -6,12 +6,16 @@
  *   - Add to Campaign → AddToCampaignModal (single company) or the
  *     inline bulk modal (attachCompaniesToCampaign accepts an id array).
  *   - Export CSV → client-side CSV of the selected row VMs (Blob).
+ *   - Remove → confirm + lit_saved_companies delete of the selected saves.
+ *   - Archive → lit_saved_companies.archived_at = now() (hidden everywhere).
  * Rendered disabled (no backend handler exists yet):
- *   - Assign owner · Remove · Verify emails.
+ *   - Assign owner · Verify emails.
  */
 import { useEffect, useState } from "react";
-import { Download, MailCheck, Send, Trash2, UserRoundCog, X } from "lucide-react";
+import { Archive, Download, MailCheck, Send, Trash2, UserRoundCog, X } from "lucide-react";
 import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/lib/supabase";
 import { attachCompaniesToCampaign, getCrmCampaigns } from "@/lib/api";
 import AddToCampaignModal from "@/components/command-center/AddToCampaignModal";
 
@@ -217,6 +221,8 @@ export interface BulkBarProps {
   count: number;
   /** Distinct companies behind the selection (uuid + name), resolved by the parent. */
   companies: { company_id: string | null; name: string }[];
+  /** lit_saved_companies.id of the selected company rows (companies tab). */
+  savedIds?: string[];
   /** Row VMs of the current selection (current tab) at click time. */
   getSelectedRows: () => any[];
   onClear: () => void;
@@ -227,11 +233,70 @@ export default function BulkBar({
   tab,
   count,
   companies,
+  savedIds = [],
   getSelectedRows,
   onClear,
   reduced,
 }: BulkBarProps) {
   const [modal, setModal] = useState<"single" | "bulk" | null>(null);
+  const [mutating, setMutating] = useState(false);
+  const qc = useQueryClient();
+
+  // Refresh every surface fed by the shared saved-companies pipeline.
+  const invalidateSaved = () => {
+    void qc.invalidateQueries({ queryKey: ["dash-saved-companies"] });
+    void qc.invalidateQueries({ queryKey: ["dash-owners"] });
+    void qc.invalidateQueries({ queryKey: ["cc-contacts"] });
+  };
+
+  const removeSelected = async () => {
+    if (!savedIds.length || mutating) return;
+    const n = savedIds.length;
+    const ok = window.confirm(
+      `Remove ${n} saved ${n === 1 ? "company" : "companies"} from your workspace? This deletes the save (not the company record) and can't be undone.`,
+    );
+    if (!ok) return;
+    setMutating(true);
+    try {
+      const { data, error } = await supabase
+        .from("lit_saved_companies")
+        .delete()
+        .in("id", savedIds)
+        .select("id");
+      if (error) throw new Error(error.message);
+      const removed = (data ?? []).length;
+      if (removed === 0) throw new Error("Nothing removed — not found or no permission.");
+      toast.success(`Removed ${removed} ${removed === 1 ? "company" : "companies"}`);
+      invalidateSaved();
+      onClear();
+    } catch (e: any) {
+      toast.error(`Remove failed: ${e?.message || e}`);
+    } finally {
+      setMutating(false);
+    }
+  };
+
+  const archiveSelected = async () => {
+    if (!savedIds.length || mutating) return;
+    setMutating(true);
+    try {
+      const { data, error } = await supabase
+        .from("lit_saved_companies")
+        .update({ archived_at: new Date().toISOString() })
+        .in("id", savedIds)
+        .select("id");
+      if (error) throw new Error(error.message);
+      const archived = (data ?? []).length;
+      if (archived === 0) throw new Error("Nothing archived — not found or no permission.");
+      toast.success(`Archived ${archived} ${archived === 1 ? "company" : "companies"}`);
+      invalidateSaved();
+      onClear();
+    } catch (e: any) {
+      toast.error(`Archive failed: ${e?.message || e}`);
+    } finally {
+      setMutating(false);
+    }
+  };
 
   // Keep the last non-zero count so the label doesn't flash "0" during
   // the slide-out.
@@ -349,7 +414,29 @@ export default function BulkBar({
               <Download size={14} />
               <span className="cc-bulklabel">Export CSV</span>
             </button>
-            {disabledBtn("Remove", Trash2)}
+            <button
+              type="button"
+              className="cc-bulkghost cc-focus"
+              onClick={archiveSelected}
+              disabled={mutating || savedIds.length === 0}
+              style={savedIds.length === 0 || mutating ? ghostDisabled : ghost}
+            >
+              <Archive size={14} />
+              <span className="cc-bulklabel">Archive</span>
+            </button>
+            <button
+              type="button"
+              className="cc-bulkghost cc-focus"
+              onClick={removeSelected}
+              disabled={mutating || savedIds.length === 0}
+              style={{
+                ...(savedIds.length === 0 || mutating ? ghostDisabled : ghost),
+                color: savedIds.length === 0 || mutating ? "#64748b" : "#fb7185",
+              }}
+            >
+              <Trash2 size={14} />
+              <span className="cc-bulklabel">Remove</span>
+            </button>
           </>
         ) : (
           <>

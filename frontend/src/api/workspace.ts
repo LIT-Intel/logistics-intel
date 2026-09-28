@@ -82,6 +82,9 @@ export async function getWorkspaceSavedCompanies(): Promise<{ rows: any[] }> {
         )
       `,
       )
+      // Archived saves (lit_saved_companies.archived_at) stay out of every
+      // surface that consumes this shared feed (Dashboard + Command Center).
+      .is("archived_at", null)
       .order("last_viewed_at", { ascending: false });
 
     if (error) {
