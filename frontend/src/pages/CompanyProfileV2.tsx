@@ -54,6 +54,7 @@ import {
   History,
   MoreHorizontal,
   Check,
+  RefreshCw,
 } from "lucide-react";
 import CompanyProfileWorkspace, {
   useCompanyProfileWorkspace,
@@ -2646,7 +2647,23 @@ function ProfilePanel({ rawId }: { rawId: string }) {
             onAddToList={() => setAddToListOpen(true)}
             onStartOutreach={() => setCampaignModalOpen(true)}
             trailingActions={
-              <HeaderMoreMenu
+              <>
+                {/* Refresh promoted back to a first-class button (owner
+                    couldn't find it in the ⋯ menu, 2026-09-27). */}
+                <button
+                  type="button"
+                  aria-label="Refresh company data"
+                  title="Refresh company data"
+                  onClick={handleManualRefreshClick}
+                  disabled={refreshing || manualRefreshing}
+                  className="grid h-10 w-10 cursor-pointer place-items-center rounded-[10px] border border-[#E5E7EB] bg-white text-[#475569] hover:border-[#CBD5E1] hover:bg-[#F8FAFC] active:scale-95 disabled:cursor-default disabled:opacity-60 motion-reduce:active:scale-100"
+                >
+                  <RefreshCw
+                    size={17}
+                    className={refreshing || manualRefreshing ? "animate-spin motion-reduce:animate-none" : undefined}
+                  />
+                </button>
+                <HeaderMoreMenu
                 onShare={handleShareHtmlClick}
                 shareLoading={shareLoading}
                 onRefresh={handleManualRefreshClick}
@@ -2665,6 +2682,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
                 selectedYear={selectedYear}
                 onSelectYear={setSelectedYear}
               />
+              </>
             }
           />
         </div>
