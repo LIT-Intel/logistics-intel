@@ -13,6 +13,10 @@ import { canAccessFeature, normalizePlan } from "@/lib/planLimits";
 
 const Landing = lazy(() => import("@/pages/LandingPage"));
 const CompanyProfileV2Preview = lazy(() => import("@/pages/CompanyProfileV2Preview"));
+// Dashboard rebuild (design handoff #2 "Morning Brief"); LITDashboard kept for rollback.
+const DashboardV2 = lazy(() => import("@/features/dashboard/DashboardV2"));
+const AppLayoutLazy = lazy(() => import("@/layout/lit/AppLayout.jsx"));
+const SharedLanesViewer = lazy(() => import("@/pages/SharedLanesViewer"));
 const Dashboard = lazy(() => import("@/pages/Dashboard"));
 const LITDashboard = lazy(() => import("./components/dashboard/LITDashboard.jsx"));
 const ContactsPage = lazy(() => import("@/pages/Contacts"));
@@ -360,11 +364,17 @@ export default function App() {
           element={
             <RequireAuth>
               <RequirePage page="dashboard">
-                <LITDashboard />
+                <AppLayoutLazy>
+                  <DashboardV2 />
+                </AppLayoutLazy>
               </RequirePage>
             </RequireAuth>
           }
         />
+
+        {/* Public read-only share portal for trade-lanes maps (handoff #2
+            §4.6): token-validated, server-side-redacted via share-map. */}
+        <Route path="/s/:token" element={<SharedLanesViewer />} />
 
         <Route
           path="/app/contacts"

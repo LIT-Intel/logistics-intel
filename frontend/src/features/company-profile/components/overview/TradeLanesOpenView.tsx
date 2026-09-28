@@ -9,17 +9,23 @@
  *
  * All state is LOCAL to this view (window, metric, selection, min-BOL filter,
  * play). Numbers come from the v2 `computeView` selector — nothing is
- * hand-aggregated here. The Share portal ships later; no Share button yet.
+ * hand-aggregated here.
+ *
+ * Share portal (README §4.6): an optional `share` prop renders the Share
+ * button + ShareMapDialog; `viewerMode` + `redactions` drive the public
+ * read-only portal (redactions are UX only — the server never sends
+ * excluded fields in the first place).
  */
 import React from "react";
 import ReactDOM from "react-dom";
-import { ArrowRight, Pause, Play, X } from "lucide-react";
+import { ArrowRight, Pause, Play, Share2, X } from "lucide-react";
 import AppLaneMap from "@/components/LaneMap";
 import { computePresets, computeView, type ProfileView } from "../../data/selectors";
 import { deltaToneDark, miLabel } from "../../data/format";
 import type { Metric, ProfileActions, ShipmentDataset } from "../../data/types";
 import { FONT_BODY, FONT_DISPLAY, FONT_MONO, useReducedMotion } from "../ui";
 import { toGlobeLanes } from "./LaneMap";
+import { ShareMapDialog } from "./ShareMapDialog";
 
 // ---------------------------------------------------------------- tokens
 
@@ -99,14 +105,31 @@ export function TradeLanesOpenView(props: {
   initialM0: number;
   initialM1: number;
   onClose: () => void;
+  /** When present, render the Share button + ShareMapDialog (owner surface). */
+  share?: { companyKey: string; companyUuid?: string | null; companyName: string };
+  /** Public share portal: hides Share + ✕ and pushes below the 48px viewer bar. */
+  viewerMode?: boolean;
+  /** Include flags from the share link (flag = false → redacted). */
+  redactions?: { spend: boolean; bols: boolean; suppliers: boolean; carriers: boolean };
 }) {
-  const { ds, companyName, onClose } = props;
+  const { ds, companyName, onClose, viewerMode, redactions } = props;
   const reduced = useReducedMotion();
+
+  // ---- share-portal redaction flags (default: everything visible) --------
+  const showSpend = redactions ? redactions.spend : true;
+  const showBols = redactions ? redactions.bols : true;
+  const showSuppliers = redactions ? redactions.suppliers : true;
+  const showCarriers = redactions ? redactions.carriers : true;
 
   // ---- local state (never touches page state) ----------------------------
   const [win, setWin] = React.useState<[number, number]>([props.initialM0, props.initialM1]);
   const [m0, m1] = win;
   const [metric, setMetric] = React.useState<Metric>("shipments");
+  /** spend redacted → the Spend metric is unavailable; force shipments. */
+  const effMetric: Metric = !showSpend && metric === "spend" ? "shipments" : metric;
+  const [shareOpen, setShareOpen] = React.useState(false);
+  const shareOpenRef = React.useRef(false);
+  shareOpenRef.current = shareOpen;
   const [minShip, setMinShip] = React.useState<0 | 5 | 25 | 100>(0);
   const [playing, setPlaying] = React.useState(false);
   /** undefined = "not chosen yet" → defaults to the top lane. */
@@ -184,7 +207,8 @@ export function TradeLanesOpenView(props: {
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCloseRef.current();
+      // when the share dialog is open, Escape closes the dialog only
+      if (e.key === "Escape" && !shareOpenRef.current) onCloseRef.current();
     };
     const onUp = () => {
       brushAnchor.current = null;
@@ -209,10 +233,10 @@ export function TradeLanesOpenView(props: {
     () =>
       computeView(
         ds,
-        { m0, m1, preset: null, metric, f: {}, trace: null, hover: null, pins: [], intro: false, disp: null },
+        { m0, m1, preset: null, metric: effMetric, f: {}, trace: null, hover: null, pins: [], intro: false, disp: null },
         inertActions,
       ),
-    [ds, m0, m1, metric, inertActions],
+    [ds, m0, m1, effMetric, inertActions],
   );
 
   const lanesShown = React.useMemo(
@@ -237,7 +261,7 @@ export function TradeLanesOpenView(props: {
               m0,
               m1,
               preset: null,
-              metric,
+              metric: effMetric,
               f: { lane: [sel] },
               trace: null,
               hover: null,
@@ -248,7 +272,7 @@ export function TradeLanesOpenView(props: {
             inertActions,
           )
         : null,
-    [ds, m0, m1, metric, sel, inertActions],
+    [ds, m0, m1, effMetric, sel, inertActions],
   );
 
   const slv: LaneItem | undefined = sel ? view.lanes.find((l) => l.key === sel) : undefined;
@@ -295,7 +319,13 @@ export function TradeLanesOpenView(props: {
   const node = (
     <div
       className="fixed inset-0 z-[1000] overflow-hidden"
-      style={{ background: "#0b1220", fontFamily: FONT_BODY, color: "#f8fafc" }}
+      style={{
+        background: "#0b1220",
+        fontFamily: FONT_BODY,
+        color: "#f8fafc",
+        // share portal: sit below the fixed 48px viewer top bar
+        top: viewerMode ? 48 : 0,
+      }}
       role="dialog"
       aria-modal="true"
       aria-label={"Trade lanes · " + companyName}
@@ -351,13 +381,13 @@ export function TradeLanesOpenView(props: {
             [
               ["shipments", "Shipments"],
               ["teu", "TEU"],
-              ["spend", "Spend"],
+              ...(showSpend ? [["spend", "Spend"]] : []),
             ] as [Metric, string][]
           ).map(([id, label]) => (
             <Chip
               key={id}
               label={label}
-              active={metric === id}
+              active={effMetric === id}
               onClick={() => {
                 stopPlay();
                 setMetric(id);
@@ -365,15 +395,35 @@ export function TradeLanesOpenView(props: {
             />
           ))}
         </div>
-        <button
-          type="button"
-          aria-label="Close trade lanes view"
-          onClick={onClose}
-          className="grid h-9 w-9 flex-none cursor-pointer place-items-center rounded-[10px] text-[#cbd5e1] hover:bg-[rgba(255,255,255,0.08)]"
-          style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.14)" }}
-        >
-          <X size={16} />
-        </button>
+        {props.share && !viewerMode && (
+          <button
+            type="button"
+            onClick={() => setShareOpen(true)}
+            className="flex h-9 flex-none cursor-pointer items-center gap-2 whitespace-nowrap rounded-[10px] border-0 px-3.5 text-white active:scale-[.97] motion-reduce:active:scale-100"
+            style={{
+              fontFamily: FONT_BODY,
+              fontWeight: 600,
+              fontSize: 13,
+              background: "#3b82f6",
+              boxShadow: "0 0 18px rgba(59,130,246,0.5)",
+              transition: trans(`transform 160ms ${EASE}`),
+            }}
+          >
+            <Share2 size={15} />
+            Share
+          </button>
+        )}
+        {!viewerMode && (
+          <button
+            type="button"
+            aria-label="Close trade lanes view"
+            onClick={onClose}
+            className="grid h-9 w-9 flex-none cursor-pointer place-items-center rounded-[10px] text-[#cbd5e1] hover:bg-[rgba(255,255,255,0.08)]"
+            style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.14)" }}
+          >
+            <X size={16} />
+          </button>
+        )}
       </div>
 
       {/* OVERLAY 2 — Lanes panel */}
@@ -571,6 +621,20 @@ export function TradeLanesOpenView(props: {
                 {(["shipments", "teu", "spend", "avgTeu"] as const).map((id) => {
                   const k = card.detail.kpis.find((x: any) => x.id === id);
                   if (!k) return null;
+                  if (id === "spend" && !showSpend) {
+                    // spend redacted by the share link → keep the tile, hide the value
+                    return (
+                      <div key={id} className="rounded-[10px] bg-[#F8FAFC] px-3 py-2.5">
+                        <div style={{ ...DETAIL_OVERLINE, color: "#94a3b8" }}>Est. spend</div>
+                        <div
+                          className="mt-1"
+                          style={{ fontFamily: FONT_MONO, fontWeight: 600, fontSize: 20, letterSpacing: "-0.03em", color: "#94a3b8" }}
+                        >
+                          Hidden
+                        </div>
+                      </div>
+                    );
+                  }
                   return (
                     <div key={id} className="rounded-[10px] bg-[#F8FAFC] px-3 py-2.5">
                       <div style={{ ...DETAIL_OVERLINE, color: "#94a3b8" }}>
@@ -654,7 +718,8 @@ export function TradeLanesOpenView(props: {
                 </div>
               </div>
 
-              {/* Carrier mix donut */}
+              {/* Carrier mix donut (removed entirely when redacted) */}
+              {showCarriers && (
               <div className="flex items-center gap-4">
                 <svg viewBox="0 0 80 80" className="h-[84px] w-[84px] flex-none" style={{ transform: "rotate(-90deg)" }}>
                   <circle cx="40" cy="40" r="30" fill="none" stroke="#F1F5F9" strokeWidth="12" />
@@ -698,6 +763,7 @@ export function TradeLanesOpenView(props: {
                   ))}
                 </div>
               </div>
+              )}
 
               {/* Equipment (skipped entirely when unknown) */}
               {card.detail.ctypes.length > 0 && (
@@ -730,23 +796,36 @@ export function TradeLanesOpenView(props: {
                 <div className="mb-1" style={DETAIL_OVERLINE}>
                   Suppliers on this lane
                 </div>
-                {card.detail.suppliers.slice(0, 3).map((x) => (
-                  <div
-                    key={x.key}
-                    className="flex justify-between gap-2.5 border-b border-[#F1F5F9] py-[7px] text-[13px]"
-                  >
-                    <span className="min-w-0 truncate font-semibold">{x.label}</span>
+                {showSuppliers ? (
+                  card.detail.suppliers.slice(0, 3).map((x) => (
+                    <div
+                      key={x.key}
+                      className="flex justify-between gap-2.5 border-b border-[#F1F5F9] py-[7px] text-[13px]"
+                    >
+                      <span className="min-w-0 truncate font-semibold">{x.label}</span>
+                      <span
+                        className="flex-none tabular-nums"
+                        style={{ fontFamily: FONT_MONO, fontWeight: 600, fontSize: 12, color: "#475569" }}
+                      >
+                        {x.shipments} BOLs · {x.share}
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="flex justify-between gap-2.5 border-b border-[#F1F5F9] py-[7px] text-[13px]">
+                    <span className="min-w-0 truncate font-semibold text-[#94a3b8]">Hidden by sender</span>
                     <span
                       className="flex-none tabular-nums"
-                      style={{ fontFamily: FONT_MONO, fontWeight: 600, fontSize: 12, color: "#475569" }}
+                      style={{ fontFamily: FONT_MONO, fontWeight: 600, fontSize: 12, color: "#94a3b8" }}
                     >
-                      {x.shipments} BOLs · {x.share}
+                      —
                     </span>
                   </div>
-                ))}
+                )}
               </div>
 
-              {/* Latest bills of lading */}
+              {/* Latest bills of lading (removed entirely when redacted) */}
+              {showBols && (
               <div>
                 <div className="mb-1" style={DETAIL_OVERLINE}>
                   Latest bills of lading
@@ -766,7 +845,7 @@ export function TradeLanesOpenView(props: {
                       className="text-right tabular-nums"
                       style={{ fontFamily: FONT_MONO, fontWeight: 600, fontSize: 11 }}
                     >
-                      {r.teu} TEU · {r.spend}
+                      {r.teu} TEU · {showSpend ? r.spend : "Hidden"}
                     </span>
                     <span className="col-span-2 text-[12px] text-[#64748b]">
                       {r.date} · {r.carrier} · {r.equip}
@@ -774,6 +853,7 @@ export function TradeLanesOpenView(props: {
                   </div>
                 ))}
               </div>
+              )}
             </div>
           </>
         )}
@@ -866,6 +946,21 @@ export function TradeLanesOpenView(props: {
             </div>
           </div>
         </div>
+      )}
+
+      {/* SHARE DIALOG (owner surface only) */}
+      {props.share && !viewerMode && (
+        <ShareMapDialog
+          open={shareOpen}
+          onClose={() => setShareOpen(false)}
+          companyKey={props.share.companyKey}
+          companyUuid={props.share.companyUuid}
+          companyName={props.share.companyName}
+          initialState={{ m0, m1, metric: effMetric, lane: sel }}
+          periodLabel={view.periodLabel}
+          unitLabel={view.unitM}
+          laneLabel={slv?.label}
+        />
       )}
     </div>
   );

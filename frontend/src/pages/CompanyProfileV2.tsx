@@ -2756,6 +2756,9 @@ function ProfilePanel({ rawId }: { rawId: string }) {
                 />
               }
               lanesExtras={<InlandFreightCard companyId={v2CompanyKey} />}
+              shareCompany={
+                v2CompanyKey ? { key: v2CompanyKey, uuid: bundle?.identity?.id ?? null } : null
+              }
               meta={{
                 hq: companyAddress || null,
                 website: companyWebsite || companyDomain || null,

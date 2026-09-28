@@ -93,6 +93,8 @@ export interface CompanyProfileWorkspaceProps {
   overviewTopSlot?: ReactNode;
   /** Rehomed Supply-Chain cards: rendered below the Trade Lanes tab. */
   lanesExtras?: ReactNode;
+  /** Enables the Share button in the fullscreen map open view. */
+  shareCompany?: { key: string; uuid?: string | null } | null;
 }
 
 export function CompanyProfileWorkspace({
@@ -105,6 +107,7 @@ export function CompanyProfileWorkspace({
   onSwitchTab,
   overviewTopSlot,
   lanesExtras,
+  shareCompany,
 }: CompanyProfileWorkspaceProps) {
   const { dataset, loading, state, actions, extra, view, lanesView } = workspace;
   const [mapExpanded, setMapExpanded] = useState(false);
@@ -221,6 +224,11 @@ export function CompanyProfileWorkspace({
           initialM0={state.m0}
           initialM1={state.m1}
           onClose={() => setMapExpanded(false)}
+          share={
+            shareCompany
+              ? { companyKey: shareCompany.key, companyUuid: shareCompany.uuid ?? null, companyName }
+              : undefined
+          }
         />
       )}
     </div>
