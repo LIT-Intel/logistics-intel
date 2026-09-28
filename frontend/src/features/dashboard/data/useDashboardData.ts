@@ -53,15 +53,31 @@ interface RawTsRow {
 }
 
 async function fetchBulkMonthly(slugs: string[]): Promise<RawTsRow[]> {
+  // PostgREST hard-caps every response at 1,000 rows regardless of .limit()
+  // (Supabase db-max-rows default). A saved workspace holds ~45k monthly rows,
+  // so each chunk MUST be paged with .range() until exhausted — the earlier
+  // single-shot fetch silently dropped ~86% of the history and rendered most
+  // recently-saved companies as zeros (owner report 2026-09-28).
+  const PAGE = 1000;
   const out: RawTsRow[] = [];
   for (let i = 0; i < slugs.length; i += 100) {
     const chunk = slugs.slice(i, i + 100);
-    const { data, error } = await supabase
-      .from("lit_company_time_series_monthly")
-      .select("company_id,year,month,shipments,teu")
-      .in("company_id", chunk)
-      .limit(20000);
-    if (!error && data) out.push(...(data as unknown as RawTsRow[]));
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from("lit_company_time_series_monthly")
+        .select("company_id,year,month,shipments,teu")
+        .in("company_id", chunk)
+        .order("company_id", { ascending: true })
+        .order("year", { ascending: true })
+        .order("month", { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (error) {
+        console.error("fetchBulkMonthly page failed:", error.message);
+        break;
+      }
+      out.push(...((data ?? []) as unknown as RawTsRow[]));
+      if (!data || data.length < PAGE) break;
+    }
   }
   return out;
 }

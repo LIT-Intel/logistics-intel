@@ -35,14 +35,26 @@ async function chunkedIn<T>(
   ids: string[],
   chunk = 200,
 ): Promise<T[]> {
+  // PostgREST caps responses at 1,000 rows — page each chunk with .range()
+  // until exhausted (same truncation bug class as fetchBulkMonthly).
+  const PAGE = 1000;
   const out: T[] = [];
   for (let i = 0; i < ids.length; i += chunk) {
-    const { data, error } = await supabase.from(table).select(select).in(col, ids.slice(i, i + chunk));
-    if (error) {
-      console.error(`[command-center] ${table} query failed:`, error.message);
-      continue;
+    const idChunk = ids.slice(i, i + chunk);
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from(table)
+        .select(select)
+        .in(col, idChunk)
+        .order(col, { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (error) {
+        console.error(`[command-center] ${table} query failed:`, error.message);
+        break;
+      }
+      out.push(...((data ?? []) as T[]));
+      if (!data || data.length < PAGE) break;
     }
-    out.push(...((data ?? []) as T[]));
   }
   return out;
 }
