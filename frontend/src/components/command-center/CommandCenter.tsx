@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import AddToCampaignModal from "./AddToCampaignModal";
 import CommandCenterV2 from "@/features/command-center/CommandCenterV2";
+import { PipelineV2, TasksV2, ReportsV2 } from "@/features/crm-v2";
 import PipelineGate from "@/features/crm/PipelineGate";
 import TasksView from "@/features/crm/TasksView";
 import PipelineReports from "@/features/crm/PipelineReports";
@@ -378,11 +379,21 @@ function CommandCenterInner() {
           <CommandCenterV2 />
         </div>
       ) : view === "pipeline" ? (
-        <PipelineGate viewAsUserId={viewAsUserId} />
+        /* CRM v2 (design handoff 2026-09-28) behind the same billing gate;
+           legacy PipelineBoard/TasksView/PipelineReports kept for rollback. */
+        <PipelineGate viewAsUserId={viewAsUserId}>
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            <PipelineV2 viewAsUserId={viewAsUserId} />
+          </div>
+        </PipelineGate>
       ) : view === "tasks" ? (
-        <TasksView onCountChange={setOverdueCount} viewAsUserId={viewAsUserId} />
+        <div style={{ flex: 1, overflowY: "auto" }}>
+          <TasksV2 viewAsUserId={viewAsUserId} />
+        </div>
       ) : (
-        <PipelineReports viewAsUserId={viewAsUserId} />
+        <div style={{ flex: 1, overflowY: "auto" }}>
+          <ReportsV2 viewAsUserId={viewAsUserId} />
+        </div>
       )}
     </div>
   );

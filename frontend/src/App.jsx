@@ -17,6 +17,7 @@ const CompanyProfileV2Preview = lazy(() => import("@/pages/CompanyProfileV2Previ
 const DashboardV2 = lazy(() => import("@/features/dashboard/DashboardV2"));
 const AppLayoutLazy = lazy(() => import("@/layout/lit/AppLayout.jsx"));
 const SharedLanesViewer = lazy(() => import("@/pages/SharedLanesViewer"));
+const OutboundEnginePage = lazy(() => import("@/pages/OutboundEnginePage"));
 const Dashboard = lazy(() => import("@/pages/Dashboard"));
 const LITDashboard = lazy(() => import("./components/dashboard/LITDashboard.jsx"));
 const Search = lazy(() => import("@/pages/Search"));
@@ -520,6 +521,29 @@ export default function App() {
             </RequireAuth>
           }
         />
+
+        {/* Outbound Engine v2 (CRM handoff 2026-09-28): campaigns/inbox/
+            templates/mailboxes tabs. Same gating as /app/campaigns. */}
+        {["/app/outbound", "/app/outbound/campaigns/:campaignId"].map((p) => (
+          <Route
+            key={p}
+            path={p}
+            element={
+              <RequirePage page="campaigns">
+                <RequirePlan
+                  feature="campaign_builder"
+                  featureName="Outbound Engine"
+                  description="Build and run outreach campaigns targeting freight shippers and logistics prospects. Available on Growth and above."
+                  requiredPlan="growth"
+                >
+                  <LITPage>
+                    <OutboundEnginePage />
+                  </LITPage>
+                </RequirePlan>
+              </RequirePage>
+            }
+          />
+        ))}
 
         <Route
           path="/app/campaigns"

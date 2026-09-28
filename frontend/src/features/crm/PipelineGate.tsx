@@ -21,7 +21,15 @@ const FONT_BODY = "'DM Sans', sans-serif";
  * The security boundary remains server-side (get-entitlements + RLS); this gate
  * is a UX affordance. A non-entitled user cannot read real deals anyway.
  */
-export default function PipelineGate({ viewAsUserId = "" }: { viewAsUserId?: string }) {
+export default function PipelineGate({
+  viewAsUserId = "",
+  children,
+}: {
+  viewAsUserId?: string;
+  /** When provided, the entitled branch renders this instead of the legacy
+      PipelineBoard (CRM v2 mounts through the same billing gate). */
+  children?: React.ReactNode;
+}) {
   const { theme } = useCrmTheme();
   const { crmEnabled, isChecking, plan, invalidateCache } = useEntitlements();
   const [pricing, setPricing] = useState<CrmAddonPricing | null>(null);
@@ -64,8 +72,8 @@ export default function PipelineGate({ viewAsUserId = "" }: { viewAsUserId?: str
   }
 
   if (crmEnabled) {
-    // Entitled: real owner-scoped pipeline, unchanged.
-    return <PipelineBoard viewAsUserId={viewAsUserId} />;
+    // Entitled: CRM v2 when mounted with children, else the legacy board.
+    return <>{children ?? <PipelineBoard viewAsUserId={viewAsUserId} />}</>;
   }
 
   const perSeat = pricing ? pricing.per_seat_cents / 100 : null;

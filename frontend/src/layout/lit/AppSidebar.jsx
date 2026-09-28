@@ -115,12 +115,12 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
       title: "Engage",
       items: [
         {
-          label: "Campaigns",
-          href: "/app/campaigns",
+          label: "Outbound Engine",
+          href: "/app/outbound",
           icon: Megaphone,
           locked: !canUseCampaigns,
         },
-        { label: "Communication Center", href: "/app/inbox", icon: Inbox },
+        { label: "Inbox", href: "/app/outbound?tab=inbox", icon: Inbox },
         { label: "RFP & Quotes", href: "/app/rfp", icon: FileText },
       ],
     },

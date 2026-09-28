@@ -252,16 +252,16 @@ export default function AppShell({ currentPageName, children }) {
           <nav className="mb-3">
             {showCampaigns ? (
               <SideLink
-                to="/app/campaigns"
+                to="/app/outbound"
                 icon={Mail}
-                label={collapsed ? "" : "Campaigns"}
+                label={collapsed ? "" : "Outbound Engine"}
               />
             ) : (
               !collapsed && (
                 <SideLink
                   to="#"
                   icon={Mail}
-                  label="Campaigns"
+                  label="Outbound Engine"
                   locked
                   onClick={lockedClick}
                 />
