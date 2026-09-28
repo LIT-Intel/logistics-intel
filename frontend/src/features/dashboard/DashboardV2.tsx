@@ -84,6 +84,16 @@ const DV2_CSS = `
 .dv2-body{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:20px;align-items:start}
 .dv2-rail{position:sticky;top:72px;display:flex;flex-direction:column;gap:16px;min-width:0}
 @media (max-width:1100px){.dv2-body{grid-template-columns:minmax(0,1fr)}.dv2-rail{position:static}}
+.dv2-pad{padding-left:32px;padding-right:32px}
+.dv2-greeting{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:40px;align-items:end;margin-top:34px}
+.dv2-narrative{margin:18px 0 0;max-width:900px;font:400 19px/1.55 ${F_BODY};color:#475569}
+@media (max-width:900px){.dv2-greeting{grid-template-columns:minmax(0,1fr);gap:20px;align-items:stretch}}
+@media (max-width:640px){
+  .dv2-pad{padding-left:16px;padding-right:16px}
+  .dv2-narrative{font-size:15px;margin-top:12px}
+  .dv2-topbtns{width:100%}
+  .dv2-topbtns>button{flex:1;justify-content:center;padding:0 10px!important}
+}
 .dv2-ghostbtn{transition:transform 160ms ${EASE},border-color 200ms,background 200ms}
 .dv2-ghostbtn:hover{border-color:rgba(0,200,212,0.5)!important;background:#F8FAFC!important}
 .dv2-ghostbtn:active{transform:scale(0.97)}
@@ -158,7 +168,7 @@ export default function DashboardV2() {
     return (
       <div style={{ background: "#F1F5F9", minHeight: "100vh", fontFamily: F_BODY }} aria-busy>
         <style>{DV2_CSS}</style>
-        <div style={{ maxWidth: 1560, margin: "0 auto", padding: "26px 32px" }}>
+        <div className="dv2-pad" style={{ maxWidth: 1560, margin: "0 auto", paddingTop: 26, paddingBottom: 26 }}>
           <div
             className="motion-reduce:animate-none animate-pulse"
             style={{ ...CARD, height: 260, marginBottom: 20 }}
@@ -307,7 +317,7 @@ export default function DashboardV2() {
           }}
         />
 
-        <div style={{ position: "relative", maxWidth: 1560, margin: "0 auto", padding: "26px 32px 0" }}>
+        <div className="dv2-pad" style={{ position: "relative", maxWidth: 1560, margin: "0 auto", paddingTop: 26 }}>
           {/* top row */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", fontSize: 13, color: "#64748b" }}>
@@ -334,7 +344,7 @@ export default function DashboardV2() {
                 {v.companyCount} saved companies · U.S. CBP data
               </span>
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
+            <div className="dv2-topbtns" style={{ display: "flex", gap: 8 }}>
               <button
                 type="button"
                 className="dv2-ghostbtn"
@@ -382,15 +392,7 @@ export default function DashboardV2() {
           </div>
 
           {/* greeting + status card */}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "minmax(0,1fr) auto",
-              gap: 40,
-              alignItems: "end",
-              marginTop: 34,
-            }}
-          >
+          <div className="dv2-greeting">
             <div style={{ minWidth: 0 }}>
               <h1 className="dv2-h1">
                 {greeting},{" "}
@@ -405,14 +407,7 @@ export default function DashboardV2() {
                   {firstName}.
                 </span>
               </h1>
-              <p
-                style={{
-                  margin: "18px 0 0",
-                  maxWidth: 900,
-                  font: `400 19px/1.55 ${F_BODY}`,
-                  color: "#475569",
-                }}
-              >
+              <p className="dv2-narrative">
                 Your <b style={{ color: "#0F172A", fontWeight: 600 }}>{story.companies} saved shippers</b>{" "}
                 moved{" "}
                 <b style={{ color: "#0F172A", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
@@ -631,10 +626,12 @@ export default function DashboardV2() {
         }}
       >
         <div
+          className="dv2-pad"
           style={{
             maxWidth: 1560,
             margin: "0 auto",
-            padding: "10px 32px",
+            paddingTop: 10,
+            paddingBottom: 10,
             display: "flex",
             flexWrap: "wrap",
             alignItems: "center",
@@ -743,7 +740,7 @@ export default function DashboardV2() {
       </div>
 
       {/* ══ C. Body ═══════════════════════════════════════════════════ */}
-      <div style={{ maxWidth: 1560, margin: "0 auto", padding: "20px 32px 64px" }}>
+      <div className="dv2-pad" style={{ maxWidth: 1560, margin: "0 auto", paddingTop: 20, paddingBottom: 64 }}>
         <div className="dv2-body">
           {/* ── main column ── */}
           <div style={{ display: "flex", flexDirection: "column", gap: 20, minWidth: 0 }}>

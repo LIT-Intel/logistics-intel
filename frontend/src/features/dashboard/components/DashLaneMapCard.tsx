@@ -8,7 +8,7 @@
  * laneRegionColor origin-region palette) since that conversion is not
  * exported from the coach file.
  */
-import { lazy, Suspense, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { type GlobeLane } from "@/components/GlobeCanvas";
 import { type LaneMapLaneColor } from "@/components/LaneMap";
 import { resolveEndpoint } from "@/lib/laneGlobe";
@@ -59,7 +59,22 @@ const dashKeyOf = (l: WorkspaceLaneLite) => `${l.from_label}::${l.to_label}`.toL
 const dashKeyTrimmed = (l: WorkspaceLaneLite) =>
   `${l.from_label.trim()}::${l.to_label.trim()}`.toLowerCase();
 
+/** Phone layout: the lanes panel docks to the bottom instead of covering the map. */
+function useIsNarrow(): boolean {
+  const [narrow, setNarrow] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(max-width:640px)").matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width:640px)");
+    const on = (e: MediaQueryListEvent) => setNarrow(e.matches);
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+  return narrow;
+}
+
 export default function DashLaneMapCard({ workspaceLanes, lanes, headline, unit, reduced }: Props) {
+  const isNarrow = useIsNarrow();
   // ── WorkspaceLane[] → GlobeLane[] (mirrors WorkspaceLanesGlobe) ──────
   const globeLanes: GlobeLane[] = useMemo(() => {
     const sorted = [...workspaceLanes].sort(
@@ -163,7 +178,7 @@ export default function DashLaneMapCard({ workspaceLanes, lanes, headline, unit,
     <section
       style={{
         position: "relative",
-        height: 460,
+        height: isNarrow ? 420 : 460,
         borderRadius: 14,
         overflow: "hidden",
         // Same shell as the profile map card (owner: match the profile style)
@@ -199,21 +214,24 @@ export default function DashLaneMapCard({ workspaceLanes, lanes, headline, unit,
             linesMode="always"
             unselectedStyle="ghost"
             laneColors={laneColors}
-            zoomControlPosition="bottomright"
-            fitPadding={{ top: 30, right: 30, bottom: 30, left: 370 }}
+            zoomControlPosition={isNarrow ? "topright" : "bottomright"}
+            fitPadding={
+              isNarrow
+                ? { top: 24, right: 24, bottom: 210, left: 24 }
+                : { top: 30, right: 30, bottom: 30, left: 370 }
+            }
           />
         </Suspense>
       </div>
 
-      {/* ── Left glass overlay panel (UI only — floats over the map) ── */}
+      {/* ── Glass lanes panel — left rail on desktop, bottom sheet on phones ── */}
       <div
         style={{
           position: "absolute",
-          top: 16,
-          left: 16,
-          bottom: 16,
-          width: 340,
-          maxWidth: "calc(100% - 32px)",
+          ...(isNarrow
+            ? { left: 10, right: 10, bottom: 10, top: "auto", width: "auto", maxHeight: 200 }
+            : { top: 16, left: 16, bottom: 16, width: 340 }),
+          maxWidth: "calc(100% - 20px)",
           zIndex: 500,
           background: "rgba(255,255,255,0.94)",
           backdropFilter: "blur(16px)",
@@ -237,7 +255,7 @@ export default function DashLaneMapCard({ workspaceLanes, lanes, headline, unit,
           >
             Portfolio lanes · by {unit}
           </div>
-          <div style={{ font: `600 18px/1.3 ${F_DISPLAY}`, marginTop: 6 }}>{shownHeadline}</div>
+          <div style={{ font: `600 ${isNarrow ? 15 : 18}px/1.3 ${F_DISPLAY}`, marginTop: 6 }}>{shownHeadline}</div>
         </div>
         <div
           style={{
