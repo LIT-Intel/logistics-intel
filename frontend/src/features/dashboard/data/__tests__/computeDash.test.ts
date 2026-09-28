@@ -40,6 +40,7 @@ function co(key: string, name: string, stage: string, lastActivityDaysAgo: numbe
     lastActivityTs: lastActivityDaysAgo == null ? null : +NOW - lastActivityDaysAgo * 864e5,
     initials: name.slice(0, 2).toUpperCase(),
     logoDomain: null,
+    savedAtTs: +NOW - 40 * 864e5,
     ownerId,
     ownerName: ownerId === "u-vr" ? "Valesco Raymond" : "Jordan Mills",
     ownerKey: ownerId === "u-vr" ? "VR" : "JM",

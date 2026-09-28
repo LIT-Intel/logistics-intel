@@ -33,6 +33,8 @@ export interface DashCompany {
   initials: string;
   /** domain/website for the logo.dev cascade (LogoTile). */
   logoDomain: string | null;
+  /** lit_saved_companies.created_at (Command Center "recently saved"). */
+  savedAtTs: number | null;
   /** Saver attribution (lit_saved_companies.user_id → profiles.full_name). */
   ownerId: string | null;
   ownerName: string | null;

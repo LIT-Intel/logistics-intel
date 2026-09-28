@@ -31,6 +31,7 @@ import {
   Trophy,
 } from "lucide-react";
 import AddToCampaignModal from "./AddToCampaignModal";
+import CommandCenterV2 from "@/features/command-center/CommandCenterV2";
 import PipelineGate from "@/features/crm/PipelineGate";
 import TasksView from "@/features/crm/TasksView";
 import PipelineReports from "@/features/crm/PipelineReports";
@@ -345,7 +346,7 @@ function CommandCenterInner() {
       {/* View switcher — the tab row is horizontally scrollable so all four
           tabs + the theme toggle stay reachable on narrow phones. */}
       <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "10px 16px 0", background: theme.panel, borderBottom: `1px solid ${theme.border}`, flexShrink: 0, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-        <ViewTab active={view === "accounts"} onClick={() => setView("accounts")} icon={<LayoutGrid style={{ width: 14, height: 14 }} />} label="Accounts" />
+        <ViewTab active={view === "accounts"} onClick={() => setView("accounts")} icon={<LayoutGrid style={{ width: 14, height: 14 }} />} label="Saved companies" />
         <ViewTab active={view === "pipeline"} onClick={() => setView("pipeline")} icon={<KanbanSquare style={{ width: 14, height: 14 }} />} label="Pipeline" />
         <ViewTab active={view === "tasks"} onClick={() => setView("tasks")} icon={<CheckSquare style={{ width: 14, height: 14 }} />} label="Tasks" badge={overdueCount || undefined} />
         <ViewTab active={view === "reports"} onClick={() => setView("reports")} icon={<BarChart3 style={{ width: 14, height: 14 }} />} label="Reports" />
@@ -359,15 +360,23 @@ function CommandCenterInner() {
       {/* KPI header bar — below the tabs, above the content. Compact colored
           KpiChip idiom (icon square + tone + bold number + small label), same
           as the dashboard. Reflows to 2-up on phones, one row on desktop. */}
-      <KpiHeaderBar
-        kpis={kpis}
-        overdueForViewer={overdueCount}
-        viewAsUserId={viewAsUserId}
-        onViewAsChange={setViewAsUserId}
-      />
+      {/* The v2 workspace brings its own KPI header — the CRM KPI strip only
+          renders on the deal-centric views to avoid stacked headers. */}
+      {view !== "accounts" && (
+        <KpiHeaderBar
+          kpis={kpis}
+          overdueForViewer={overdueCount}
+          viewAsUserId={viewAsUserId}
+          onViewAsChange={setViewAsUserId}
+        />
+      )}
 
       {view === "accounts" ? (
-        <AccountsView />
+        /* Command Center v2 (design handoff 2026-09-27): Saved companies +
+           Contacts tabs. AccountsView below is kept unrouted for rollback. */
+        <div style={{ flex: 1, overflowY: "auto" }}>
+          <CommandCenterV2 />
+        </div>
       ) : view === "pipeline" ? (
         <PipelineGate viewAsUserId={viewAsUserId} />
       ) : view === "tasks" ? (

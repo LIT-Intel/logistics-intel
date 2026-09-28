@@ -171,6 +171,7 @@ export function useDashboardData(): DashboardData {
         lastActivityTs: Number.isFinite(lastTs) ? lastTs : null,
         initials: initialsOf(co.name ?? key),
         logoDomain: co.domain || co.website || null,
+        savedAtTs: r.saved_at ? (Number.isFinite(Date.parse(r.saved_at)) ? Date.parse(r.saved_at) : null) : null,
         ownerId,
         ownerName,
         ownerKey: ownerName ? initialsOf(ownerName) : "—",

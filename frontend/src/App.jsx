@@ -19,7 +19,6 @@ const AppLayoutLazy = lazy(() => import("@/layout/lit/AppLayout.jsx"));
 const SharedLanesViewer = lazy(() => import("@/pages/SharedLanesViewer"));
 const Dashboard = lazy(() => import("@/pages/Dashboard"));
 const LITDashboard = lazy(() => import("./components/dashboard/LITDashboard.jsx"));
-const ContactsPage = lazy(() => import("@/pages/Contacts"));
 const Search = lazy(() => import("@/pages/Search"));
 // Day-5 PRD pivot — unified Intelligence Explorer page wraps the new
 // ExplorerShell with both Company Search + Pulse Explorer tabs. Mounted
@@ -376,13 +375,11 @@ export default function App() {
             §4.6): token-validated, server-side-redacted via share-map. */}
         <Route path="/s/:token" element={<SharedLanesViewer />} />
 
+        {/* Command Center v2 (2026-09-27): contacts live as a tab of the
+            Command Center — the old standalone ContactsPage is unrouted. */}
         <Route
           path="/app/contacts"
-          element={
-            <RequireAuth>
-              <ContactsPage />
-            </RequireAuth>
-          }
+          element={<Navigate to="/app/command-center?tab=contacts" replace />}
         />
 
         {/* Day-5 PRD pivot: /app/search now hosts the unified
