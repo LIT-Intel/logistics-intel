@@ -29,7 +29,6 @@ import {
 import AddToCampaignModal from "./AddToCampaignModal";
 import CommandCenterV2 from "@/features/command-center/CommandCenterV2";
 import { PipelineV2, TasksV2, ReportsV2 } from "@/features/crm-v2";
-import PipelineGate from "@/features/crm/PipelineGate";
 import TasksView from "@/features/crm/TasksView";
 import PipelineReports from "@/features/crm/PipelineReports";
 import CreateDealModal, { type CreateDealPrefill } from "@/features/crm/CreateDealModal";
@@ -367,13 +366,14 @@ function CommandCenterInner() {
           <CommandCenterV2 />
         </div>
       ) : view === "pipeline" ? (
-        /* CRM v2 (design handoff 2026-09-28) behind the same billing gate;
-           legacy PipelineBoard/TasksView/PipelineReports kept for rollback. */
-        <PipelineGate viewAsUserId={viewAsUserId}>
-          <div style={{ flex: 1, overflowY: "auto" }}>
-            <PipelineV2 viewAsUserId={viewAsUserId} onViewAsChange={setViewAsUserId} />
-          </div>
-        </PipelineGate>
+        /* CRM v2 (design handoff 2026-09-28). Owner decision 2026-09-28: the
+           CRM pipeline is open to ALL logged-in users — the PipelineGate
+           paywall was hiding the new pipeline + deal drawer from trial/demo
+           accounts. Rendered ungated like Tasks/Reports; legacy
+           PipelineBoard/TasksView/PipelineReports kept in-repo for rollback. */
+        <div style={{ flex: 1, overflowY: "auto" }}>
+          <PipelineV2 viewAsUserId={viewAsUserId} onViewAsChange={setViewAsUserId} />
+        </div>
       ) : view === "tasks" ? (
         <div style={{ flex: 1, overflowY: "auto" }}>
           <TasksV2 viewAsUserId={viewAsUserId} onViewAsChange={setViewAsUserId} />
