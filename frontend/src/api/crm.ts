@@ -103,6 +103,8 @@ export type DealCardExtras = {
   ownerName?: string | null;
   nextTaskDue?: string | null;
   openTaskCount?: number;
+  /** Onboarding example deal (lit_deals.is_sample). */
+  is_sample?: boolean;
 };
 
 export type DealCard = Deal & DealCardExtras;
@@ -336,6 +338,7 @@ export async function listDeals(ownerUserId?: string | null): Promise<DealCard[]
       ownerName: ownerNames[d.owner_user_id] ?? null,
       nextTaskDue: tasks?.due ?? null,
       openTaskCount: tasks?.count ?? 0,
+      is_sample: d.is_sample === true,
     } as DealCard;
   });
 }

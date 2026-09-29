@@ -105,6 +105,7 @@ export async function getWorkspaceSavedCompanies(): Promise<{ rows: any[] }> {
       seen.add(companyKey);
       rows.push({
         saved_id: item.id,
+        is_sample: item.is_sample === true,
         company: {
           id: item.lit_companies?.id ?? null,
           company_id:

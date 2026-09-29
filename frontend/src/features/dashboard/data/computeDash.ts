@@ -40,6 +40,9 @@ export interface DashCompany {
   ownerName: string | null;
   ownerKey: string; // initials, e.g. "VR"
   ownerColor: string;
+  /** Onboarding example row (lit_saved_companies.is_sample). Optional so VM
+   *  fixtures that predate sample data stay valid. */
+  isSample?: boolean;
 }
 
 export interface CoMonthRow {

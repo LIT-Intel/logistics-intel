@@ -51,6 +51,8 @@ export interface OutboundCampaign {
   alert: string | null;
   spark: number[] | null;
   nextSendLabel: string;
+  /** Onboarding example campaign (lit_campaigns.is_sample). */
+  is_sample?: boolean;
 }
 
 export interface Play {

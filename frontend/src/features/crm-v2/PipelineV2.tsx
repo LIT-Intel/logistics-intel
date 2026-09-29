@@ -22,6 +22,7 @@ import {
   Trophy,
 } from "lucide-react";
 import LogoTile from "@/features/dashboard/components/LogoTile";
+import SampleDataBanner, { SampleChip } from "@/features/command-center/components/SampleDataBanner";
 import CreateDealModal from "@/features/crm/CreateDealModal";
 import ViewAsFilter from "@/features/crm/ViewAsFilter";
 import { formatMoney, initials, avatarColor } from "@/features/crm/crmFormat";
@@ -196,6 +197,14 @@ export default function PipelineV2({
   return (
     <div className="crm2-pad" style={{ paddingBottom: 96 }}>
       <Crm2Style />
+      <SampleDataBanner
+        show={deals.some((d) => d.is_sample)}
+        noun="the pipeline"
+        onCleared={() => {
+          void refetchDeals();
+          void refetchTasks();
+        }}
+      />
       {/* KPI row */}
       <div className="crm2-kpirow" style={{ marginTop: 20 }}>
         <KpiCard label="Open pipeline" icon={Layers} value={formatMoney(kpis.openValue)} delta={String(kpis.openCount)} deltaColor="#2563eb" sub="open deals" />
@@ -425,8 +434,11 @@ function BoardCard({
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <LogoTile name={deal.companyName ?? deal.title} domain={deal.companyDomain} size={30} radius={8} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ font: `600 13px ${F_DISPLAY}`, color: "#0F172A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {deal.companyName ?? deal.title}
+          <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+            <span style={{ font: `600 13px ${F_DISPLAY}`, color: "#0F172A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
+              {deal.companyName ?? deal.title}
+            </span>
+            {deal.is_sample && <SampleChip />}
           </div>
           <div style={{ font: `400 11px ${F_BODY}`, color: "#94a3b8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {daysInStage != null ? `${daysInStage}d in stage · ` : ""}
@@ -535,8 +547,11 @@ function GroupRows({
               <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
                 <LogoTile name={d.companyName ?? d.title} domain={d.companyDomain} size={26} radius={7} />
                 <span style={{ minWidth: 0 }}>
-                  <span style={{ display: "block", font: `600 13px ${F_DISPLAY}`, color: "#0F172A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {d.companyName ?? d.title}
+                  <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                    <span style={{ font: `600 13px ${F_DISPLAY}`, color: "#0F172A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
+                      {d.companyName ?? d.title}
+                    </span>
+                    {d.is_sample && <SampleChip />}
                   </span>
                   <span style={{ display: "block", font: `400 11px ${F_BODY}`, color: "#94a3b8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.title}</span>
                 </span>

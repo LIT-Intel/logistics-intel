@@ -109,6 +109,7 @@ function normalize(
     // sparkline data lands in Task 7+8 via a separate time-series query
     spark: null,
     nextSendLabel: status === "draft" ? "—" : status === "paused" ? "paused" : "—",
+    is_sample: row?.is_sample === true,
   };
 }
 

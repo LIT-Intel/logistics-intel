@@ -12,6 +12,7 @@
  */
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   BadgeCheck,
   Building2,
@@ -44,9 +45,17 @@ import AccountsTable from "./components/AccountsTable";
 import ContactsTable from "./components/ContactsTable";
 import CCDrawer from "./components/CCDrawer";
 import BulkBar, { downloadCsv, rowsToCsv } from "./components/BulkBar";
+import SampleDataBanner from "./components/SampleDataBanner";
+import { seedSampleData } from "@/api/sampleData";
 
 const F_DISPLAY = "'Space Grotesk',sans-serif";
 const F_BODY = "'DM Sans',system-ui,sans-serif";
+
+// Onboarding sample-data auto-seed: fire once per browser session. The
+// module-level flag guards a single tab; the sessionStorage key survives HMR /
+// remounts and coordinates across tabs so we never double-invoke the edge fn.
+const SEED_SESSION_KEY = "lit-sample-seed-tried";
+let sampleSeedTried = false;
 const F_MONO = "'JetBrains Mono',monospace";
 const EASE = "cubic-bezier(0.16,1,0.3,1)";
 const CARD: CSSProperties = {
@@ -140,8 +149,44 @@ export interface CommandCenterV2Props {
 export default function CommandCenterV2({ initialTab }: CommandCenterV2Props) {
   const navigate = useNavigate();
   const reduced = useReducedMotion();
+  const queryClient = useQueryClient();
   const { loading, accounts, contacts, owners } = useCommandCenterData();
   const { st, A } = useCCState();
+
+  // ── Auto-seed onboarding examples (once per browser session) ─────────
+  // Non-blocking, fire-and-forget. On a fresh seed (seeded===true) invalidate
+  // the two queries behind useCommandCenterData — the saved-companies dataset
+  // (["dash-saved-companies"], reused by useDashboardData) and the contacts
+  // feed (["cc-contacts", …]) — so the examples appear without a manual
+  // refresh. Errors are swallowed quietly; render is never blocked.
+  useEffect(() => {
+    if (sampleSeedTried) return;
+    let already = false;
+    try {
+      already = sessionStorage.getItem(SEED_SESSION_KEY) === "1";
+    } catch {
+      /* private mode — module flag still guards this tab */
+    }
+    if (already) {
+      sampleSeedTried = true;
+      return;
+    }
+    sampleSeedTried = true;
+    try {
+      sessionStorage.setItem(SEED_SESSION_KEY, "1");
+    } catch {
+      /* ignore */
+    }
+    void seedSampleData()
+      .then((res) => {
+        if (res.seeded) {
+          void queryClient.invalidateQueries({ queryKey: ["dash-saved-companies"] });
+          void queryClient.invalidateQueries({ queryKey: ["cc-contacts"] });
+        }
+      })
+      .catch((e) => console.debug("[command-center] sample seed skipped:", e));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const { ds } = useDashboardData(); // period labels only (same cached query)
   const [params] = useSearchParams();
 
@@ -856,6 +901,16 @@ export default function CommandCenterV2({ initialTab }: CommandCenterV2Props) {
           gap: 16,
         }}
       >
+        {isCo && (
+          <SampleDataBanner
+            show={accounts.some((a) => a.co.isSample)}
+            noun="Command Center"
+            onCleared={() => {
+              void queryClient.invalidateQueries({ queryKey: ["dash-saved-companies"] });
+              void queryClient.invalidateQueries({ queryKey: ["cc-contacts"] });
+            }}
+          />
+        )}
         {isCo ? (
           <AccountsTable
             view={av}

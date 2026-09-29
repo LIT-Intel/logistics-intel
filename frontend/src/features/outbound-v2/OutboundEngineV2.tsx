@@ -89,6 +89,7 @@ import { attachCompaniesToCampaign } from "@/lib/api";
 import { getWorkspaceSavedCompanies } from "@/api/workspace";
 import { listPulseLists, getListCompanies } from "@/features/pulse/pulseListsApi";
 import LogoTile from "@/features/dashboard/components/LogoTile";
+import SampleDataBanner, { SampleChip } from "@/features/command-center/components/SampleDataBanner";
 import type { OutboundCampaign } from "@/features/outbound/types";
 import {
   archiveThread,
@@ -859,6 +860,7 @@ function CampaignsListView({
   onOpen,
   onRowAction,
   onReviewMailboxes,
+  onClearSample,
 }: {
   campaigns: OutboundCampaign[];
   loading: boolean;
@@ -870,6 +872,7 @@ function CampaignsListView({
   onOpen: (id: string) => void;
   onRowAction: (c: OutboundCampaign, a: CampaignRowAction) => void;
   onReviewMailboxes: () => void;
+  onClearSample: () => void;
 }) {
   const ql = q.trim().toLowerCase();
   const list = campaigns.filter(
@@ -880,6 +883,11 @@ function CampaignsListView({
   );
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <SampleDataBanner
+        show={campaigns.some((c) => c.is_sample && c.status !== "archived")}
+        noun="campaigns"
+        onCleared={onClearSample}
+      />
       {attention.show && (
         <div
           style={{
@@ -952,6 +960,7 @@ function CampaignsListView({
                   <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                     <span style={{ font: `600 15px ${FD}`, color: "#0F172A" }}>{c.name}</span>
                     <StatusPill status={c.status} />
+                    {c.is_sample && <SampleChip />}
                   </div>
                   <div
                     style={{
@@ -4169,6 +4178,7 @@ export default function OutboundEngineV2({
               onOpen={(id) => nav("campaigns", id)}
               onRowAction={(c, a) => void campaignAction(c, a)}
               onReviewMailboxes={() => nav("mailboxes")}
+              onClearSample={() => void refresh()}
             />
           ))}
         {tab === "inbox" && (

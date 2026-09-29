@@ -18,6 +18,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import LogoTile from "@/features/dashboard/components/LogoTile";
+import { SampleChip } from "./SampleDataBanner";
 
 const F_DISPLAY = "'Space Grotesk',sans-serif";
 const F_BODY = "'DM Sans',system-ui,sans-serif";
@@ -253,14 +254,17 @@ export default function AccountsTable({
                     <span style={{ minWidth: 0 }}>
                       <span
                         style={{
-                          display: "block",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
                           fontWeight: 600,
-                          whiteSpace: "nowrap",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
+                          minWidth: 0,
                         }}
                       >
-                        {c.name}
+                        <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>
+                          {c.name}
+                        </span>
+                        {c.isSample && <SampleChip />}
                       </span>
                       <span
                         style={{

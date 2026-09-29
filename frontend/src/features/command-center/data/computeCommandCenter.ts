@@ -394,6 +394,7 @@ export function computeAccountsView(
       savedId: a.co.savedId,
       uuid: a.co.uuid,
       name: a.co.name,
+      isSample: a.co.isSample === true,
       initials: a.co.initials,
       logoDomain: a.co.logoDomain,
       city: a.co.city,

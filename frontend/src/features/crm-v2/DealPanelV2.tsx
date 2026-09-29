@@ -26,6 +26,7 @@ import {
   X,
 } from "lucide-react";
 import LogoTile from "@/features/dashboard/components/LogoTile";
+import { SampleChip } from "@/features/command-center/components/SampleDataBanner";
 import { formatMoney, initials, avatarColor } from "@/features/crm/crmFormat";
 import { listDealActivity, listCompanyContacts, type DealStage, type DealActivity } from "@/api/crm";
 import {
@@ -417,8 +418,11 @@ export default function DealPanelV2({
               <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10 }}>
                 <LogoTile name={deal.companyName ?? deal.title} domain={deal.companyDomain} size={48} radius={12} dark={theme === "dark"} />
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ font: `700 22px ${F_DISPLAY}`, color: T.heading, letterSpacing: "-0.02em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {deal.companyName ?? deal.title}
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                    <span style={{ font: `700 22px ${F_DISPLAY}`, color: T.heading, letterSpacing: "-0.02em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
+                      {deal.companyName ?? deal.title}
+                    </span>
+                    {deal.is_sample && <SampleChip />}
                   </div>
                   <div style={{ font: `400 12px ${F_BODY}`, color: T.textMuted, marginTop: 2 }}>
                     {[serviceLabel !== "Deal" ? serviceLabel : null, laneLabel, closeLabel ? `closes ${closeLabel}` : null, deal.ownerName]

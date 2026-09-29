@@ -194,6 +194,7 @@ export function useDashboardData(): DashboardData {
         ownerColor: ownerId
           ? OWNER_COLORS[(ownerColorIdx.get(ownerId) ?? 0) % OWNER_COLORS.length]
           : "#94a3b8",
+        isSample: r.is_sample === true,
       };
     });
     // De-dupe by key (org shares can produce duplicates)
