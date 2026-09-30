@@ -299,7 +299,11 @@ function useContactSearch(args: {
           companyDomain: companyDomain || undefined,
           linkedinUrl: row.linkedinUrl || undefined,
           title: row.title || undefined,
-          revealPhoneNumber: false,
+          // Reveal phone alongside email — the panel copy promises "Email and
+          // phone reveal after enrichment", but this was hardcoded false so
+          // enriched rows always showed "—" for phone. true → the orchestrator
+          // requests find_email + find_phone + verify in the one enrichment.
+          revealPhoneNumber: true,
         });
         if (!result.success) {
           if (savedId) {
