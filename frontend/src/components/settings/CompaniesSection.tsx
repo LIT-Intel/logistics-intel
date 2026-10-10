@@ -6,7 +6,8 @@
 // on `platform_admins` membership server-side. This section is additionally
 // hidden from non-platform-admins in the settings nav.
 //
-// Uses the two manual-provisioning actions: `create_org` and `create_user`.
+// Uses the three manual-provisioning actions: `create_org`, `create_user`,
+// and `delete_org` (type-to-confirm in the UI).
 // Existing actions reused: get_orgs, get_org_members, update_org_plan,
 // update_member_role, remove_member.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -22,7 +23,7 @@ import {
   ShieldCheck,
   Loader2,
 } from "lucide-react";
-import { adminApi, adminCreateOrg, adminCreateUser } from "@/api/admin";
+import { adminApi, adminCreateOrg, adminCreateUser, adminDeleteOrg } from "@/api/admin";
 import { SBadge, StatusMsg } from "./SettingsPrimitives";
 
 type OrgRow = {
@@ -108,6 +109,10 @@ export default function CompaniesSection() {
   const [addingUser, setAddingUser] = useState(false);
 
   const [busyMember, setBusyMember] = useState<string | null>(null);
+
+  const [deleteTarget, setDeleteTarget] = useState<OrgRow | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deleting, setDeleting] = useState(false);
 
   const loadOrgs = useCallback(async () => {
     setLoading(true);
@@ -281,6 +286,39 @@ export default function CompaniesSection() {
     }
   }
 
+  function openDeleteOrg(org: OrgRow) {
+    setDeleteTarget(org);
+    setDeleteConfirmText("");
+    setError(null);
+    setSuccess(null);
+  }
+
+  async function handleDeleteOrg() {
+    if (!deleteTarget) return;
+    if (deleteConfirmText.trim() !== deleteTarget.name) {
+      setError("Type the exact company name to confirm deletion");
+      return;
+    }
+    setDeleting(true);
+    setError(null);
+    try {
+      const res = await adminDeleteOrg({ org_id: deleteTarget.id });
+      if (!res.ok) throw new Error(res.error || "Failed deleting company");
+      setSuccess(`Company "${deleteTarget.name}" deleted`);
+      setDeleteTarget(null);
+      setDeleteConfirmText("");
+      if (selectedOrgId === deleteTarget.id) {
+        setSelectedOrgId(null);
+        setMembers([]);
+      }
+      await loadOrgs();
+    } catch (e: any) {
+      setError(e?.message || "Failed deleting company");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <div>
@@ -394,6 +432,16 @@ export default function CompaniesSection() {
                       <option key={p} value={p}>{planLabel(p)}</option>
                     ))}
                   </select>
+                  <button
+                    type="button"
+                    className="lit-btn-danger-ghost"
+                    style={{ minHeight: 38, padding: "8px 12px" }}
+                    onClick={() => openDeleteOrg(org)}
+                    aria-label={`Delete ${org.name}`}
+                    title="Delete company"
+                  >
+                    <Trash2 size={14} />
+                  </button>
                 </div>
 
                 {isSelected && (
@@ -648,6 +696,68 @@ export default function CompaniesSection() {
                 disabled={addingUser}
               >
                 {addingUser ? "Adding…" : "Add user"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete company modal — type-to-confirm */}
+      {deleteTarget && (
+        <div className="lit-modal-backdrop" onClick={() => !deleting && setDeleteTarget(null)}>
+          <div className="lit-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Delete company">
+            <div className="lit-modal-head">
+              <h3 className="lit-modal-title">Delete company</h3>
+              <button
+                type="button"
+                className="lit-settings-iconbtn"
+                onClick={() => setDeleteTarget(null)}
+                aria-label="Close"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="lit-modal-body">
+              <div className="lit-alert lit-alert-red" style={{ marginBottom: 0 }}>
+                <Trash2 size={15} className="lit-alert-icon" />
+                <div className="lit-alert-body">
+                  This permanently deletes <strong>{deleteTarget.name}</strong> and
+                  its members, invites, and subscription. Business data
+                  (campaigns, leads, etc.) is never wiped silently — deletion
+                  is refused while associated data exists. This cannot be undone.
+                </div>
+              </div>
+              <div>
+                <label className="lit-field-label" htmlFor="delete-org-confirm">
+                  Type <strong>{deleteTarget.name}</strong> to confirm <span className="req">*</span>
+                </label>
+                <input
+                  id="delete-org-confirm"
+                  className="lit-input"
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText((e.target as HTMLInputElement).value)}
+                  placeholder={deleteTarget.name}
+                  autoFocus
+                  autoComplete="off"
+                />
+              </div>
+            </div>
+            <div className="lit-modal-foot">
+              <button
+                type="button"
+                className="lit-btn-ghost"
+                onClick={() => setDeleteTarget(null)}
+                disabled={deleting}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="lit-btn-danger"
+                onClick={handleDeleteOrg}
+                disabled={deleting || deleteConfirmText.trim() !== deleteTarget.name}
+              >
+                {deleting ? "Deleting…" : "Delete company"}
               </button>
             </div>
           </div>

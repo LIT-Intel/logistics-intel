@@ -419,6 +419,100 @@ serve(async (req) => {
       return json({ ok: true, user: { id: newUser.id, email: cleanEmail }, org_id: orgId });
     }
 
+
+    // ── DELETE ORG (manual provisioning) ─────────────────────────────────────
+    // Permanently deletes a company account: the organizations row plus its
+    // membership data. org_members / org_invites / subscriptions all declare
+    // ON DELETE CASCADE on org_id, so removing the organizations row cleans
+    // them up; they are deleted explicitly first for clarity and better
+    // error attribution.
+    //
+    // DEPENDENT-DATA DECISION (deliberate, safe default): org-owned business
+    // data (campaigns, leads, saved companies, quotes, etc.) is NOT
+    // cascade-deleted here. Those tables reference organizations(id) WITHOUT
+    // ON DELETE CASCADE, so Postgres blocks the delete with a foreign-key
+    // violation if any such rows exist — the admin gets a clear 409 and the
+    // company survives untouched. Silently wiping a company's campaigns and
+    // leads would be irreversible and is never the safe default; demo data
+    // should be cleaned up explicitly if deletion must proceed.
+    // Auth users are NOT deleted: a user may belong to other orgs — they
+    // simply lose membership in the deleted company. Stripe-side
+    // subscriptions are untouched (only the local mirror row is removed);
+    // cancel in Stripe directly if a live subscription exists.
+    if (action === "delete_org") {
+      const { org_id } = params as { org_id?: string };
+      const orgId = String(org_id || "");
+      if (!orgId) return json({ error: "org_id required" }, 400);
+
+      const { data: org } = await adminClient
+        .from("organizations")
+        .select("id, name")
+        .eq("id", orgId)
+        .maybeSingle();
+      if (!org) return json({ error: "Organization not found", code: "ORG_NOT_FOUND" }, 404);
+
+      // Guard: never delete the company the calling admin belongs to —
+      // that would orphan their own workspace with no recovery path here.
+      const { data: callerMembership } = await adminClient
+        .from("org_members")
+        .select("org_id")
+        .eq("org_id", orgId)
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (callerMembership) {
+        return json({ error: "You cannot delete the company you belong to" }, 409);
+      }
+
+      const { error: membersErr } = await adminClient
+        .from("org_members")
+        .delete()
+        .eq("org_id", orgId);
+      if (membersErr) {
+        log.warn("delete_org_members_failed", { user_id: user.id, org_id: orgId, detail: membersErr.message });
+        return json({ error: membersErr.message || "Failed removing members" }, 500);
+      }
+
+      const { error: invitesErr } = await adminClient
+        .from("org_invites")
+        .delete()
+        .eq("org_id", orgId);
+      if (invitesErr) {
+        log.warn("delete_org_invites_failed", { user_id: user.id, org_id: orgId, detail: invitesErr.message });
+        return json({ error: invitesErr.message || "Failed removing invites" }, 500);
+      }
+
+      const { error: subErr } = await adminClient
+        .from("subscriptions")
+        .delete()
+        .eq("org_id", orgId);
+      if (subErr) {
+        log.warn("delete_org_sub_failed", { user_id: user.id, org_id: orgId, detail: subErr.message });
+        return json({ error: subErr.message || "Failed removing subscription" }, 500);
+      }
+
+      const { error: orgErr } = await adminClient
+        .from("organizations")
+        .delete()
+        .eq("id", orgId);
+      if (orgErr) {
+        const msg = orgErr.message || "Failed deleting organization";
+        const blocked = /foreign key|violates|still referenced/i.test(msg);
+        log.warn("delete_org_failed", { user_id: user.id, org_id: orgId, detail: msg });
+        return json(
+          {
+            error: blocked
+              ? "Cannot delete company: it still has associated data (campaigns, leads, saved companies, etc.). Remove that data first."
+              : msg,
+            code: blocked ? "ORG_HAS_DATA" : undefined,
+          },
+          blocked ? 409 : 500
+        );
+      }
+
+      log.info("delete_org", { user_id: user.id, org_id: orgId, name: org.name });
+      return json({ ok: true, org: { id: orgId, name: org.name } });
+    }
+
     return json({ error: `Unknown action: ${action}` }, 400);
   } catch (err) {
     console.error("[admin-api] fatal error", err);

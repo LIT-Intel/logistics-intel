@@ -104,3 +104,20 @@ export async function adminCreateUser(
 ): Promise<AdminApiResponse<{ user: { id: string; email: string }; org_id: string }>> {
   return adminApi({ action: "create_user", params: req as unknown as Record<string, unknown> });
 }
+
+export interface AdminDeleteOrgRequest {
+  org_id: string;
+}
+
+/**
+ * Permanently delete a company (organization) account and its membership
+ * data. The UI enforces type-to-confirm before calling. Business data
+ * (campaigns, leads, etc.) is intentionally NOT wiped — the server refuses
+ * deletion while associated data exists. Platform-admin only (gated
+ * server-side). Used to remove demo accounts.
+ */
+export async function adminDeleteOrg(
+  req: AdminDeleteOrgRequest,
+): Promise<AdminApiResponse<{ org: { id: string; name: string } }>> {
+  return adminApi({ action: "delete_org", params: req as unknown as Record<string, unknown> });
+}
