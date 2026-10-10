@@ -29,9 +29,7 @@ import {
 } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
-  SETTINGS_SECTIONS,
   type SettingsSectionId,
-  ProfileSection,
   AlertsNotificationsSection,
   WorkspaceSection,
   BillingSection,
@@ -39,6 +37,7 @@ import {
   PreferencesSection,
   IntegrationsHubSection,
 } from "./SettingsSections";
+import { ProfileSection } from "./SettingsProfile";
 import { SBadge } from "./SettingsPrimitives";
 import SettingsAccountSnapshot from "./SettingsAccountSnapshot";
 import CompaniesSection from "./CompaniesSection";
@@ -46,7 +45,10 @@ import OrgExitRulesPanel from "@/features/outbound/components/OrgExitRulesPanel"
 import OrgEnrichmentSettingsPanel from "@/features/settings/components/OrgEnrichmentSettingsPanel";
 
 // Accepts ?tab=… (case/spacing tolerant) so deep links route correctly.
-function tabParamToSectionId(value?: string | null): SettingsSectionId | null {
+// NOTE: "Companies" is a settings-section extension owned by this layout file
+// (SettingsSections.tsx itself is intentionally untouched).
+type ExtendedSectionId = SettingsSectionId | "Companies";
+function tabParamToSectionId(value?: string | null): ExtendedSectionId | null {
   if (!value) return null;
   const v = String(value).trim().toLowerCase().replace(/[-_\s]+/g, "");
   if (v === "profile") return "Profile";
@@ -210,7 +212,7 @@ export type SettingsLayoutProps = {
 
 // ── Nav groups (mirrors the Admin Control Panel design) ───────────────────────
 type NavItem = {
-  id: SettingsSectionId;
+  id: ExtendedSectionId;
   label: string;
   Icon: React.ComponentType<{ size?: number; color?: string; className?: string }>;
   /** Platform-super-admin-only. Hidden from org owners + regular users. */
@@ -325,8 +327,8 @@ function SettingsNav({
   integrationsBadge,
   query,
 }: {
-  active: SettingsSectionId;
-  onNav: (id: SettingsSectionId) => void;
+  active: ExtendedSectionId;
+  onNav: (id: ExtendedSectionId) => void;
   isPlatformAdmin: boolean;
   workspaceBadge?: React.ReactNode;
   integrationsBadge?: React.ReactNode;
@@ -410,7 +412,7 @@ function ForbiddenSection({ sectionName }: { sectionName: string }) {
 
 // ── renderSection ────────────────────────────────────────────────────────────
 function renderSection(
-  section: SettingsSectionId,
+  section: ExtendedSectionId,
   props: SettingsLayoutProps,
   navigate: (to: string) => void,
   onOpenSecurity: () => void,
@@ -552,7 +554,7 @@ export default function SettingsLayout(props: SettingsLayoutProps) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const initialTab = tabParamToSectionId(searchParams.get("tab")) ?? "Profile";
-  const [activeSection, setActiveSection] = React.useState<SettingsSectionId>(initialTab);
+  const [activeSection, setActiveSection] = React.useState<ExtendedSectionId>(initialTab);
   const [search, setSearch] = React.useState("");
   const [drawerOpen, setDrawerOpen] = React.useState(false);
   // useTransition lets the nav button visually commit immediately while
@@ -570,7 +572,7 @@ export default function SettingsLayout(props: SettingsLayoutProps) {
   }, [searchParams]);
 
   const handleSelectSection = React.useCallback(
-    (id: SettingsSectionId) => {
+    (id: ExtendedSectionId) => {
       // URL update + state set are both deferred via startNav so the
       // pressed/active visual feedback paints first.
       startNav(() => {
