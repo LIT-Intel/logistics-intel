@@ -69,3 +69,38 @@ export async function adminAuditExport(
 export async function adminNotify(req: AdminNotifyRequest): Promise<{ ok: boolean; error?: string }> {
   return invokeEdge<{ ok: boolean; error?: string }>("admin-notify", req as unknown as Record<string, unknown>);
 }
+
+export interface AdminCreateOrgRequest {
+  name: string;
+  plan?: string;
+}
+
+export interface AdminCreateUserRequest {
+  email: string;
+  full_name: string;
+  password: string;
+  org_id: string;
+  role?: "owner" | "admin" | "member";
+  title?: string;
+}
+
+/**
+ * Manually create a company (organization) account — no signup required.
+ * Platform-admin only (gated server-side). Used for demo accounts.
+ */
+export async function adminCreateOrg(
+  req: AdminCreateOrgRequest,
+): Promise<AdminApiResponse<{ org: { id: string; name: string } }>> {
+  return adminApi({ action: "create_org", params: req as unknown as Record<string, unknown> });
+}
+
+/**
+ * Manually create a user and add them to an organization — no invitation
+ * required. The caller sets the password; no invite email is sent.
+ * Platform-admin only (gated server-side). Used for demo accounts.
+ */
+export async function adminCreateUser(
+  req: AdminCreateUserRequest,
+): Promise<AdminApiResponse<{ user: { id: string; email: string }; org_id: string }>> {
+  return adminApi({ action: "create_user", params: req as unknown as Record<string, unknown> });
+}
