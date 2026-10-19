@@ -13,6 +13,7 @@
 // into `lit_importyeti_company_snapshot.parsed_summary`.
 
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
+import { monthlyVolumeEvidence } from "./monthly_volume_evidence.ts";
 import {
   isProviderEnabled,
   recordProviderUsage,
@@ -316,8 +317,7 @@ export function buildParsedSummary(
 
   const last12Keys = getLast12MonthKeys();
 
-  const monthlyMap = parseTimeSeriesToMonthlyVolumes(raw?.time_series);
-  applyRecentBolsFclLclSplits(monthlyMap, raw?.recent_bols);
+  const monthlyMap = new Map(Object.entries(monthlyVolumeEvidence(raw?.time_series, raw?.recent_bols)));
 
   const orderedMonths = Array.from(monthlyMap.entries()).sort((a, b) =>
     a[0].localeCompare(b[0]),

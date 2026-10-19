@@ -1,6 +1,8 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useAuth } from "@/auth/AuthProvider";
+import { ScopedMemoryCache } from "@/lib/scopedMemoryCache";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { springs } from "@/lib/motion";
@@ -42,6 +44,9 @@ import {
   type CrmThemeTokens,
 } from "@/features/crm/CommandCenterTheme";
 // AddCompanyModal import removed — manual company entry no longer offered.
+
+const ownAccountCache = new ScopedMemoryCache<CommandCenterRecord[]>();
+supabase.auth.onAuthStateChange((event) => { if (event === "SIGNED_OUT") ownAccountCache.clear(); });
 
 type SavedCompaniesResponse =
   | CommandCenterRecord[]
@@ -277,16 +282,18 @@ type CrmView = "accounts" | "pipeline" | "tasks" | "reports";
  * the Kanban deals board and "Tasks" is the My-tasks list (CRM Phase 1).
  */
 export default function CommandCenter() {
+  const { user, orgId, plan } = useAuth();
+  const scope = user?.id ? [user.id, orgId || "", plan || ""].join(":") : "";
   // The provider wraps the whole surface so every child (shell + views + drawer)
   // can read the active theme and the `.dark` class is scoped here only.
   return (
     <CommandCenterThemeProvider>
-      <CommandCenterInner />
+      <CommandCenterInner key={scope} scope={scope} />
     </CommandCenterThemeProvider>
   );
 }
 
-function CommandCenterInner() {
+function CommandCenterInner({ scope }: { scope: string }) {
   const { theme, mode } = useCrmTheme();
   const [view, setView] = useState<CrmView>("accounts");
   const [overdueCount, setOverdueCount] = useState(0);
@@ -427,15 +434,17 @@ function ViewTab({ active, onClick, icon, label, badge, badgeTone = "danger" }: 
   );
 }
 
-function AccountsView() {
+function AccountsView({ scope }: { scope: string }) {
+  const requestVersion = useRef(0);
+  const cachedOwnRows = ownAccountCache.get(scope);
   const navigate = useNavigate();
   const { toast } = useToast();
   const { theme, mode } = useCrmTheme();
 
-  const [savedCompanies, setSavedCompanies] = useState<CommandCenterRecord[]>([]);
+  const [savedCompanies, setSavedCompanies] = useState<CommandCenterRecord[]>(() => cachedOwnRows || []);
   const [dealStages, setDealStages] = useState<DealStage[]>([]);
   const [pipelineRow, setPipelineRow] = useState<CreateDealPrefill | null>(null);
-  const [savedLoading, setSavedLoading] = useState(true);
+  const [savedLoading, setSavedLoading] = useState(!cachedOwnRows);
   const [savedError, setSavedError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -476,11 +485,19 @@ function AccountsView() {
   // AddCompanyModal state removed with the manual-entry feature.
 
   const reloadSavedCompanies = useCallback(async () => {
-    setSavedLoading(true);
+    if (!scope) return;
+    const version = ++requestVersion.current;
+    const started = performance.now();
+    setSavedLoading(!ownAccountCache.get(scope));
     setSavedError(null);
     try {
       const response = (await listSavedCompanies()) as SavedCompaniesResponse;
+      if (version !== requestVersion.current) return;
       const ownRows = normalizeSavedCompaniesResponse(response);
+      ownAccountCache.set(scope, ownRows);
+      performance.measure("lit.command-center.own-data", { start: started, end: performance.now() });
+      setSavedCompanies(ownRows);
+      setSavedLoading(false); // Optional enrichment must not gate the saved list.
       // Org-shared saves (org-mates' rows, visible only while the workspace's
       // Account-sharing toggle is ON — RLS scopes the read). Appended after
       // the viewer's own rows with `shared_by` set so they render a
@@ -503,6 +520,8 @@ function AccountsView() {
           (r: any) => !ownKeys.has(canonicalCompanyKey(r?.company?.company_id)),
         );
         if (sharedRecords.length) rows = [...ownRows, ...sharedRecords];
+        if (version !== requestVersion.current) return;
+        setSavedCompanies(rows);
       } catch {
         /* shared saves are additive — never block the viewer's own list */
       }
@@ -523,24 +542,25 @@ function AccountsView() {
               kpis: {
                 ...existingKpis,
                 last_activity:     existingKpis.last_activity     ?? kpiRow.last_shipment_date    ?? null,
-                teu_12m:           existingKpis.teu_12m           ?? kpiRow.all_time_teu_from_series ?? null,
+                teu_12m:           existingKpis.teu_12m           ?? null,
                 fcl_shipments_12m: existingKpis.fcl_shipments_12m ?? kpiRow.fcl_shipments ?? null,
                 lcl_shipments_12m: existingKpis.lcl_shipments_12m ?? kpiRow.lcl_shipments ?? null,
               },
             },
           };
         });
+        if (version !== requestVersion.current) return;
         setSavedCompanies(enriched);
       } catch {
-        setSavedCompanies(rows);
+        if (version === requestVersion.current) setSavedCompanies(rows);
       }
     } catch (error: any) {
+      if (version !== requestVersion.current) return;
       setSavedError(error?.message ?? "Failed to load saved companies");
-      setSavedCompanies([]);
     } finally {
-      setSavedLoading(false);
+      if (version === requestVersion.current) setSavedLoading(false);
     }
-  }, []);
+  }, [scope]);
 
   useEffect(() => {
     let isMounted = true;
@@ -548,7 +568,7 @@ function AccountsView() {
       if (!isMounted) return;
       await reloadSavedCompanies();
     })();
-    return () => { isMounted = false; };
+    return () => { isMounted = false; requestVersion.current++; };
   }, [reloadSavedCompanies]);
 
   // Load the org's pipeline stages once so the per-row "Add to pipeline"

@@ -1,4 +1,5 @@
 import { getGatewayBase } from "@/lib/env";
+import { evidenceMonth, monthlyVolumeEvidence } from "../../../supabase/functions/_shared/monthly_volume_evidence";
 import {
   CompanyLite,
   ShipmentLite,
@@ -1847,6 +1848,8 @@ function normalizeTimeSeries(raw: any): IyTimeSeriesPoint[] {
     if (typeof value !== "string" || !value.trim()) return null;
     const trimmed = value.trim();
     if (/^\d{4}-\d{2}$/.test(trimmed)) return trimmed;
+    const sourceMonth = evidenceMonth(trimmed);
+    if (sourceMonth) return sourceMonth;
     const parsed = new Date(trimmed);
     if (!Number.isNaN(parsed.getTime())) {
       return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}`;
@@ -3856,12 +3859,19 @@ export async function getSavedCompanyShellOnly(
         (snapshotRow as any)?.raw_payload?.data?.suppliers_table ??
         (snapshotRow as any)?.raw_payload?.suppliers_table ??
         null;
-      const cachedSnapshot =
+      let cachedSnapshot =
         baseSnapshot &&
         Array.isArray(richSuppliersTable) &&
         !(baseSnapshot as any).suppliers_table
           ? { ...(baseSnapshot as any), suppliers_table: richSuppliersTable }
           : baseSnapshot;
+      // Repair historical inferred splits at read time from the original source.
+      // No paid provider refresh or destructive snapshot rewrite is needed.
+      const sourceRaw = (snapshotRow as any)?.raw_payload?.data ?? (snapshotRow as any)?.raw_payload;
+      if (cachedSnapshot && sourceRaw?.time_series) {
+        cachedSnapshot = { ...cachedSnapshot, monthly_shipments: undefined,
+          monthly_volumes: monthlyVolumeEvidence(sourceRaw.time_series, sourceRaw.recent_bols) };
+      }
       if (cachedSnapshot && typeof cachedSnapshot === "object") {
         try {
           parsedProfile = normalizeIyCompanyProfile(

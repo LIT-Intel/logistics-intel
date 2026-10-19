@@ -968,7 +968,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
         isStale: true,
       };
       try {
-        cached = await getSavedCompanyShellOnly(companyId);
+        cached = await getSavedCompanyShellOnly(routeOrStoredId || companyId);
       } catch (cacheErr) {
         console.warn(
           "[CompanyProfileV2] cached snapshot read failed",
@@ -976,6 +976,9 @@ function ProfilePanel({ rawId }: { rawId: string }) {
         );
       }
       if (cancelled) return;
+
+      setLoading(false); // Render identity immediately; live provider refresh is secondary.
+      setRefreshing(!cached.profile && !cached.routeKpis);
 
       // Cache miss self-heal. Opening a company straight from a search result
       // used to show an EMPTY profile until a hard refresh: the snapshot is
@@ -1077,7 +1080,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [companyId]);
+  }, [routeOrStoredId]);
 
   // V2 addition — synthetic profile fallback when the snapshot is missing
   // but the company exists in lit_companies (the saved row has KPIs even
@@ -3129,6 +3132,35 @@ function ProfilePanel({ rawId }: { rawId: string }) {
         </div>
         {panelOpen && !["overview", "lanes", "history"].includes(tab) && (
           <CDPDetailsPanel
+            crmPanel={(<CompanyCrmPanel
+        identity={{
+          companyUuid: bundle?.identity?.id ?? null,
+          savedCompanyId: bundle?.identity?.id ?? null,
+          sourceCompanyKey:
+            (bundle?.identity as any)?.source_company_key ??
+            (bundle?.identity as any)?.sourceCompanyKey ??
+            companyId ??
+            null,
+          companyName,
+          companyDomain,
+        }}
+        stages={dealStages}
+        onOpenDeal={(d) => setActiveDeal(d)}
+        onAddToPipeline={() => setCreateDealOpen(true)}
+        canAddToPipeline={dealStages.length > 0}
+        onOpenQuotesTab={() => setTab("quotes")}
+        onOpenInboxTab={() => setTab("inbox")}
+        onOpenContactsTab={() => setTab("contacts")}
+        onStartOutreach={() => setCampaignModalOpen(true)}
+        onOpenCampaign={(id) => navigate(`/app/campaigns/new?edit=${id}`)}
+        onOpenQuote={(id) => navigate(`/app/quoting/${id}`)}
+        onNewQuote={() =>
+          navigate(
+            `/app/quoting/new${companyId ? `?company_id=${companyId}` : ""}`,
+          )
+        }
+        refreshKey={crmRefreshKey}
+      />)}
             company={
               {
                 domain: companyDomain,
@@ -3363,12 +3395,13 @@ function ProfilePanel({ rawId }: { rawId: string }) {
 
 export default function CompanyProfileV2() {
   const params = useParams();
+  const auth = useAuth();
   const rawId = params.id ?? null;
   return (
     <CompanyProfileGuard rawId={rawId}>
       {(resolvedId) => (
         <V2ErrorBoundary rawId={resolvedId}>
-          <ProfilePanel rawId={resolvedId} />
+          <ProfilePanel key={[auth?.user?.id, auth?.orgId, auth?.plan, resolvedId].join(":")} rawId={resolvedId} />
         </V2ErrorBoundary>
       )}
     </CompanyProfileGuard>

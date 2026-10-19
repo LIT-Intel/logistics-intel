@@ -1,3 +1,4 @@
+import { bolPage, bolPageResponse } from "../_shared/bol_pagination.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
@@ -1017,10 +1018,13 @@ async function handleCompanyBolsAction(
   requestId: string,
   userId: string | null = null,
   orgId: string | null = null,
+  pageInput: { limit?: unknown; offset?: unknown } = {},
 ) {
   console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
   console.log("📋 COMPANY BOLS REQUEST:", { requestId, companyId });
 
+  const { limit, offset } = bolPage(pageInput);
+  const paginated = pageInput.limit != null || pageInput.offset != null;
   const env = buildEnvConfig();
   if (!env.isValid) {
     return jsonResponse({ ok: false, error: "ImportYeti API key not configured", code: "IY_API_KEY_MISSING" }, 500);
@@ -1050,7 +1054,7 @@ async function handleCompanyBolsAction(
     const cached = await getCachedSnapshot(supabase, normalizedCompanyKey);
 
     if (
-      cached?.data?.raw_payload?.data?.recent_bols &&
+      !paginated && cached?.data?.raw_payload?.data?.recent_bols &&
       Array.isArray(cached.data.raw_payload.data.recent_bols)
     ) {
       console.log(
@@ -1063,12 +1067,14 @@ async function handleCompanyBolsAction(
         ok: true,
         rows: cached.data.raw_payload.data.recent_bols,
         total: cached.data.raw_payload.data.recent_bols.length,
+        coverage: "sample",
+        source: "snapshot_recent_bols",
         cached_at: cached.data.updated_at,
       });
     }
 
     if (
-      Array.isArray(cached?.data?.raw_payload?.recent_bols)
+      !paginated && Array.isArray(cached?.data?.raw_payload?.recent_bols)
     ) {
       console.log(
         "✅ recent_bols from cached payload:",
@@ -1080,6 +1086,8 @@ async function handleCompanyBolsAction(
         ok: true,
         rows: cached.data.raw_payload.recent_bols,
         total: cached.data.raw_payload.recent_bols.length,
+        coverage: "sample",
+        source: "snapshot_recent_bols",
         cached_at: cached.data.updated_at,
       });
     }
@@ -1088,7 +1096,7 @@ async function handleCompanyBolsAction(
     // upstream on EVERY call (a paid IY request each time, amplified by the
     // old 1 s ShipmentsPanel refetch loop). Serve from lit_importyeti_cache
     // within the TTL before paying again.
-    const bolsCacheKey = `bols:${normalizedCompanyKey}`;
+    const bolsCacheKey = `bols:${normalizedCompanyKey}:${limit}:${offset}`;
     try {
       const { data: bolsHit } = await supabase
         .from("lit_importyeti_cache")
@@ -1120,7 +1128,7 @@ async function handleCompanyBolsAction(
       return providerDisabledResponse();
     }
 
-    const upstream = await fetchCompanyBolsUpstream(normalizedCompanyKey, env);
+    const upstream = await fetchCompanyBolsUpstream(normalizedCompanyKey, env, limit, offset);
     console.log("✅ BOL rows fetched:", upstream.rows.length);
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
@@ -1141,11 +1149,7 @@ async function handleCompanyBolsAction(
     });
     await updateProviderBalance(supabase, PROVIDERS.IMPORTYETI, bolsCreditsRemaining);
 
-    const bolsBody = {
-      ok: true,
-      rows: upstream.rows,
-      total: upstream.rows.length,
-    };
+    const bolsBody = bolPageResponse(upstream.rows, upstream.raw, limit, offset);
 
     try {
       await supabase.from("lit_importyeti_cache").upsert(
@@ -2220,7 +2224,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (resolvedAction === "companyBols") {
-      return await handleCompanyBolsAction(supabase, requestedCompanyId, requestId, userId, orgIdForUsage);
+      return await handleCompanyBolsAction(supabase, requestedCompanyId, requestId, userId, orgIdForUsage, { limit: body?.limit, offset: body?.offset });
     }
 
     if (resolvedAction === "reparseAll" || resolvedAction === "reparse") {

@@ -191,7 +191,7 @@ export default function CompanyCrmPanel(props: CompanyCrmPanelProps) {
     .reduce((s, d) => s + (Number(d.value_amount) || 0), 0);
 
   return (
-    <div className="px-4 pt-3 md:px-6">
+    <div className="py-3">
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
         {/* Header — click to expand/collapse (collapsed by default) */}
         <button
@@ -238,7 +238,7 @@ export default function CompanyCrmPanel(props: CompanyCrmPanelProps) {
         {!collapsed && (
           <>
         {/* Body grid */}
-        <div className="grid grid-cols-1 gap-px overflow-hidden rounded-b-2xl bg-slate-100 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-px overflow-hidden rounded-b-2xl bg-slate-100 ">
           {/* Deals */}
           <Cell>
             <CellHead
