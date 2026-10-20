@@ -2836,14 +2836,9 @@ export function normalizeIyCompanyProfile(
     monthly_volumes: snapshot?.monthly_volumes,
     recent_bols: Array.isArray(snapshot?.recent_bols) ? snapshot.recent_bols : undefined,
     time_series: snapshot?.time_series ?? snapshot?.monthly_volumes,
-    containers_load:
-      snapshot?.containers_load ??
-      ((snapshot?.fcl_count !== undefined || snapshot?.lcl_count !== undefined)
-        ? [
-            { load_type: "FCL", shipments: snapshot.fcl_count ?? 0 },
-            { load_type: "LCL", shipments: snapshot.lcl_count ?? 0 },
-          ]
-        : undefined),
+    // Preserve the provider's all-time split; trailing-year counts have a
+    // different scope and must not be substituted into this field.
+    containers_load: snapshot?.containers_load,
     company_id: companyId,
     key: companyId,
 

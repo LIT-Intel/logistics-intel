@@ -27,6 +27,7 @@ import { fmtMoney, fmtNum, miLabel } from "../../data/format";
 import type { FacetItemVM, ProfileView } from "../../data/selectors";
 import type { ShipmentDataset } from "../../data/types";
 import type { ProfileExtraActions } from "../../data/useProfileState";
+import { hasCompleteMonthlyModes, type ServiceMix } from "../../data/serviceMix";
 import {
   Card,
   DeltaPill,
@@ -266,13 +267,16 @@ export function CadenceChart({
   view,
   extra,
   showPrior = true,
+  serviceMix,
 }: {
   view: ProfileView;
   extra: ProfileExtraActions;
   showPrior?: boolean;
+  serviceMix?: ServiceMix | null;
 }) {
   const reduced = useReducedMotion();
   const prior = showPrior && view.hasPrior;
+  const splitMonths = view.unitM === "shipments" && hasCompleteMonthlyModes(view.cadence);
   return (
     <Card className="min-w-0 px-6 py-5 min-[980px]:col-span-2">
       <div className="flex flex-wrap justify-between gap-4">
@@ -292,11 +296,10 @@ export function CadenceChart({
         <div className="flex items-start gap-3.5 text-[12px] text-[#475569]">
           <span className="flex items-center gap-1.5">
             <span className="h-2.5 w-2.5 rounded-[3px] bg-[#3b82f6]" />
-            {view.unitM === "shipments" ? "FCL" : "Selected period"}
+            {splitMonths ? "FCL" : view.unitM === "shipments" ? "Total shipments" : "Selected period"}
           </span>
-          {view.unitM === "shipments" && <>
+          {splitMonths && <>
             <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-[3px] bg-[#86EFAC]" />LCL</span>
-            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-[3px] bg-[#94A3B8]" />Mode unavailable</span>
           </>}
           {prior && (
             <span className="flex items-center gap-1.5">
@@ -338,7 +341,8 @@ export function CadenceChart({
               <strong>{b.fullLabel}</strong><br />
               {fmtNum(b.v)} {view.unitM}
               {prior && <p className="mt-1">{b.priorLabel}: {fmtNum(b.pv)} {view.unitM}</p>}
-              {view.unitM === "shipments" && <p className="mt-1">Observed FCL: {b.services.fcl} · LCL: {b.services.lcl}<br />Mode unavailable: {b.services.unknown}</p>}
+              {splitMonths && <p className="mt-1">FCL: {b.services.fcl} · LCL: {b.services.lcl}</p>}
+              {view.unitM === "shipments" && !splitMonths && <p className="mt-1">Monthly total. An exact FCL/LCL split is not supplied for this period.</p>}
             </div>
             {prior && (
               <div
@@ -354,15 +358,14 @@ export function CadenceChart({
             <div
               className="flex h-full flex-1 flex-col justify-end overflow-hidden rounded-t"
               style={{
-                background: view.unitM === "shipments" ? "transparent" : b.bg,
+                background: splitMonths ? "transparent" : b.bg,
                 transform: `scaleY(${b.s})`,
                 transformOrigin: "bottom",
                 transition: reduced ? "background 160ms" : `transform 520ms ${EASE_OUT}, background 160ms`,
                 transitionDelay: reduced ? "0ms" : `${b.delay}ms`,
               }}
             >
-              {view.unitM === "shipments" && [
-                { count: b.services.unknown, color: "#94A3B8" },
+              {splitMonths && [
                 { count: b.services.lcl, color: "#86EFAC" },
                 { count: b.services.fcl, color: b.bg },
               ].map(segment => <span key={segment.color} style={{ height: `${segment.count / (b.services.total || 1) * 100}%`, background: segment.color }} />)}
@@ -381,6 +384,14 @@ export function CadenceChart({
           </div>
         ))}
       </div>
+      {view.unitM === "shipments" && serviceMix && <div className="mt-3 text-xs text-[#475569]">
+        <div>Source-reported service mix · All time</div>
+        <div className="mt-1 flex gap-4">
+          <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-[#3b82f6]" />FCL {((serviceMix.fcl / serviceMix.total) * 100).toFixed(2)}% · {fmtNum(serviceMix.fcl)}</span>
+          <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-[#86EFAC]" />LCL {((serviceMix.lcl / serviceMix.total) * 100).toFixed(2)}% · {fmtNum(serviceMix.lcl)}</span>
+        </div>
+      </div>}
+      {view.unitM === "shipments" && !splitMonths && <p className="mt-2 text-xs text-[#64748b]">Blue bars show total shipments. The source does not provide a complete monthly FCL/LCL breakdown.</p>}
       <div className="mt-3 text-[12px] text-[#94a3b8]">Click a month to see its bills of lading</div>
     </Card>
   );
