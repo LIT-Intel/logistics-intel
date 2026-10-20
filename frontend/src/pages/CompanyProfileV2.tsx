@@ -72,6 +72,7 @@ import AddToListPicker from "@/features/pulse/AddToListPicker";
 import CreateDealModal, { type CreateDealPrefill } from "@/features/crm/CreateDealModal";
 import DealDetailDrawer from "@/features/crm/DealDetailDrawer";
 import CompanyCrmPanel from "@/components/company/CompanyCrmPanel";
+import IncumbentForwarderCard from "@/components/company/IncumbentForwarderCard";
 import {
   HARVEY_COMPANY_CONTEXT_EVENT,
   HARVEY_COMPANY_CONTEXT_STORAGE_KEY,
@@ -943,7 +944,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
       setLoading(false);
       setRefreshing(true);
     } else {
-      setLoading(true);
+      setLoading(false);
       setRefreshing(false);
     }
 
@@ -968,7 +969,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
         isStale: true,
       };
       try {
-        cached = await getSavedCompanyShellOnly(companyId);
+        cached = await getSavedCompanyShellOnly(routeOrStoredId || companyId);
       } catch (cacheErr) {
         console.warn(
           "[CompanyProfileV2] cached snapshot read failed",
@@ -976,6 +977,9 @@ function ProfilePanel({ rawId }: { rawId: string }) {
         );
       }
       if (cancelled) return;
+
+      setLoading(false); // Render identity immediately; live provider refresh is secondary.
+      setRefreshing(!cached.profile && !cached.routeKpis);
 
       // Cache miss self-heal. Opening a company straight from a search result
       // used to show an EMPTY profile until a hard refresh: the snapshot is
@@ -1077,7 +1081,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [companyId]);
+  }, [routeOrStoredId]);
 
   // V2 addition — synthetic profile fallback when the snapshot is missing
   // but the company exists in lit_companies (the saved row has KPIs even
@@ -2586,6 +2590,40 @@ function ProfilePanel({ rawId }: { rawId: string }) {
     );
   }
 
+  const crmPanel = (<CompanyCrmPanel
+              identity={{
+                companyUuid: bundle?.identity?.id ?? null,
+                savedCompanyId: bundle?.identity?.id ?? null,
+                sourceCompanyKey:
+                  (bundle?.identity as any)?.source_company_key ??
+                  (bundle?.identity as any)?.sourceCompanyKey ??
+                  companyId ??
+                  null,
+                companyName,
+                companyDomain,
+              }}
+              stages={dealStages}
+              onOpenDeal={(d) => setActiveDeal(d)}
+              onAddToPipeline={() => setCreateDealOpen(true)}
+              canAddToPipeline={dealStages.length > 0}
+              onOpenQuotesTab={() => setTab("quotes")}
+              onOpenInboxTab={() => setTab("inbox")}
+              onOpenContactsTab={() => setTab("contacts")}
+              onStartOutreach={() => setCampaignModalOpen(true)}
+              onOpenCampaign={(id) => navigate(`/app/campaigns/new?edit=${id}`)}
+              onOpenQuote={(id) => navigate(`/app/quoting/${id}`)}
+              onNewQuote={() =>
+                navigate(
+                  `/app/quoting/new${companyId ? `?company_id=${companyId}` : ""}`,
+                )
+              }
+              onNewRfp={() =>
+                navigate(
+                  `/app/rfp/new${(bundle?.identity?.id ?? companyId) ? `?company_id=${encodeURIComponent(bundle?.identity?.id ?? companyId)}` : ""}`,
+                )
+              }
+              refreshKey={crmRefreshKey}
+            />);
   // ── Initial loading skeleton ────────────────────────────────────────────
   if (loading && !profile && !shellCompany) {
     return (
@@ -2763,7 +2801,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
                 saving={savingStar}
               />
             ) : (
-            <CompanyProfileWorkspace
+            <CompanyProfileWorkspace crmPanel={<>{crmPanel}<IncumbentForwarderCard bols={(profile as any)?.recentBols ?? []} /></>}
               tab={tab as WorkspaceTab}
               workspace={v2Workspace}
               companyName={companyName}
@@ -3086,49 +3124,10 @@ function ProfilePanel({ rawId }: { rawId: string }) {
             <CompanyQuotesTab companyId={companyId} />
           )}
 
-          {/* CRM / Revenue 360 panel — deals, quotes, tasks, campaigns and
-              email threads for this company. Relocated from the old header
-              stack (design §14.9) to the foot of every tab; collapsed until
-              opened, and "Add to pipeline" lives inside it. */}
-          <div className="mt-5">
-            <CompanyCrmPanel
-              identity={{
-                companyUuid: bundle?.identity?.id ?? null,
-                savedCompanyId: bundle?.identity?.id ?? null,
-                sourceCompanyKey:
-                  (bundle?.identity as any)?.source_company_key ??
-                  (bundle?.identity as any)?.sourceCompanyKey ??
-                  companyId ??
-                  null,
-                companyName,
-                companyDomain,
-              }}
-              stages={dealStages}
-              onOpenDeal={(d) => setActiveDeal(d)}
-              onAddToPipeline={() => setCreateDealOpen(true)}
-              canAddToPipeline={dealStages.length > 0}
-              onOpenQuotesTab={() => setTab("quotes")}
-              onOpenInboxTab={() => setTab("inbox")}
-              onOpenContactsTab={() => setTab("contacts")}
-              onStartOutreach={() => setCampaignModalOpen(true)}
-              onOpenCampaign={(id) => navigate(`/app/campaigns/new?edit=${id}`)}
-              onOpenQuote={(id) => navigate(`/app/quoting/${id}`)}
-              onNewQuote={() =>
-                navigate(
-                  `/app/quoting/new${companyId ? `?company_id=${companyId}` : ""}`,
-                )
-              }
-              onNewRfp={() =>
-                navigate(
-                  `/app/rfp/new${(bundle?.identity?.id ?? companyId) ? `?company_id=${encodeURIComponent(bundle?.identity?.id ?? companyId)}` : ""}`,
-                )
-              }
-              refreshKey={crmRefreshKey}
-            />
-          </div>
         </div>
         {panelOpen && !["overview", "lanes", "history"].includes(tab) && (
           <CDPDetailsPanel
+            crmPanel={<>{crmPanel}<IncumbentForwarderCard bols={(profile as any)?.recentBols ?? []} /></>}
             company={
               {
                 domain: companyDomain,
@@ -3363,12 +3362,13 @@ function ProfilePanel({ rawId }: { rawId: string }) {
 
 export default function CompanyProfileV2() {
   const params = useParams();
+  const auth = useAuth();
   const rawId = params.id ?? null;
   return (
     <CompanyProfileGuard rawId={rawId}>
       {(resolvedId) => (
         <V2ErrorBoundary rawId={resolvedId}>
-          <ProfilePanel rawId={resolvedId} />
+          <ProfilePanel key={[auth?.user?.id, auth?.orgId, auth?.plan, resolvedId].join(":")} rawId={resolvedId} />
         </V2ErrorBoundary>
       )}
     </CompanyProfileGuard>

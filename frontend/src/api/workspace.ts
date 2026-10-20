@@ -53,8 +53,11 @@ export async function getWorkspaceKpis(): Promise<WorkspaceKpis | null> {
  */
 export async function getWorkspaceSavedCompanies(): Promise<{ rows: any[] }> {
   try {
-    const { data: user } = await supabase.auth.getUser();
-    if (!user?.user) return { rows: [] };
+    // AuthProvider already resolved the viewer. Avoid another network auth
+    // round trip before the saved-account query; database RLS still verifies
+    // the session token and determines every visible row.
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return { rows: [] };
 
     const { data, error } = await supabase
       .from("lit_saved_companies")

@@ -46,6 +46,7 @@ function RailRow({
 }
 
 export interface InsightRailProps {
+  crmPanel?: React.ReactNode;
   view: ProfileView;
   account?: { ownerName?: string; stage?: string; lastActivity?: string; lists?: string };
   firmo?: { website?: string; phone?: string; hq?: string; parent?: string };
@@ -53,7 +54,7 @@ export interface InsightRailProps {
   onFindContacts?: () => void;
 }
 
-export function InsightRail({ view, account, firmo, savedContacts = 0, onFindContacts }: InsightRailProps) {
+export function InsightRail({ crmPanel, view, account, firmo, savedContacts = 0, onFindContacts }: InsightRailProps) {
   const lanes: any[] = Array.isArray(view.lanes) ? view.lanes : [];
   const carriers: any[] = Array.isArray(view.carriers) ? view.carriers : [];
   const suppliers: any[] = Array.isArray(view.suppliers) ? view.suppliers : [];
@@ -224,6 +225,7 @@ export function InsightRail({ view, account, firmo, savedContacts = 0, onFindCon
           {firmoRows}
         </Card>
       )}
+      {crmPanel}
     </aside>
   );
 }

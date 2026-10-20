@@ -94,30 +94,24 @@ export function useCompanyLaneMonths(
       // the trailing-12 vs prior-12 slices always have a full prior year to
       // compare against, even for companies whose latest month is stale. The
       // table is company-scoped and tiny, so the wider window is negligible.
-      const now = new Date();
-      const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 59, 1));
-      const startIso = start.toISOString().slice(0, 10);
       // `.in()` with both the bare slug and the raw key — the rollup table
       // stores bare slugs today, but tolerate prefixed rows defensively.
       const candidates = Array.from(
         new Set([rollupId, String(companyId).trim()].filter(Boolean)),
       );
-      const { data, error } = await supabase
-        .from("lit_company_lane_months")
-        .select(
-          "origin_country, origin_city, dest_country, dest_state, dest_city, month, shipments, teu, refreshed_at",
-        )
-        .in("company_id", candidates)
-        .gte("month", startIso)
-        .order("month", { ascending: true });
-      if (error) {
-        // Table not deployed on this environment / transient failure —
-        // degrade to the empty state rather than throwing.
-        console.warn(
-          "[laneHistory] lit_company_lane_months query failed:",
-          error.message,
-        );
-        return [];
+      const data: any[] = [];
+      const pageSize = 1000;
+      for (let offset = 0; ; offset += pageSize) {
+        const { data: page, error } = await supabase
+          .from("lit_company_lane_months")
+          .select("id, origin_country, origin_city, dest_country, dest_state, dest_city, month, shipments, teu, refreshed_at")
+          .in("company_id", candidates)
+          .order("month", { ascending: true })
+          .order("id", { ascending: true })
+          .range(offset, offset + pageSize - 1);
+        if (error) throw error; // Never publish a truncated result as complete.
+        data.push(...(page || []));
+        if (!page || page.length < pageSize) break;
       }
       return (Array.isArray(data) ? data : []).map((r: any) => ({
         origin_country: String(r.origin_country ?? "Unknown"),

@@ -64,9 +64,20 @@ export function useProfileState(ds: ShipmentDataset | null): UseProfileStateResu
   // Initialize from URL once the dataset (and thus the month frame) exists.
   useEffect(() => {
     if (!ds || initedFor.current === ds) return;
+    const previous=initedFor.current;
     initedFor.current = ds;
     const presets = computePresets(ds);
     const clampMi = (v: number) => Math.max(0, Math.min(ds.lastMi, Math.round(v)));
+    // Additional pages can extend the history anchor. Preserve the user's
+    // actual dates and filters when the next independent data source lands.
+    if (previous) {
+      setSt(s => {
+        const selectedPreset=presets.find(p=>p.id===s.preset);
+        const shift=(previous.firstYear-ds.firstYear)*12;
+        return {...s,m0:selectedPreset?.m0 ?? clampMi(s.m0+shift),m1:selectedPreset?.m1 ?? clampMi(s.m1+shift),hover:null,trace:null,intro:false};
+      });
+      return;
+    }
     const f: Filters = {};
     for (const d of DIMS) {
       const vals = params.getAll(d);

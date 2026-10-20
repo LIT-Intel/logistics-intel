@@ -5,8 +5,8 @@
  */
 import { describe, expect, it } from "vitest";
 import { rateForYear, type UnifiedShipmentDbRow } from "../normalizeShipments";
-import { assembleDataset, blendMode, type LaneMonthDbRow, type TsMonthlyDbRow } from "../rollups";
-import { computeView } from "../selectors";
+import { assembleDataset, blendedMonth, blendMode, type LaneMonthDbRow, type TsMonthlyDbRow } from "../rollups";
+import { computeLanes, computeView } from "../selectors";
 import type { ProfileActions, ProfileState } from "../types";
 
 const NOW = new Date(2026, 8, 26); // Sep 2026
@@ -78,6 +78,13 @@ const LANES: LaneMonthDbRow[] = TS.map((r) => ({
 const ds = assembleDataset({ bolRows: BOLS, tsRows: TS, laneRows: LANES }, null, NOW)!;
 
 describe("assembleDataset", () => {
+  it("fills missing archive classifications only from the same identified BOL", () => {
+    const archive={...BOLS[0],lcl:null,load_type:null};
+    const enriched=assembleDataset({bolRows:[archive],tsRows:[],laneRows:[]},[{bolNumber:archive.bol_number,lcl:true}],NOW)!;
+    expect(enriched.rows[0].mode).toBe('LCL');
+    const unrelated=assembleDataset({bolRows:[archive],tsRows:[],laneRows:[]},[{bolNumber:'another',lcl:true}],NOW)!;
+    expect(unrelated.rows[0].mode).toBe('Unknown');
+  });
   it("anchors the month frame to the earliest rollup year", () => {
     expect(ds.firstYear).toBe(2023);
     expect(ds.rollup?.firstMi).toBe(9); // Oct 2023
@@ -136,6 +143,24 @@ describe("blended volume surfaces", () => {
 });
 
 describe("blend gating", () => {
+  it("retains a reported zero and never replaces source TEU with a larger modeled document estimate", () => {
+    const sample=assembleDataset({bolRows:BOLS,tsRows:[{year:2026,month:8,shipments:0,teu:0}],laneRows:[]},null,NOW)!;
+    const mi=(2026-sample.firstYear)*12+7;
+    expect(blendedMonth(sample,'full',[],mi,{shipments:2,teu:6,spend:100})).toMatchObject({shipments:0,teu:0});
+  });
+  it("uses all stored lane history and preserves missing coverage instead of scaling the document sample", () => {
+    const state=st(0,ds.lastMi);
+    const view=computeView(ds,state,noop);
+    const lanes=computeLanes(ds,state,noop);
+    const china=lanes.lanesD.find(l=>l.key==='CN-US')!;
+    expect(china.shipmentsN).toBe(TS.length*3);
+    expect(china.shipmentsN).toBeGreaterThan(50);
+    const observed=lanes.lanesD.reduce((sum,l)=>sum+l.shipmentsN,0);
+    expect(observed).toBeLessThan(view.S.shipments);
+    expect(lanes.stackBars.reduce((sum,b)=>sum+b.tN,0)).toBe(observed);
+    expect(view.cadence.reduce((sum,b)=>sum+b.v,0)).toBe(view.S.shipments);
+    expect(view.cadence.reduce((sum,b)=>sum+b.services.fcl+b.services.lcl+b.services.unknown,0)).toBe(view.S.shipments);
+  });
   it("any non-lane facet filter reverts to documents-only", () => {
     expect(blendMode(ds, { ctype: ["40HC"] })).toBe("docs");
     const view = computeView(ds, st(0, ds.lastMi, { f: { ctype: ["40HC"] } }), noop);

@@ -44,7 +44,7 @@ function ForwarderRow({ f, rank }: { f: CompanyForwarder; rank: number }) {
           </span>
           {rank === 0 ? (
             <span className="shrink-0 rounded-full border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-blue-700">
-              Primary
+              Most observed
             </span>
           ) : null}
           {stale ? (
@@ -84,12 +84,12 @@ export default function CDPForwarders({ companyId }: { companyId: string | null 
       title={
         <span className="inline-flex items-center gap-2">
           <Handshake className="h-4 w-4 text-blue-600" />
-          Forwarders &amp; Brokers
+          Notify parties · role unverified
         </span>
       }
     >
       <p className="font-body mb-1 text-[12px] leading-snug text-slate-500">
-        Who moves their freight — the incumbent{data.length > 1 ? "s" : ""} you&apos;re selling against.
+        Parties named on import documents. A notify-party entry alone does not confirm an incumbent forwarder or broker relationship.
       </p>
       <ul className="divide-y divide-slate-100">
         {data.map((f, i) => (

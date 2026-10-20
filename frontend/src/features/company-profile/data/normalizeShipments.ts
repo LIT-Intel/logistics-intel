@@ -210,7 +210,7 @@ export function normalizeUnifiedShipments(
       dPort: clean(r.destination_port),
       carrier: scac || "—",
       carrierName: clean(r.carrier_name) || scac || "Unknown carrier",
-      mode: isLcl ? "LCL" : "FCL",
+      mode: isLcl ? "LCL" : r.lcl === false || clean(r.load_type).toUpperCase() === "FCL" ? "FCL" : "Unknown",
       ctype,
       containers,
       teu,
@@ -273,7 +273,7 @@ export function normalizeRecentBols(
       dPort: clean(b.destination),
       carrier: scac || "—",
       carrierName: clean(b.carrier_name) || scac || "Unknown carrier",
-      mode: isLcl ? "LCL" : "FCL",
+      mode: isLcl ? "LCL" : b.lcl === false ? "FCL" : "Unknown",
       ctype: isLcl ? "LCL" : null, // ImportYeti sample carries no container type
       containers,
       teu,

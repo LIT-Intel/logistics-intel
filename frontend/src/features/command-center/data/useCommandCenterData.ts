@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/auth/AuthProvider";
 import { useDashboardData } from "@/features/dashboard/data/useDashboardData";
 import {
   deriveAccounts,
@@ -61,12 +62,14 @@ async function chunkedIn<T>(
 
 export interface CommandCenterData {
   loading: boolean;
+  historyLoading: boolean;
   accounts: AccountDerived[];
   contacts: CCContact[];
   owners: { id: string; name: string; key: string; color: string }[];
 }
 
 export function useCommandCenterData(): CommandCenterData {
+  const { user, orgId, plan } = useAuth();
   const dash = useDashboardData();
   const uuids = useMemo(
     () => (dash.ds?.companies ?? []).map((c) => c.uuid).filter(Boolean) as string[],
@@ -74,7 +77,7 @@ export function useCommandCenterData(): CommandCenterData {
   );
 
   const contactsQ = useQuery({
-    queryKey: ["cc-contacts", uuids.join("|")],
+    queryKey: ["cc-contacts", user?.id, orgId, plan, uuids.join("|")],
     enabled: uuids.length > 0,
     staleTime: FIVE_MIN,
     queryFn: async () => {
@@ -156,8 +159,16 @@ export function useCommandCenterData(): CommandCenterData {
     if (!dash.ds) return [];
     const counts = new Map<string, number>();
     contacts.forEach((c) => counts.set(c.companyUuid, (counts.get(c.companyUuid) ?? 0) + 1));
-    return deriveAccounts(dash.ds, counts);
-  }, [dash.ds, contacts]);
+    const derived = deriveAccounts(dash.ds, counts);
+    if (!dash.historyLoading) return derived;
+    const saved = new Map(dash.savedRows.map(r => [r.company?.id, r.company?.kpis]));
+    return derived.map(account => {
+      const kpis = saved.get(account.co.uuid);
+      return { ...account, ship: Number(kpis?.shipments_12m) || 0,
+        teu: Number(kpis?.teu_12m) || 0, spend: Number(kpis?.est_spend_12m) || 0,
+        yoy: null, series: [], sig: { t: "Loading monthly history", icon: "clock", color: "#64748b" } };
+    });
+  }, [dash.ds, dash.historyLoading, dash.savedRows, contacts]);
 
   const owners = useMemo(() => {
     const seen = new Map<string, { id: string; name: string; key: string; color: string }>();
@@ -169,7 +180,7 @@ export function useCommandCenterData(): CommandCenterData {
     return [...seen.values()];
   }, [dash.ds]);
 
-  return { loading: dash.loading || (uuids.length > 0 && contactsQ.isLoading), accounts, contacts, owners };
+  return { loading: dash.savedLoading, historyLoading: dash.historyLoading, accounts, contacts, owners };
 }
 
 // ---------------------------------------------------------------- state

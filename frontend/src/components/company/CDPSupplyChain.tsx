@@ -1,3 +1,4 @@
+import { cadenceCounts, explicitForwarder, laneCoverage } from "@/lib/intelEvidence";
 import {
   createContext,
   useCallback,
@@ -819,13 +820,15 @@ function CadenceAndModalMix({
     label: c.label,
     fcl: c.fcl,
     lcl: c.lcl,
-    priorTotal: showYoy ? priorByMonth.get(i + 1) ?? 0 : 0,
+    unknown: Math.max(0, c.total - c.fcl - c.lcl),
+    priorTotal: showYoy ? priorByMonth.get(i + 1) ?? null : null,
   }));
   const serviceBars = [
     { key: "fcl", label: "FCL", color: "#0EA5E9" },
-    { key: "lcl", label: "LCL", color: "#F59E0B" },
+    { key: "lcl", label: "LCL", color: "#86EFAC" },
+    { key: "unknown", label: "Ocean — mode unavailable", color: "#94A3B8" },
   ].filter((bar) =>
-    chartData.some((point) => Number(point[bar.key as "fcl" | "lcl"] || 0) > 0),
+    chartData.some((point) => Number(point[bar.key as "fcl" | "lcl" | "unknown"] || 0) > 0),
   );
 
   const fcl = containerProfile.fcl;
@@ -945,8 +948,7 @@ function CadenceAndModalMix({
             </ResponsiveContainer>
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-3">
-            <LegendDot color="#0EA5E9" label="FCL" />
-            <LegendDot color="#F59E0B" label="LCL" />
+            {serviceBars.map((bar) => <LegendDot key={bar.key} color={bar.color} label={bar.label} />)}
             {showYoy && <LegendDot color="#CBD5E1" label={`${priorYear} total`} />}
             {hasMxAir ? (
               <LegendDot color="#8B5CF6" label={`Air - ${mxAirCount} MX`} />
@@ -988,7 +990,7 @@ function CadenceBarTooltip({ active, payload, label }: any) {
       value: Number(entry.value || 0),
       color: entry.color || entry.fill,
     }));
-  if (!rows.length && priorTotal <= 0) return null;
+  if (!rows.length && !priorEntry) return null;
   const total = rows.reduce((sum, row) => sum + row.value, 0);
   const yoyPct =
     priorTotal > 0 ? Math.round(((total - priorTotal) / priorTotal) * 100) : null;
@@ -1009,7 +1011,7 @@ function CadenceBarTooltip({ active, payload, label }: any) {
       <div className="mt-1 border-t border-slate-100 pt-1 font-mono text-[10px] text-slate-500">
         {total} shipments this month
       </div>
-      {priorTotal > 0 && (
+      {priorEntry && (
         <div className="mt-1 border-t border-slate-100 pt-1 font-mono text-[10px] text-slate-500">
           {priorTotal.toLocaleString()} prior year
           {yoyPct != null && (
@@ -3570,7 +3572,7 @@ function TopLanesCard({
   const rollupRows = laneMonthsQuery.data;
   const hasRollup = Array.isArray(rollupRows) && rollupRows.length > 0;
 
-  const [yearFilter, setYearFilter] = useState<number | null>(null);
+  const [yearFilter, setYearFilter] = useState<number | null>(selectedYear ?? null);
   const [monthFilter, setMonthFilter] = useState<number | null>(null);
   const [showAllLanes, setShowAllLanes] = useState(false);
   const scopeActive = yearFilter != null || monthFilter != null;
@@ -3751,7 +3753,7 @@ function TopLanesCard({
     if (scoped.pairs.length > 0) return scoped.pairs;
     // Scoped but empty sample → if the period has real total volume, model
     // the split from the all-time snapshot lanes; else stay honestly empty.
-    if (scopeTotal && scopeTotal.shipments > 0 && pairs.length > 0) return pairs;
+    // No evidence for this period: keep its lane breakdown unavailable.
     return scoped.pairs;
   }, [scoped, pairs, scopeTotal]);
   /** True when lanes are modeled off the all-time distribution because the
@@ -4223,46 +4225,13 @@ function TopLanesCard({
   );
 
   const honestyCaption = (() => {
-    // Reconciled path (CEO P0, 2026-08-14): lane volumes are the lane's
-    // SAMPLE share applied to the REAL scope total from monthly_volumes, so
-    // they SUM to the verified total the Cadence chart shows. Label it as
-    // modeled — a share applied to a verified volume, never a raw manifest.
-    const scopeWord = scopeLabel
-      ? scopeLabel
-      : yearFilter == null
-        ? "the trailing 12 months"
-        : String(yearFilter);
-    if (isReconciled && scopeTotal) {
-      const src = usedAllTimeSplit
-        ? "this account's all-time lane distribution"
-        : scoped && hasRollup
-          ? `${scoped.sourceRecords.toLocaleString()} lane-month rollup record${
-              scoped.sourceRecords === 1 ? "" : "s"
-            }`
-          : `the ${recentBols.length.toLocaleString()}-shipment lane sample`;
-      return `Modeled — each lane's share (from ${src}) applied to the verified ${scopeWord} volume of ${scopeTotal.shipments.toLocaleString()} shipments${
-        scopeTotal.teu > 0 ? ` / ${scopeTotal.teu.toLocaleString()} TEU` : ""
-      }. Lane totals reconcile to the Cadence chart.`;
-    }
-    // Real series unknown → honest raw-sample fallback (legacy behavior).
-    if (scoped && scopeLabel) {
-      if (hasRollup) {
-        return `Filtered to ${scopeLabel} — exact counts from ${scoped.sourceRecords.toLocaleString()} lane-month rollup record${
-          scoped.sourceRecords === 1 ? "" : "s"
-        }.`;
-      }
-      return `Filtered to ${scopeLabel} using the dates on the ${recentBols.length.toLocaleString()} most recent shipments (sample — not the full manifest).`;
-    }
-    if (recentBols.length === 0) return null;
-    const n = recentBols.length;
-    const total = Number(shipments12mTotal);
-    const pct =
-      Number.isFinite(total) && total > 0
-        ? Math.min(100, Math.max(1, Math.round((n / total) * 100)))
-        : null;
-    return `Lanes derived from the ${n.toLocaleString()} most recent shipments${
-      pct != null ? ` (~${pct}% of 12-mo volume)` : ""
-    }`;
+    const observed = rawViewPairs.reduce((sum, row) => sum + (Number(row.shipments) || 0), 0);
+    const coverage = laneCoverage(observed, scopeTotal?.shipments ?? null);
+    const source = hasRollup ? "stored lane history" : "available BOL sample";
+    return observed.toLocaleString() + " observed shipments in " + source + (scopeLabel ? " · " + scopeLabel : "") + ". " +
+      (coverage.reported == null ? "Company total unavailable for this period." : "ImportYeti monthly total: " + coverage.reported.toLocaleString() + ". " +
+      (coverage.conflict ? "Source totals conflict; review required." : coverage.missing ? coverage.missing.toLocaleString() + " shipments have no verified lane breakdown here." : "Observed shipment count matches the reported total.")) + " Lane counts are not extrapolated.";
+
   })();
 
   const unresolvedInfo = scoped
@@ -6093,10 +6062,10 @@ function CombinedLaneIntelligenceTable({
               const trend = lane.trend || lane.yoy || laneStats.trend || null;
               const trendUp = trendIsPositive(trend);
               const topCarrier = laneStats.topCarrier || fallbackTopCarrier;
-              const topForwarder = laneStats.topForwarder || fallbackTopForwarder;
+              const topForwarder = laneStats.topForwarder || "Unavailable";
               const container =
                 laneStats.dominantContainer || globalDominantContainer || "—";
-              const fclLcl = laneStats.fclLcl || globalFclLcl || "—";
+              const fclLcl = laneStats.fclLcl || "—";
               const lastDate = laneStats.lastDate;
               // Non-canonical lanes (no resolved meta) — parse displayLabel
               // for the from/to text fallback so the row still renders.
@@ -6256,21 +6225,7 @@ function deriveLaneStats(
   // top forwarder/provider on lane (shipper / supplier / notify_party)
   const fwdCounts = new Map<string, number>();
   for (const b of matched) {
-    const candidate = [
-      b?.providerName,
-      b?.forwarder,
-      b?.forwarder_name,
-      b?.shipper_name,
-      b?.shipperName,
-      b?.Shipper_Name,
-      b?.supplier_name,
-      b?.supplierName,
-      b?.notify_party,
-      b?.notifyParty,
-      b?.notify_party_name,
-      b?.raw?.shipper_name,
-      b?.raw?.notify_party_name,
-    ].find((v) => typeof v === "string" && v.trim());
+    const candidate = explicitForwarder(b);
     if (candidate) {
       const k = String(candidate).trim();
       fwdCounts.set(k, (fwdCounts.get(k) || 0) + 1);
@@ -6476,9 +6431,9 @@ function ForwarderMixCard({ forwarders }: { forwarders: ForwarderRow[] }) {
     return (
       <LitSectionCard
         title="Forwarder / Service Provider Mix"
-        sub="Forwarders, customs brokers, notify parties, suppliers"
+        sub="Source: ImportYeti explicit forwarder fields"
       >
-        <EmptyMessage text="Forwarder/provider data not surfaced on this account yet." />
+        <EmptyMessage text="Incumbent forwarder unavailable: no explicit forwarder supplied by ImportYeti. Suppliers and notify parties do not establish a forwarder relationship." />
       </LitSectionCard>
     );
   }
@@ -6489,7 +6444,7 @@ function ForwarderMixCard({ forwarders }: { forwarders: ForwarderRow[] }) {
   return (
     <LitSectionCard
       title="Forwarder / Service Provider Mix"
-      sub="Top providers · ranked by shipment touchpoints"
+      sub="Source: ImportYeti explicit forwarder fields · observed shipments"
       action={
         <span className="font-mono text-[10px] font-semibold text-slate-500">
           {forwarders.length} provider{forwarders.length === 1 ? "" : "s"}
@@ -7159,10 +7114,7 @@ function deriveCadence(series: any[], year?: number | null): CadencePoint[] {
   const list = Array.isArray(series) ? series : [];
   if (!list.length) return [];
   const toPoint = (p: any): CadencePoint => {
-    const fcl = Number(p?.fclShipments) || 0;
-    const lcl = Number(p?.lclShipments) || 0;
-    let total = fcl + lcl;
-    if (total === 0) total = Number(p?.shipments) || 0;
+    const { fcl, lcl, total } = cadenceCounts(p);
     const teu = Number(p?.teu) || null;
     return { label: formatMonthLabel(p?.month, p?.year), fcl, lcl, total, teu };
   };
@@ -7240,10 +7192,7 @@ function deriveMonthlySeries(series: any[]): MonthlyVolumePoint[] {
   for (const p of list) {
     const month = String(p?.month || "");
     if (!/^\d{4}-\d{2}$/.test(month)) continue;
-    const fcl = Number(p?.fclShipments) || 0;
-    const lcl = Number(p?.lclShipments) || 0;
-    let shipments = Number(p?.shipments);
-    if (!Number.isFinite(shipments) || shipments === 0) shipments = fcl + lcl;
+    const { total: shipments } = cadenceCounts(p);
     out.push({
       month,
       shipments: Number.isFinite(shipments) ? shipments : 0,
@@ -7322,28 +7271,8 @@ function reconcilePairsToTotal<T extends { shipments?: number; teu?: number }>(
   pairs: T[],
   total: ScopeTotal | null,
 ): { pairs: T[]; reconciled: boolean } {
-  if (!total || total.shipments <= 0 || pairs.length === 0) {
-    return { pairs, reconciled: false };
-  }
-  const sampleShip = pairs.reduce((s, p) => s + (Number(p.shipments) || 0), 0);
-  const sampleTeu = pairs.reduce((s, p) => s + (Number(p.teu) || 0), 0);
-  if (sampleShip <= 0) return { pairs, reconciled: false };
-  const out = pairs.map((p) => {
-    const shipShare = (Number(p.shipments) || 0) / sampleShip;
-    // TEU share falls back to the shipment share when the sample carries no
-    // TEU (some snapshots have null TEU) so TEU still reconciles sensibly.
-    const teuShare =
-      sampleTeu > 0 ? (Number(p.teu) || 0) / sampleTeu : shipShare;
-    return {
-      ...p,
-      shipments: Math.round(shipShare * total.shipments),
-      teu:
-        total.teu > 0
-          ? Math.round(teuShare * total.teu)
-          : Number(p.teu) || 0,
-    };
-  });
-  return { pairs: out, reconciled: true };
+  // Never extrapolate a geographic distribution from a partial BOL sample.
+  return { pairs, reconciled: false };
 }
 
 function deriveModes(profile: any): ModeSlice[] {
@@ -7384,15 +7313,9 @@ function deriveContainerProfile(profile: any): ContainerProfile {
   // v200 shape: profile.containerProfile.{fcl,lcl,byLength,containerTypes,dominantContainer}
   const cp = profile?.containerProfile || profile?.container_profile || null;
   const fcl =
-    Number(cp?.fcl?.shipments) ||
-    Number(profile?.containers?.fclShipments12m) ||
-    Number(profile?.fcl_shipments_all_time) ||
-    0;
+    Number(profile?.containers?.fclShipments12m ?? cp?.fcl?.shipments ?? profile?.fcl_shipments_all_time ?? 0);
   const lcl =
-    Number(cp?.lcl?.shipments) ||
-    Number(profile?.containers?.lclShipments12m) ||
-    Number(profile?.lcl_shipments_all_time) ||
-    0;
+    Number(profile?.containers?.lclShipments12m ?? cp?.lcl?.shipments ?? profile?.lcl_shipments_all_time ?? 0);
   const totalShipments = Number(profile?.totalShipments) || fcl + lcl;
   const lengths: ContainerLength[] = [];
   const lengthSource =
@@ -7514,7 +7437,7 @@ function deriveCarriers(profile: any, recentBols: any[]): CarrierRow[] {
 
 function deriveForwarders(profile: any, recentBols: any[]): ForwarderRow[] {
   const explicit =
-    profile?.topForwarders || profile?.forwarders || profile?.serviceProviders;
+    profile?.topForwarders || profile?.forwarders;
   const fromExplicit: ForwarderRow[] = Array.isArray(explicit)
     ? explicit
         .filter((e: any) => e && (e.name || e.label))
@@ -7546,10 +7469,7 @@ function deriveForwarders(profile: any, recentBols: any[]): ForwarderRow[] {
     const country =
       bol?.supplier_country || bol?.origin_country || bol?.raw?.country || "";
     const roleEntries: Array<{ role: string; name: string | null }> = [
-      { role: "Shipper", name: bol?.shipper_name || bol?.raw?.shipper_name || null },
-      { role: "Notify", name: bol?.notify_party || bol?.raw?.notify_party_name || null },
-      { role: "Supplier", name: bol?.supplier || bol?.supplier_name || null },
-      { role: "Customs", name: bol?.customs_party || bol?.raw?.customs_party || null },
+      { role: "ImportYeti explicit forwarder field", name: explicitForwarder(bol) },
     ];
     for (const r of roleEntries) {
       const name = r.name && String(r.name).trim();
@@ -7758,4 +7678,4 @@ const PROVIDER_COLORS = [
   "#F59E0B",
 ];
 
-const MODE_COLORS = ["#3B82F6", "#67E8F9", "#8B5CF6", "#10B981", "#F59E0B"];
+const MODE_COLORS = ["#3B82F6", "#86EFAC", "#8B5CF6", "#10B981", "#F59E0B"];

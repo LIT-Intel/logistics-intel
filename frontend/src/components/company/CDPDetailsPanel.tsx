@@ -118,6 +118,7 @@ export const CRM_STAGE_VALUES = [
 export type CrmStageValue = (typeof CRM_STAGE_VALUES)[number] | (string & {});
 
 type CDPDetailsPanelProps = {
+  crmPanel?: React.ReactNode;
   company: DetailsCompany;
   kpis: DetailsKpis;
   profile?: Profile | null;
@@ -187,6 +188,7 @@ type CDPDetailsPanelProps = {
 };
 
 export default function CDPDetailsPanel({
+  crmPanel,
   company,
   kpis,
   profile,
@@ -553,6 +555,8 @@ export default function CDPDetailsPanel({
             {profile?.yearFounded ? String(profile.yearFounded) : "—"}
           </Row>
         </Section>
+
+        {crmPanel}
 
         {/* Trade Intelligence */}
         <Section

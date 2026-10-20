@@ -1,5 +1,6 @@
 // Supabase Auth Client — Single browser-side instance
 import { createClient, Session, User } from '@supabase/supabase-js';
+import { validateWorkEmail } from '@/api/signupPolicy';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -205,6 +206,7 @@ export async function registerWithEmailPassword({
 }) {
   if (!auth) throw new Error('Auth not configured');
   if (!email || !password) throw new Error('Email and password required');
+  await validateWorkEmail(email, auth);
 
   const attr = readAttribution();
   const { data, error } = await auth.auth.signUp({

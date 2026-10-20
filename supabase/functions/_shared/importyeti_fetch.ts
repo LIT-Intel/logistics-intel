@@ -13,6 +13,7 @@
 // into `lit_importyeti_company_snapshot.parsed_summary`.
 
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
+import { monthlyVolumeEvidence } from "./monthly_volume_evidence.ts";
 import {
   isProviderEnabled,
   recordProviderUsage,
@@ -316,8 +317,7 @@ export function buildParsedSummary(
 
   const last12Keys = getLast12MonthKeys();
 
-  const monthlyMap = parseTimeSeriesToMonthlyVolumes(raw?.time_series);
-  applyRecentBolsFclLclSplits(monthlyMap, raw?.recent_bols);
+  const monthlyMap = new Map(Object.entries(monthlyVolumeEvidence(raw?.time_series, raw?.recent_bols)));
 
   const orderedMonths = Array.from(monthlyMap.entries()).sort((a, b) =>
     a[0].localeCompare(b[0]),
@@ -733,132 +733,6 @@ function getLast12MonthKeys(): Set<string> {
     keys.add(formatMonthKey(d));
   }
   return keys;
-}
-
-function parseTimeSeriesToMonthlyVolumes(
-  timeSeriesRaw: any,
-): Map<string, MonthlyVolume> {
-  const monthlyMap = new Map<string, MonthlyVolume>();
-
-  if (!timeSeriesRaw || typeof timeSeriesRaw !== "object") {
-    return monthlyMap;
-  }
-
-  const currentMonthKey = formatMonthKey(todayUtcMidnight());
-
-  if (Array.isArray(timeSeriesRaw)) {
-    for (const row of timeSeriesRaw) {
-      const rawMonth =
-        row?.month ?? row?.date ?? row?.period ?? row?.label;
-
-      const d = parseImportYetiDate(rawMonth);
-      if (!d) continue;
-
-      const monthKey = formatMonthKey(d);
-      if (monthKey > currentMonthKey) continue;
-
-      const shipments =
-        normalizeNumber(row?.shipments) ??
-        normalizeNumber(row?.total_shipments) ??
-        normalizeNumber(row?.count) ??
-        0;
-
-      const teu =
-        normalizeNumber(row?.teu) ?? normalizeNumber(row?.total_teu) ?? 0;
-
-      const weight =
-        normalizeNumber(row?.weight) ??
-        normalizeNumber(row?.total_weight) ??
-        0;
-
-      const fcl =
-        normalizeNumber(row?.fcl_count) ??
-        normalizeNumber(row?.fclShipments) ??
-        shipments;
-
-      const lcl =
-        normalizeNumber(row?.lcl_count) ??
-        normalizeNumber(row?.lclShipments) ??
-        0;
-
-      monthlyMap.set(monthKey, { fcl, lcl, shipments, teu, weight });
-    }
-
-    return monthlyMap;
-  }
-
-  for (const [rawKey, rawValue] of Object.entries(timeSeriesRaw)) {
-    const d = parseImportYetiDate(rawKey);
-    if (!d) continue;
-
-    const monthKey = formatMonthKey(d);
-    if (monthKey > currentMonthKey) continue;
-    const shipments = normalizeNumber((rawValue as any)?.shipments) ?? 0;
-    const teu = normalizeNumber((rawValue as any)?.teu) ?? 0;
-    const weight = normalizeNumber((rawValue as any)?.weight) ?? 0;
-
-    monthlyMap.set(monthKey, {
-      fcl: shipments,
-      lcl: 0,
-      shipments,
-      teu,
-      weight,
-    });
-  }
-
-  return monthlyMap;
-}
-
-function applyRecentBolsFclLclSplits(
-  monthlyMap: Map<string, MonthlyVolume>,
-  recentBols: any[],
-) {
-  if (!Array.isArray(recentBols) || recentBols.length === 0) return;
-
-  const splitByMonth = new Map<string, { fcl: number; lcl: number }>();
-
-  for (const bol of recentBols) {
-    const d = parseImportYetiDate(
-      bol?.date_formatted ??
-        bol?.date ??
-        bol?.shipped_on ??
-        bol?.arrival_date,
-    );
-    if (!d || !isPastOrToday(d)) continue;
-
-    const monthKey = formatMonthKey(d);
-    const current = splitByMonth.get(monthKey) || { fcl: 0, lcl: 0 };
-
-    if (bol?.lcl === true) current.lcl += 1;
-    else current.fcl += 1;
-
-    splitByMonth.set(monthKey, current);
-  }
-
-  for (const [monthKey, split] of splitByMonth.entries()) {
-    const existing = monthlyMap.get(monthKey);
-    if (!existing) {
-      monthlyMap.set(monthKey, {
-        fcl: split.fcl,
-        lcl: split.lcl,
-        shipments: split.fcl + split.lcl,
-        teu: 0,
-        weight: 0,
-      });
-      continue;
-    }
-
-    const totalSplit = split.fcl + split.lcl;
-    if (totalSplit <= 0) continue;
-
-    const sourceShipments =
-      existing.shipments > 0 ? existing.shipments : totalSplit;
-    const ratio = sourceShipments / totalSplit;
-
-    existing.fcl = Math.round(split.fcl * ratio);
-    existing.lcl = Math.max(0, sourceShipments - existing.fcl);
-    monthlyMap.set(monthKey, existing);
-  }
 }
 
 function buildTopRoutesFromRecentBols(recentBols: any[]): TopRoute[] {

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useAuth } from "@/auth/AuthProvider";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { springs } from "@/lib/motion";
@@ -277,11 +278,12 @@ type CrmView = "accounts" | "pipeline" | "tasks" | "reports";
  * the Kanban deals board and "Tasks" is the My-tasks list (CRM Phase 1).
  */
 export default function CommandCenter() {
+  const { user, orgId, plan } = useAuth();
   // The provider wraps the whole surface so every child (shell + views + drawer)
   // can read the active theme and the `.dark` class is scoped here only.
   return (
     <CommandCenterThemeProvider>
-      <CommandCenterInner />
+      <CommandCenterInner key={[user?.id, orgId, plan].join(":")} />
     </CommandCenterThemeProvider>
   );
 }

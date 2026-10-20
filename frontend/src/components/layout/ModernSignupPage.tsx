@@ -406,6 +406,7 @@ export default function ModernSignupPage() {
 
               {/* Email form */}
               <form onSubmit={handleEmailSignup} className="space-y-4">
+                <p className="text-xs text-slate-500">Use your company email. Personal and disposable email accounts cannot create a new account, including through Google or Microsoft.</p>
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">
                     Full name

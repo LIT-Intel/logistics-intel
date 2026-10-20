@@ -42,3 +42,6 @@ marketing/.vercel/
 # geocode batch scratch
 tmp-geo/
 tmp-ports/
+
+# Isolated local SQL validation runtime
+.audit-runtime/

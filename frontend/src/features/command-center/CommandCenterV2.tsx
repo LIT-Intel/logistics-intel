@@ -150,7 +150,7 @@ export default function CommandCenterV2({ initialTab }: CommandCenterV2Props) {
   const navigate = useNavigate();
   const reduced = useReducedMotion();
   const queryClient = useQueryClient();
-  const { loading, accounts, contacts, owners } = useCommandCenterData();
+  const { loading, historyLoading, accounts, contacts, owners } = useCommandCenterData();
   const { st, A } = useCCState();
 
   // ── Auto-seed onboarding examples (once per browser session) ─────────
@@ -315,6 +315,8 @@ export default function CommandCenterV2({ initialTab }: CommandCenterV2Props) {
     return (
       <div style={{ background: "#F1F5F9", minHeight: "100vh", fontFamily: F_BODY }} aria-busy>
         <style>{CC_CSS}</style>
+        <h1 className="cc-pad cc-h1" style={{ paddingTop: 26 }}>Command Center</h1>
+        <p className="cc-pad" role="status">Loading your saved companies…</p>
         <div className="cc-pad" style={{ maxWidth: 1560, margin: "0 auto", paddingTop: 26, paddingBottom: 26 }}>
           <div className="motion-reduce:animate-none animate-pulse" style={{ ...CARD, height: 240, marginBottom: 20 }} />
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 12, marginBottom: 20 }}>
@@ -359,6 +361,7 @@ export default function CommandCenterV2({ initialTab }: CommandCenterV2Props) {
   return (
     <div style={{ background: "#F1F5F9", minHeight: "100vh", color: "#0F172A", fontFamily: F_BODY }}>
       <style>{CC_CSS}</style>
+      {historyLoading && <p className="cc-pad py-2 text-sm text-slate-500" role="status">Saved accounts are ready. Updating monthly history…</p>}
 
       {/* ══ Header — full-bleed gradient + masked grid + cyan glow ═════ */}
       <div
