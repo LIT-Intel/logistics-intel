@@ -1,6 +1,6 @@
 import { bolPage, bolPageResponse } from "../_shared/bol_pagination.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
 import {
   buildParsedSummary,
   fetchAndUpsertSnapshot,
@@ -1024,7 +1024,6 @@ async function handleCompanyBolsAction(
   console.log("📋 COMPANY BOLS REQUEST:", { requestId, companyId });
 
   const { limit, offset } = bolPage(pageInput);
-  const paginated = pageInput.limit != null || pageInput.offset != null;
   const env = buildEnvConfig();
   if (!env.isValid) {
     return jsonResponse({ ok: false, error: "ImportYeti API key not configured", code: "IY_API_KEY_MISSING" }, 500);
@@ -1038,7 +1037,7 @@ async function handleCompanyBolsAction(
   const recordBolsCacheHit = () =>
     recordProviderUsage(supabase, {
       provider: PROVIDERS.IMPORTYETI,
-      operation: PROVIDER_OPERATIONS.COMPANY_BOLS,
+      operation: PROVIDER_OPERATIONS.SHIPMENT_HISTORY,
       status: "success",
       cache_hit: true,
       credits_consumed: 0,
@@ -1051,10 +1050,27 @@ async function handleCompanyBolsAction(
     });
 
   try {
+    // Browse materialized documents rather than treating the DMA /bols ID
+    // list (fixed 10 IDs per page) as full shipment records.
+    const archive = await supabase.from("lit_unified_shipments")
+      .select("id, bol_number, bol_date, origin_port, destination_port, origin_country, teu, lcl, shipper_name, carrier_name, hs_code, weight_kg, container_count", { count: "exact" })
+      .eq("company_id", normalizedCompanyKey)
+      .order("bol_date", { ascending: false }).order("id", { ascending: true })
+      .range(offset, offset + limit - 1);
+    if (archive.error) throw archive.error;
+    if ((archive.count ?? 0) > 0) {
+      await recordBolsCacheHit();
+      const rows = (archive.data ?? []).map((row: any) => ({ ...row,
+        bolNumber: row.bol_number, date: row.bol_date, shipped_on: row.bol_date,
+        origin: row.origin_port, destination: row.destination_port, supplier: row.shipper_name,
+        teu: row.teu == null ? null : Number(row.teu) }));
+      return jsonResponse({ ...bolPageResponse(rows, { total: archive.count }, limit, offset),
+        coverage: "stored_documents", total_scope: "stored_documents", source: "lit_unified_shipments" });
+    }
     const cached = await getCachedSnapshot(supabase, normalizedCompanyKey);
 
     if (
-      !paginated && cached?.data?.raw_payload?.data?.recent_bols &&
+      cached?.data?.raw_payload?.data?.recent_bols &&
       Array.isArray(cached.data.raw_payload.data.recent_bols)
     ) {
       console.log(
@@ -1065,8 +1081,11 @@ async function handleCompanyBolsAction(
       await recordBolsCacheHit();
       return jsonResponse({
         ok: true,
-        rows: cached.data.raw_payload.data.recent_bols,
-        total: cached.data.raw_payload.data.recent_bols.length,
+        rows: cached.data.raw_payload.data.recent_bols.slice(offset, offset + limit),
+        total: null,
+        sample_size: cached.data.raw_payload.data.recent_bols.length,
+        has_more: offset + limit < cached.data.raw_payload.data.recent_bols.length,
+        next_offset: offset + limit < cached.data.raw_payload.data.recent_bols.length ? offset + limit : null,
         coverage: "sample",
         source: "snapshot_recent_bols",
         cached_at: cached.data.updated_at,
@@ -1074,7 +1093,7 @@ async function handleCompanyBolsAction(
     }
 
     if (
-      !paginated && Array.isArray(cached?.data?.raw_payload?.recent_bols)
+      Array.isArray(cached?.data?.raw_payload?.recent_bols)
     ) {
       console.log(
         "✅ recent_bols from cached payload:",
@@ -1084,8 +1103,11 @@ async function handleCompanyBolsAction(
       await recordBolsCacheHit();
       return jsonResponse({
         ok: true,
-        rows: cached.data.raw_payload.recent_bols,
-        total: cached.data.raw_payload.recent_bols.length,
+        rows: cached.data.raw_payload.recent_bols.slice(offset, offset + limit),
+        total: null,
+        sample_size: cached.data.raw_payload.recent_bols.length,
+        has_more: offset + limit < cached.data.raw_payload.recent_bols.length,
+        next_offset: offset + limit < cached.data.raw_payload.recent_bols.length ? offset + limit : null,
         coverage: "sample",
         source: "snapshot_recent_bols",
         cached_at: cached.data.updated_at,
@@ -1136,7 +1158,7 @@ async function handleCompanyBolsAction(
     const bolsCreditsRemaining = extractCreditsRemainingFromPayload(upstream.raw);
     await recordProviderUsage(supabase, {
       provider: PROVIDERS.IMPORTYETI,
-      operation: PROVIDER_OPERATIONS.COMPANY_BOLS,
+      operation: PROVIDER_OPERATIONS.SHIPMENT_HISTORY,
       status: "success",
       credits_consumed: null, // filled from provider_pricing.credit_cost
       cache_hit: false,
@@ -1149,7 +1171,14 @@ async function handleCompanyBolsAction(
     });
     await updateProviderBalance(supabase, PROVIDERS.IMPORTYETI, bolsCreditsRemaining);
 
-    const bolsBody = bolPageResponse(upstream.rows, upstream.raw, limit, offset);
+    const records = upstream.rows.filter((row: any) => row && typeof row === "object");
+    const bolsBody = { ...bolPageResponse(records, upstream.raw, limit, offset),
+      ...(records.length < upstream.rows.length ? {
+        coverage: "identifiers_only", total: null,
+        next_offset: offset + upstream.rows.length,
+        has_more: upstream.rows.length > 0,
+        message: "The provider returned BOL identifiers. Full shipment documents are not yet stored for this company.",
+      } : {}) };
 
     try {
       await supabase.from("lit_importyeti_cache").upsert(
@@ -1527,7 +1556,7 @@ async function handleCompanyProfileAction(
       // the ledger's cache-effectiveness view (credits_consumed forced to 0).
       await recordProviderUsage(supabase, {
         provider: PROVIDERS.IMPORTYETI,
-        operation: PROVIDER_OPERATIONS.COMPANY_PROFILE,
+        operation: PROVIDER_OPERATIONS.COMPANY_LOOKUP,
         status: "success",
         cache_hit: true,
         credits_consumed: 0,
@@ -1620,7 +1649,7 @@ async function handleCompanyProfileAction(
     const profileMeterCtx: MeterCtx = {
       operation: forceRefresh
         ? PROVIDER_OPERATIONS.COMPANY_REFRESH
-        : PROVIDER_OPERATIONS.COMPANY_PROFILE,
+        : PROVIDER_OPERATIONS.COMPANY_LOOKUP,
       trigger_type: TRIGGER_TYPES.USER,
       source: "importyeti-proxy",
       organization_id: orgId,

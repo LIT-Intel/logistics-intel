@@ -9,6 +9,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/auth/AuthProvider";
 import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { getWorkspaceSavedCompanies } from "@/api/workspace";
@@ -83,6 +84,9 @@ async function fetchBulkMonthly(slugs: string[]): Promise<RawTsRow[]> {
 }
 
 export interface DashboardData {
+  savedLoading: boolean;
+  historyLoading: boolean;
+  savedRows: any[];
   ds: DashDataset | null;
   loading: boolean;
   /** aggregated lanes for the existing map component (pulse-coach shape) */
@@ -90,8 +94,11 @@ export interface DashboardData {
 }
 
 export function useDashboardData(): DashboardData {
+  const { user, orgId, plan } = useAuth();
+  const scope = [user?.id, orgId, plan].join(":");
   const savedQ = useQuery({
-    queryKey: ["dash-saved-companies"],
+    queryKey: ["dash-saved-companies", scope],
+    enabled: Boolean(user?.id),
     staleTime: FIVE_MIN,
     queryFn: async () => (await getWorkspaceSavedCompanies()).rows ?? [],
   });
@@ -109,7 +116,7 @@ export function useDashboardData(): DashboardData {
   );
 
   const monthlyQ = useQuery({
-    queryKey: ["dash-co-monthly", slugs.join("|")],
+    queryKey: ["dash-co-monthly", scope, slugs.join("|")],
     enabled: slugs.length > 0,
     staleTime: FIVE_MIN,
     queryFn: () => fetchBulkMonthly(slugs),
@@ -123,7 +130,7 @@ export function useDashboardData(): DashboardData {
     [savedQ.data],
   );
   const ownersQ = useQuery({
-    queryKey: ["dash-owners", savedIds.join("|")],
+    queryKey: ["dash-owners", scope, savedIds.join("|")],
     enabled: savedIds.length > 0,
     staleTime: FIVE_MIN,
     queryFn: async () => {
@@ -243,6 +250,9 @@ export function useDashboardData(): DashboardData {
   }, [savedQ.data, monthlyQ.data, laneMonths, ownersQ.data]);
 
   return {
+    savedRows: savedQ.data ?? [],
+    savedLoading: savedQ.isLoading,
+    historyLoading: monthlyQ.isLoading,
     ds,
     loading: savedQ.isLoading || (slugs.length > 0 && monthlyQ.isLoading) || lanesLoading,
     workspaceLanes: workspaceLanes ?? [],

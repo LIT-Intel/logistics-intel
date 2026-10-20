@@ -557,8 +557,22 @@ export function computeView(ds: ShipmentDataset, st: ProfileState, A: ProfileAct
     rbMax = Math.max(rbMax, v, pv);
   }
   const hov = st.hover;
+  const servicesByMonth = new Map<number, { fcl: number; lcl: number }>();
+  for (const row of cur) {
+    const split=servicesByMonth.get(row.mi) ?? { fcl:0,lcl:0 };
+    if(row.mode==='FCL') split.fcl++;
+    if(row.mode==='LCL') split.lcl++;
+    servicesByMonth.set(row.mi,split);
+  }
   const cadence = rb.map((b, i) => ({
     ...b,
+    fullLabel: miLabel(b.mi, FY),
+    priorLabel: miLabel(b.mi - 12, FY),
+    services: (() => {
+      const total = blendOn ? bm(b.mi).shipments : byMi[b.mi]?.shipments ?? 0;
+      const { fcl,lcl } = servicesByMonth.get(b.mi) ?? { fcl:0,lcl:0 };
+      return fcl + lcl > total ? { fcl: 0, lcl: 0, unknown: total, total } : { fcl, lcl, unknown: total - fcl - lcl, total };
+    })(),
     label: nMonths > 18 ? (b.mi % 12 === 0 ? String(miYear(b.mi, FY)) : "") : miShort(b.mi),
     s: st.intro ? 0 : Math.max(0.01, b.v / rbMax),
     ps: st.intro ? 0 : Math.max(0.01, b.pv / rbMax),
@@ -810,6 +824,10 @@ export function computeView(ds: ShipmentDataset, st: ProfileState, A: ProfileAct
       blendOn && S.shipments > cur.length
         ? fmtNum(S.shipments) + " shipments · " + fmtNum(cur.length) + " BOL docs"
         : fmtNum(cur.length) + " of " + fmtNum(ROWS.length) + " BOLs",
+    sourceConflict: blendOn && Object.entries(byMi).some(([mi, docs]) => {
+      const reported=ds.rollup?.byMi[Number(mi)];
+      return reported && (docs.shipments > reported.shipments || docs.teu > reported.teu);
+    }),
     modeled: { teu: S.teuModeled, spend: S.spendModeled },
   };
 }
@@ -836,19 +854,51 @@ export function computeLanes(ds: ShipmentDataset, st: ProfileState, A: ProfileAc
   const sel = st.f.lane || [];
   const cur = pool.filter((r) => r.mi >= st.m0 && r.mi <= st.m1);
   const nM = st.m1 - st.m0 + 1;
-  const tot = cur.reduce((a, r) => a + mv(r), 0) || 1;
-  const sumIn = (id: string, a: number, b: number): number =>
-    pool.reduce((s, r) => s + (r.lane === id && r.mi >= a && r.mi <= b ? mv(r) : 0), 0);
+  const mode = blendMode(ds, st.f);
+  const blendOn = mode !== "docs";
+  const documentMonths = new Map<number, MonthAggLike>();
+  const documentLaneMonths = new Map<string, MonthAggLike>();
+  for (const row of pool) {
+    const key=row.lane+'|'+row.mi;
+    const lane=documentLaneMonths.get(key) ?? {shipments:0,teu:0,spend:0};
+    lane.shipments++; lane.teu+=row.teu; lane.spend+=row.spend;
+    documentLaneMonths.set(key,lane);
+    if (!sel.length || sel.includes(row.lane)) {
+      const month=documentMonths.get(row.mi) ?? {shipments:0,teu:0,spend:0};
+      month.shipments++; month.teu+=row.teu; month.spend+=row.spend;
+      documentMonths.set(row.mi,month);
+    }
+  }
+  const laneMonth = (id: string, mi: number) => {
+    return blendedLaneMonth(ds, blendOn, id, mi, documentLaneMonths.get(id+'|'+mi));
+  };
+  const metricOf = (m: MonthAggLike) => metric === "shipments" ? m.shipments : m[metric];
+  let scopeTotal=0;
+  let reportedShipments=0;
+  let reportedTeu=0;
+  for(let mi=st.m0;mi<=st.m1;mi++) {
+    const month=blendedMonth(ds,mode,sel,mi,documentMonths.get(mi));
+    scopeTotal+=metricOf(month); reportedShipments+=month.shipments; reportedTeu+=month.teu;
+  }
+  scopeTotal=scopeTotal || 1;
+  const sumIn = (id: string, a: number, b: number): number => {
+    let total = 0;
+    for (let mi=a;mi<=b;mi++) total += metricOf(laneMonth(id,mi));
+    return total;
+  };
   const hasP1 = st.m0 - 12 >= 0;
   const hasP2 = st.m0 - 24 >= 0;
-  const laneKeys = [...new Set(cur.map((r) => r.lane))];
+  const laneKeys = [...new Set([...cur.map((r) => r.lane), ...(blendOn ? Object.keys(ds.rollup?.laneByKey ?? {}).filter(k => sumIn(k,st.m0,st.m1)>0) : [])])];
 
   let L = laneKeys
     .map((laneId) => {
       const rs = cur.filter((r) => r.lane === laneId);
-      if (!rs.length) return null;
       const S = summarize(rs, ds.todayTs);
-      const val = rs.reduce((a, r) => a + mv(r), 0);
+      S.shipments = 0; S.teu = 0; S.spend = 0;
+      for(let mi=st.m0;mi<=st.m1;mi++) {
+        const m=laneMonth(laneId,mi); S.shipments+=m.shipments; S.teu+=m.teu; S.spend+=m.spend;
+      }
+      const val = sumIn(laneId,st.m0,st.m1);
       const p1 = hasP1 ? sumIn(laneId, st.m0 - 12, st.m1 - 12) : null;
       const p2 = hasP2 ? sumIn(laneId, st.m0 - 24, st.m1 - 24) : null;
       const g: Record<string, number> = {};
@@ -859,9 +909,9 @@ export function computeLanes(ds: ShipmentDataset, st: ProfileState, A: ProfileAc
           key: k,
           label: meta.carrierName.get(k) ?? k,
           color: meta.carrierColor.get(k) ?? PALETTE[0],
-          share: Math.round((v / val) * 100) + "%",
-          shareN: v / val,
-          w: ((v / val) * 100).toFixed(2) + "%",
+          share: Math.round((v / (rs.reduce((s,r)=>s+mv(r),0)||1)) * 100) + "% of docs",
+          shareN: v / (rs.reduce((s,r)=>s+mv(r),0)||1),
+          w: ((v / (rs.reduce((s,r)=>s+mv(r),0)||1)) * 100).toFixed(2) + "%",
           onClick: () => A.toggle("carrier", k),
         }));
       const topOf = (key: keyof ShipmentRow): string => {
@@ -870,7 +920,8 @@ export function computeLanes(ds: ShipmentDataset, st: ProfileState, A: ProfileAc
         const e = Object.entries(m).sort((a, b) => b[1] - a[1])[0];
         return e ? e[0] : "—";
       };
-      const fcl = rs.filter((r) => r.mode === "FCL").length / rs.length;
+      const fcl = rs.filter((r) => r.mode === "FCL").length / (rs.length || 1);
+      const lcl = rs.filter((r) => r.mode === "LCL").length / (rs.length || 1);
       const vals: number[] = [];
       for (let mi = st.m0; mi <= st.m1; mi++) vals.push(rs.reduce((a, r) => a + (r.mi === mi ? mv(r) : 0), 0));
       const mx = Math.max(1, ...vals);
@@ -890,8 +941,8 @@ export function computeLanes(ds: ShipmentDataset, st: ProfileState, A: ProfileAc
         oc: meta.laneOc.get(laneId) ?? laneId.split("-")[0],
         color: meta.laneColor.get(laneId) ?? PALETTE[0],
         val, valN: val, valFmt: fmtM(val), p1, p2,
-        share: Math.round((val / tot) * 100) + "%",
-        shareN: val / tot,
+        share: Math.round((val / scopeTotal) * 100) + "%",
+        shareN: val / scopeTotal,
         shipments: fmtNum(S.shipments), shipmentsN: S.shipments,
         teu: fmtNum(S.teu), teuN: S.teu,
         spend: fmtMoney(S.spend), spendN: S.spend,
@@ -902,8 +953,8 @@ export function computeLanes(ds: ShipmentDataset, st: ProfileState, A: ProfileAc
         topSupplier: topOf("supplier"),
         topProduct: topOf("product"),
         topEquip: topOf("ctype"),
-        fcl: Math.round(fcl * 100) + "%",
-        lcl: Math.round((1 - fcl) * 100) + "%",
+        fcl: rs.length ? Math.round(fcl * 100) + "% of docs" : "Unavailable",
+        lcl: rs.length ? Math.round(lcl * 100) + "% of docs" : "Unavailable",
         last: S.last ? fmtDate(S.last.ts) : "—",
         lastDays: S.lastDays != null ? S.lastDays + "d ago" : "—",
         first: all.length ? fmtDate(all[0].ts) : "—",
@@ -964,7 +1015,7 @@ export function computeLanes(ds: ShipmentDataset, st: ProfileState, A: ProfileAc
   for (let mi = st.m0; mi <= st.m1; mi++) {
     const segs = lanesD.map((l) => ({
       color: l.color,
-      v: cur.reduce((a, r) => a + (r.lane === l.key && r.mi === mi ? mv(r) : 0), 0),
+      v: metricOf(laneMonth(l.key, mi)),
     }));
     const t = segs.reduce((a, s) => a + s.v, 0);
     sMax = Math.max(sMax, t);
@@ -1065,6 +1116,10 @@ export function computeLanes(ds: ShipmentDataset, st: ProfileState, A: ProfileAc
 
   return {
     lanesD,
+    coverage: {
+      observedShipments:L.reduce((sum,l)=>sum+l.shipmentsN,0), reportedShipments,
+      observedTeu:L.reduce((sum,l)=>sum+l.teuN,0),reportedTeu,
+    },
     carrierLegend,
     dray,
     drayTotal: fmtNum(drayTotalN),

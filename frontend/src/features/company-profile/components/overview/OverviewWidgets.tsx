@@ -292,8 +292,12 @@ export function CadenceChart({
         <div className="flex items-start gap-3.5 text-[12px] text-[#475569]">
           <span className="flex items-center gap-1.5">
             <span className="h-2.5 w-2.5 rounded-[3px] bg-[#3b82f6]" />
-            Selected period
+            {view.unitM === "shipments" ? "FCL" : "Selected period"}
           </span>
+          {view.unitM === "shipments" && <>
+            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-[3px] bg-[#86EFAC]" />LCL</span>
+            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-[3px] bg-[#94A3B8]" />Mode unavailable</span>
+          </>}
           {prior && (
             <span className="flex items-center gap-1.5">
               <span className="h-2.5 w-2.5 rounded-[3px] bg-[#E2E8F0]" />
@@ -326,8 +330,16 @@ export function CadenceChart({
             key={b.mi}
             onMouseEnter={b.onEnter}
             onClick={b.onClick}
-            className="relative flex h-full flex-1 cursor-pointer items-end gap-[2px]"
+            tabIndex={0}
+            aria-label={`${b.fullLabel}: ${fmtNum(b.v)} ${view.unitM}${prior ? `; ${b.priorLabel}: ${fmtNum(b.pv)} ${view.unitM}` : ''}`}
+            className="group relative flex h-full flex-1 cursor-pointer items-end gap-[2px] focus:outline-blue-600"
           >
+            <div role="tooltip" className="pointer-events-none absolute bottom-full left-1/2 z-20 hidden w-52 -translate-x-1/2 rounded-lg border bg-white p-3 text-xs shadow-lg group-hover:block group-focus:block">
+              <strong>{b.fullLabel}</strong><br />
+              {fmtNum(b.v)} {view.unitM}
+              {prior && <p className="mt-1">{b.priorLabel}: {fmtNum(b.pv)} {view.unitM}</p>}
+              {view.unitM === "shipments" && <p className="mt-1">Observed FCL: {b.services.fcl} · LCL: {b.services.lcl}<br />Mode unavailable: {b.services.unknown}</p>}
+            </div>
             {prior && (
               <div
                 className="h-full flex-1 rounded-t bg-[#E2E8F0]"
@@ -340,15 +352,21 @@ export function CadenceChart({
               />
             )}
             <div
-              className="h-full flex-1 rounded-t"
+              className="flex h-full flex-1 flex-col justify-end overflow-hidden rounded-t"
               style={{
-                background: b.bg,
+                background: view.unitM === "shipments" ? "transparent" : b.bg,
                 transform: `scaleY(${b.s})`,
                 transformOrigin: "bottom",
                 transition: reduced ? "background 160ms" : `transform 520ms ${EASE_OUT}, background 160ms`,
                 transitionDelay: reduced ? "0ms" : `${b.delay}ms`,
               }}
-            />
+            >
+              {view.unitM === "shipments" && [
+                { count: b.services.unknown, color: "#94A3B8" },
+                { count: b.services.lcl, color: "#86EFAC" },
+                { count: b.services.fcl, color: b.bg },
+              ].map(segment => <span key={segment.color} style={{ height: `${segment.count / (b.services.total || 1) * 100}%`, background: segment.color }} />)}
+            </div>
           </div>
         ))}
       </div>

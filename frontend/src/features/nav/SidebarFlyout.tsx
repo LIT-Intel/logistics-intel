@@ -46,9 +46,9 @@ export default function SidebarFlyout({ which, children }: { which: "command-cen
   return (
     <div
       style={{ position: "relative" }}
-      onMouseEnter={() => setHover(true)}
+      onMouseEnter={() => { setHover(true); if (which === "command-center") void import("@/components/command-center/CommandCenter").catch(() => {}); }}
       onMouseLeave={() => setHover(false)}
-      onFocus={() => setHover(true)}
+      onFocus={() => { setHover(true); if (which === "command-center") void import("@/components/command-center/CommandCenter").catch(() => {}); }}
       onBlur={(e) => {
         // Keep open while focus stays inside the flyout.
         if (!e.currentTarget.contains(e.relatedTarget as Node)) setHover(false);

@@ -84,7 +84,6 @@ export function normalizeRollups(
     if (mi < 0 || mi > maxMi) continue;
     const shipments = num(r.shipments);
     const teu = num(r.teu);
-    if (shipments <= 0 && teu <= 0) continue;
     const o = byMi[mi] || (byMi[mi] = { shipments: 0, teu: 0 });
     o.shipments += shipments;
     o.teu += teu;
@@ -134,8 +133,15 @@ export function assembleDataset(
   const anchorYear = years.length ? Math.min(...years) : undefined;
 
   const useArchiveDocs = bundle.bolRows.length > 0;
+  const samples = new Map((recentBols ?? []).filter(b => b.bolNumber).map(b => [b.bolNumber, b]));
+  const archiveRows = bundle.bolRows.map(row => {
+    const sample=samples.get(row.bol_number ?? row.house_bol ?? row.master_bol ?? row.id);
+    return sample ? { ...row, lcl: row.lcl ?? sample.lcl ?? null, teu: row.teu ?? sample.teu ?? null,
+      container_count: row.container_count ?? sample.containersCount ?? null,
+      shipping_cost_usd: row.shipping_cost_usd ?? sample.shippingCost ?? null } : row;
+  });
   const ds = useArchiveDocs
-    ? normalizeUnifiedShipments(bundle.bolRows, now, anchorYear)
+    ? normalizeUnifiedShipments(archiveRows, now, anchorYear)
     : normalizeRecentBols(recentBols ?? [], now, anchorYear);
 
   ds.rollup = normalizeRollups(bundle.tsRows, bundle.laneRows, ds.firstYear, ds.lastMi);
@@ -178,10 +184,12 @@ export function blendedMonth(
   if (mode === "docs" || !ds.rollup) return d;
   let rs = 0;
   let rt = 0;
+  let reported = false;
   if (mode === "lane") {
     for (const k of selLanes) {
       const m = ds.rollup.laneByKey[k]?.[mi];
       if (m) {
+        reported = true;
         rs += m.shipments;
         rt += m.teu;
       }
@@ -189,12 +197,13 @@ export function blendedMonth(
   } else {
     const m = ds.rollup.byMi[mi];
     if (m) {
+      reported = true;
       rs = m.shipments;
       rt = m.teu;
     }
   }
-  const shipments = Math.max(d.shipments, rs);
-  const teu = Math.max(d.teu, rt);
+  const shipments = reported ? rs : d.shipments;
+  const teu = reported ? rt : d.teu;
   const extraTeu = Math.max(0, teu - d.teu);
   const spend = d.spend + (extraTeu > 0 ? Math.round(extraTeu * rateForYear(miYear(mi, ds.firstYear))) : 0);
   return { shipments, teu, spend };
@@ -212,8 +221,8 @@ export function blendedLaneMonth(
   if (!blendOn || !ds.rollup) return d;
   const m = ds.rollup.laneByKey[lane]?.[mi];
   if (!m) return d;
-  const shipments = Math.max(d.shipments, m.shipments);
-  const teu = Math.max(d.teu, m.teu);
+  const shipments = m.shipments;
+  const teu = m.teu;
   const extraTeu = Math.max(0, teu - d.teu);
   const spend = d.spend + (extraTeu > 0 ? Math.round(extraTeu * rateForYear(miYear(mi, ds.firstYear))) : 0);
   return { shipments, teu, spend };
@@ -225,7 +234,7 @@ export function lastRollupActivityMi(ds: ShipmentDataset, maxMi: number): number
   let best: number | null = null;
   for (const k of Object.keys(ds.rollup.byMi)) {
     const mi = +k;
-    if (mi <= maxMi && (best == null || mi > best)) best = mi;
+    if (ds.rollup.byMi[mi].shipments > 0 && mi <= maxMi && (best == null || mi > best)) best = mi;
   }
   return best;
 }

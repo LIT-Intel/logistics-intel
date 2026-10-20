@@ -29,6 +29,8 @@ export type WorkspaceTab = "overview" | "lanes" | "history";
 /** The page-level workspace handle: one data load + one state instance shared
  *  by the editorial hero (above the tab bar) and every v2 tab body. */
 export interface WorkspaceHandle {
+  detailsLoading?: boolean;
+  dataError?: boolean;
   dataset: ShipmentDataset | null;
   loading: boolean;
   isSnapshotFallback: boolean;
@@ -68,10 +70,11 @@ export function useCompanyProfileWorkspace(
     [dataset, ready, state, actions],
   );
 
-  return { dataset, loading, isSnapshotFallback, state, actions, extra, ready, view, lanesView };
+  return { dataset, loading, detailsLoading: demoDataset ? false : fetched.detailsLoading, dataError: demoDataset ? false : fetched.dataError, isSnapshotFallback, state, actions, extra, ready, view, lanesView };
 }
 
 export interface CompanyProfileWorkspaceProps {
+  crmPanel?: ReactNode;
   tab: WorkspaceTab;
   /** From useCompanyProfileWorkspace() — owned by the page so the hero and
    *  all tabs share one dataset + filter state. */
@@ -98,6 +101,7 @@ export interface CompanyProfileWorkspaceProps {
 }
 
 export function CompanyProfileWorkspace({
+  crmPanel,
   tab,
   workspace,
   companyName,
@@ -130,7 +134,7 @@ export function CompanyProfileWorkspace({
     return (
       <Card className="mx-auto my-10 max-w-xl p-8 text-center">
         <div className="text-[16px] font-semibold text-[#0F172A]" style={{ fontFamily: FONT_DISPLAY }}>
-          Shipment intelligence is on its way
+          {workspace.dataError ? "Shipment history could not be loaded" : "Shipment intelligence is on its way"}
         </div>
         <p className="mt-2 text-[13px] leading-relaxed text-[#64748b]" style={{ fontFamily: FONT_BODY }}>
           We&apos;re assembling the bill-of-lading history for {companyName}. In the meantime, the
@@ -168,6 +172,13 @@ export function CompanyProfileWorkspace({
   return (
     <div className="min-w-0">
       <StickyFilterBar view={view} extra={extra} companyName={companyName} />
+      {workspace.detailsLoading && <p role="status" className="mt-2 text-xs text-slate-500">Monthly totals are ready. Loading detailed BOL and lane history…</p>}
+      {workspace.dataError && <p role="alert" className="mt-3 text-xs text-amber-700">Stored history could not be loaded completely. Any displayed BOLs are a snapshot sample. Refresh to retry.</p>}
+      <p className="mt-3 text-xs text-slate-500" role="status">
+        {view.provenance}.
+        {lanesView && <> Lane breakdown: {lanesView.coverage.observedShipments.toLocaleString()} observed / {lanesView.coverage.reportedShipments.toLocaleString()} total shipments. {Math.max(0,lanesView.coverage.reportedShipments-lanesView.coverage.observedShipments).toLocaleString()} have no verified lane breakdown. Lane counts are not extrapolated.</>}
+      </p>
+      {view.sourceConflict && <p className="mt-2 text-xs text-amber-700" role="status">Some BOL or estimated TEU counts exceed the source monthly totals. Source totals are retained; document coverage needs review.</p>}
 
       <div className="mt-5 grid grid-cols-1 items-start gap-5 min-[1100px]:grid-cols-[minmax(0,1fr)_320px]">
         <div className="flex min-w-0 flex-col gap-5">
@@ -198,6 +209,7 @@ export function CompanyProfileWorkspace({
         </div>
 
         <InsightRail
+          crmPanel={crmPanel}
           view={view}
           account={{
             ownerName: meta?.ownerName ?? undefined,

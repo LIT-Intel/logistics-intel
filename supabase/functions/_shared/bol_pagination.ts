@@ -10,6 +10,7 @@ export function bolPageResponse(rows: unknown[], raw: any, limit: number, offset
   const candidate = raw?.total ?? raw?.total_count ?? raw?.pagination?.total;
   const total = candidate != null && Number.isFinite(Number(candidate)) && Number(candidate) >= 0 ? Number(candidate) : null;
   return { ok: true, rows, total, returned_count: rows.length, offset, limit,
-    has_more: total == null ? rows.length === limit : offset + rows.length < total,
+    has_more: total == null ? rows.length > 0 : offset + rows.length < total,
+    next_offset: rows.length ? offset + rows.length : null,
     coverage: total == null ? 'unknown' : 'provider-reported', source: 'importyeti' };
 }

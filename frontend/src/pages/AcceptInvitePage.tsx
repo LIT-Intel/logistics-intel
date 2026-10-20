@@ -176,6 +176,7 @@ export default function AcceptInvitePage() {
 
     setSubmitting(true);
     try {
+      await validateWorkEmail(email, supabase);
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
       if (!supabaseUrl || !supabaseAnonKey) {
@@ -556,3 +557,4 @@ function mapErrorToView(
     message: result?.error || `Invite acceptance failed (status ${status}).`,
   });
 }
+import { validateWorkEmail } from '@/api/signupPolicy';

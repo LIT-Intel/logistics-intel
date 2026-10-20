@@ -1015,7 +1015,7 @@ export async function searchCompanies(
   const total =
     typeof (data as any)?.total === "number"
       ? (data as any).total
-      : rows.length;
+      : null;
 
   return {
     ok: Boolean((data as any)?.ok ?? true),

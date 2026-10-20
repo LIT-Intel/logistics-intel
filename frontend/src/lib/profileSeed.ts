@@ -46,6 +46,7 @@ const num = (v: unknown): number | null => {
  * just skips the seed and the profile falls back to today's behavior.
  */
 export function stashProfileSeed(companyKey: string, row: any): void {
+  void import("@/pages/CompanyProfileV2").catch(() => {});
   try {
     const slug = bareSlug(companyKey);
     if (!slug || UUID_RE.test(slug)) return;

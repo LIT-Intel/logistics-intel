@@ -34,7 +34,7 @@ export interface ShipmentRow {
   dPort: string;
   carrier: string; // SCAC, e.g. "CMDU"
   carrierName: string; // display name, e.g. "CMA CGM"
-  mode: "FCL" | "LCL";
+  mode: "FCL" | "LCL" | "Unknown";
   /** Equipment bucket. `null` when the source row has no container type —
    *  such rows are excluded from the Equipment facet (never invented). */
   ctype: string | null;

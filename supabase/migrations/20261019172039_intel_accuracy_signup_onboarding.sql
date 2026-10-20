@@ -1,4 +1,4 @@
--- Local proposal only. Existing accounts, plans, and entitlements are unchanged.
+-- New signups require work email; onboarding writes only the caller's preferences.
 create schema if not exists private;
 create table if not exists private.signup_domain_allowlist (
  domain text primary key check (domain = lower(domain) and domain !~ '[[:space:]@]'),
@@ -22,6 +22,17 @@ begin
  return true;
 end $$;
 revoke all on function private.work_email_allowed(text) from public, anon, authenticated;
+
+-- A boolean-only preflight gives password/invite forms a friendly error.
+-- The Auth hook and insert trigger remain authoritative for every signup path.
+create or replace function public.lit_signup_email_allowed(p_email text)
+returns boolean language sql security invoker set search_path = '' as $$
+ select private.work_email_allowed(p_email);
+$$;
+grant usage on schema private to anon, authenticated;
+grant execute on function private.work_email_allowed(text) to anon, authenticated;
+revoke all on function public.lit_signup_email_allowed(text) from public;
+grant execute on function public.lit_signup_email_allowed(text) to anon, authenticated;
 
 -- Runs for password and OAuth creation even if the dashboard hook is disabled.
 -- Does not run on UPDATE/login: existing customers retain access.

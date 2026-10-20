@@ -13,6 +13,8 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
+import { readAllRows } from "@/api/readAllRows";
+import { useAuth } from "@/auth/AuthProvider";
 import type { RecentBolInput, UnifiedShipmentDbRow } from "./normalizeShipments";
 import {
   assembleDataset,
@@ -39,54 +41,69 @@ export const toArchiveSlug = (companyKey: string | null | undefined): string | n
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function useCompanyArchiveBundle(companyKey: string | null | undefined) {
+  const { user, orgId, plan } = useAuth();
   const slug = toArchiveSlug(companyKey);
-  return useQuery<ArchiveBundle | null>({
-    queryKey: ["company-shipments-v2", slug ?? ""],
-    enabled: Boolean(slug),
+  const scope = ["company-shipments-v2", user?.id, orgId, plan, slug ?? ""];
+  const isUuid = Boolean(slug && UUID_RE.test(slug));
+  const resolved = useQuery({
+    queryKey: [...scope, "identity"],
+    enabled: Boolean(isUuid && user?.id),
     staleTime: FIVE_MIN,
     queryFn: async () => {
-      // The page can mount with the route param (which may be the
-      // lit_companies UUID) before the identity bundle resolves the real
-      // source_company_key — resolve UUID → slug here so saved data is
-      // never missed for a company that has it.
-      let archiveKey = slug as string;
-      if (UUID_RE.test(archiveKey)) {
-        const { data: co } = await supabase
+        const { data: co, error } = await supabase
           .from("lit_companies")
           .select("source_company_key")
-          .eq("id", archiveKey)
+          .eq("id", slug)
           .maybeSingle();
-        const resolved = toArchiveSlug((co as any)?.source_company_key);
-        if (resolved) archiveKey = resolved;
-      }
-      const [bols, ts, lanes] = await Promise.all([
-        supabase
+        if(error) throw error;
+        return toArchiveSlug((co as any)?.source_company_key) ?? slug;
+    },
+  });
+  const archiveKey = isUuid ? resolved.data : slug;
+  const enabled = Boolean(archiveKey && user?.id);
+  // Monthly totals paint independently of the larger document/lane archives.
+  const bols = useQuery({
+    queryKey:[...scope,"bols"], enabled, staleTime:FIVE_MIN,
+    queryFn:()=>readAllRows<UnifiedShipmentDbRow>((from, to) => supabase
           .from("lit_unified_shipments")
           .select(BOL_COLS)
           .eq("company_id", archiveKey)
           .order("bol_date", { ascending: true })
-          .limit(5000),
-        supabase
+          .order("id", { ascending: true })
+          .range(from, to) as any),
+  });
+  const ts = useQuery({
+    queryKey:[...scope,"monthly"], enabled, staleTime:FIVE_MIN,
+    queryFn:()=>readAllRows<TsMonthlyDbRow>((from, to) => supabase
           .from("lit_company_time_series_monthly")
           .select("year,month,shipments,teu")
           .eq("company_id", archiveKey)
-          .limit(2000),
-        supabase
+          .order("year", { ascending: true })
+          .order("month", { ascending: true })
+          .range(from, to) as any),
+  });
+  const lanes = useQuery({
+    queryKey:[...scope,"lanes"], enabled, staleTime:FIVE_MIN,
+    queryFn:()=>readAllRows<LaneMonthDbRow>((from, to) => supabase
           .from("lit_company_lane_months")
           .select("origin_country,dest_country,month,shipments,teu")
           .eq("company_id", archiveKey)
-          .limit(5000),
-      ]);
-      return {
-        bolRows: (bols.error ? [] : (bols.data ?? [])) as unknown as UnifiedShipmentDbRow[],
-        tsRows: (ts.error ? [] : (ts.data ?? [])) as unknown as TsMonthlyDbRow[],
-        laneRows: (lanes.error ? [] : (lanes.data ?? [])) as unknown as LaneMonthDbRow[],
-      };
-    },
+          .order("month", { ascending: true })
+          .order("id", { ascending: true })
+          .range(from, to) as any),
   });
+  const data = useMemo<ArchiveBundle | null>(() => {
+    if(!bols.data && !ts.data && !lanes.data) return null;
+    return {bolRows:bols.data ?? [],tsRows:ts.data ?? [],laneRows:lanes.data ?? []};
+  },[bols.data,ts.data,lanes.data]);
+  return {data, isLoading:(isUuid && resolved.isLoading) || (bols.isLoading && ts.isLoading && lanes.isLoading),
+    detailsLoading:bols.isLoading || lanes.isLoading,
+    isError:resolved.isError || bols.isError || ts.isError || lanes.isError};
 }
 
 export interface ShipmentDatasetResult {
+  detailsLoading: boolean;
+  dataError: boolean;
   dataset: ShipmentDataset | null;
   loading: boolean;
   /** true when the DOCUMENTS came from the ImportYeti snapshot sample */
@@ -106,6 +123,8 @@ export function useShipmentDataset(
     return assembleDataset(b, recentBols ?? null);
   }, [bundle.data, recentBols]);
   return {
+    detailsLoading: bundle.detailsLoading,
+    dataError: bundle.isError,
     dataset,
     loading: bundle.isLoading,
     isSnapshotFallback: !!dataset && dataset.source === "snapshot" && dataset.rows.length > 0,
