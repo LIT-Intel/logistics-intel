@@ -550,7 +550,7 @@ export function LatestBolsTable({
           <div className="text-[16px] font-semibold" style={{ fontFamily: FONT_DISPLAY }}>
             Latest bills of lading
           </div>
-          <div className="mt-0.5 text-[12px] text-[#64748b]">Every figure above sums from these records</div>
+          <div className="mt-0.5 text-[12px] text-[#64748b]">Available documents for the selected period. Monthly totals may include shipments without stored BOL details.</div>
         </div>
         <button
           type="button"
@@ -578,6 +578,7 @@ export function LatestBolsTable({
               {view.modeled.spend && <ModeledPill />}
             </span>
           </div>
+          {!view.recent.length && <p className="px-6 py-5 text-sm text-[#64748b]">No BOL documents are stored for this period. Monthly shipment totals are shown above when available.</p>}
           {view.recent.map((r) => (
             <div
               key={r.id}
