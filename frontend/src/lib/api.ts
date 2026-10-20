@@ -1,5 +1,5 @@
 import { getGatewayBase } from "@/lib/env";
-import { evidenceMonth, monthlyVolumeEvidence } from "../../../supabase/functions/_shared/monthly_volume_evidence";
+import { evidenceMonth, monthlyVolumeEvidence } from "./monthlyVolumeEvidence";
 import {
   CompanyLite,
   ShipmentLite,
