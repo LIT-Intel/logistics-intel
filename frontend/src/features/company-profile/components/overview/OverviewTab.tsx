@@ -5,6 +5,7 @@
 import { Anchor, Database, Factory, Package } from "lucide-react";
 import type { ProfileView } from "../../data/selectors";
 import type { ShipmentDataset } from "../../data/types";
+import type { ServiceMix } from "../../data/serviceMix";
 import type { ProfileExtraActions } from "../../data/useProfileState";
 import { LaneMap } from "./LaneMap";
 import {
@@ -24,6 +25,7 @@ export function OverviewTab({
   onOpenTab,
   onExpandMap,
   sourceNote,
+  serviceMix,
 }: {
   view: ProfileView;
   ds: ShipmentDataset;
@@ -33,6 +35,7 @@ export function OverviewTab({
   /** Opens the fullscreen Cinematic trade-lanes view. */
   onExpandMap?: () => void;
   sourceNote?: string;
+  serviceMix?: ServiceMix | null;
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-5">
@@ -46,7 +49,7 @@ export function OverviewTab({
         className="grid gap-5"
         style={{ gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,420px),1fr))" }}
       >
-        <CadenceChart view={view} extra={extra} showPrior={showPrior} />
+        <CadenceChart view={view} extra={extra} showPrior={showPrior} serviceMix={serviceMix} />
         <EquipmentMix view={view} />
       </div>
 

@@ -14,6 +14,7 @@ import { computeLanes, computeView } from "./data/selectors";
 import { useCountUp } from "./data/useCountUp";
 import { useShipmentDataset } from "./data/useCompanyShipments";
 import { useProfileState } from "./data/useProfileState";
+import { sourceServiceMix, type ServiceMix } from "./data/serviceMix";
 import { Card, FONT_BODY, FONT_DISPLAY } from "./components/ui";
 import { StickyFilterBar } from "./components/StickyFilterBar";
 import { HistoryBrush } from "./components/HistoryBrush";
@@ -29,6 +30,7 @@ export type WorkspaceTab = "overview" | "lanes" | "history";
 /** The page-level workspace handle: one data load + one state instance shared
  *  by the editorial hero (above the tab bar) and every v2 tab body. */
 export interface WorkspaceHandle {
+  serviceMix?: ServiceMix | null;
   detailsLoading?: boolean;
   dataError?: boolean;
   dataset: ShipmentDataset | null;
@@ -46,6 +48,7 @@ export function useCompanyProfileWorkspace(
   companyKey: string | null | undefined,
   recentBols?: RecentBolInput[] | null,
   demoDataset?: ShipmentDataset | null,
+  sourceLoads?: unknown,
 ): WorkspaceHandle {
   const fetched = useShipmentDataset(demoDataset ? null : companyKey, demoDataset ? null : (recentBols ?? null));
   const dataset = demoDataset ?? fetched.dataset;
@@ -70,7 +73,7 @@ export function useCompanyProfileWorkspace(
     [dataset, ready, state, actions],
   );
 
-  return { dataset, loading, detailsLoading: demoDataset ? false : fetched.detailsLoading, dataError: demoDataset ? false : fetched.dataError, isSnapshotFallback, state, actions, extra, ready, view, lanesView };
+  return { serviceMix: sourceServiceMix(sourceLoads), dataset, loading, detailsLoading: demoDataset ? false : fetched.detailsLoading, dataError: demoDataset ? false : fetched.dataError, isSnapshotFallback, state, actions, extra, ready, view, lanesView };
 }
 
 export interface CompanyProfileWorkspaceProps {
@@ -190,6 +193,7 @@ export function CompanyProfileWorkspace({
               <OverviewTab
                 view={view}
                 ds={dataset}
+                serviceMix={workspace.serviceMix}
                 extra={extra}
                 onOpenTab={handleOpenTab}
                 onExpandMap={() => setMapExpanded(true)}

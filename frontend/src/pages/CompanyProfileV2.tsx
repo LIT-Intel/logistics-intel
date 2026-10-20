@@ -1437,6 +1437,8 @@ function ProfilePanel({ rawId }: { rawId: string }) {
   const v2Workspace = useCompanyProfileWorkspace(
     v2CompanyKey,
     (profile as any)?.recentBols ?? null,
+    undefined,
+    (profile as any)?.containers_load,
   );
 
   // Supply Chain tab is MX-only now (design handoff #2): non-MX deep links
