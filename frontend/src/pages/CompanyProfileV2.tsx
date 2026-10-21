@@ -979,6 +979,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
       }
       if (cancelled) return;
 
+      const snapshotMissingInitially = !cached.snapshotUpdatedAt;
       setLoading(false); // Render identity immediately; live provider refresh is secondary.
       setRefreshing(!cached.profile && !cached.routeKpis);
 
@@ -1072,7 +1073,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
         // ImportYeti snapshot was still being generated. Invalidate that
         // archive once the real snapshot lands; otherwise its five-minute
         // React Query staleTime requires a hard reload to repaint the chart.
-        if (cached.snapshotUpdatedAt) {
+        if (snapshotMissingInitially && cached.snapshotUpdatedAt) {
           void queryClient.invalidateQueries({ queryKey: ["company-shipments-v2"] });
         }
       } else if (!seedProfile) {
