@@ -115,7 +115,7 @@ serve(async (req) => {
         try {
           const { data } = await adminClient.from("platform_admins")
             .select("user_id").eq("user_id", user.id).maybeSingle();
-          return data !== null;
+          return Boolean(data);
         } catch { return false; }
       })(),
       (async (): Promise<{ limit: number | null; used: number } | null> => {
