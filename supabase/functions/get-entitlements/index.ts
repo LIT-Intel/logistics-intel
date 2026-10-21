@@ -89,126 +89,71 @@ serve(async (req) => {
     return json({ ok: false, error: error.message }, 500);
   }
 
-  // Enrichment Phase 1: fold credit usage into the snapshot. RPC returns
-  // { used_this_month, quota, remaining, reset_at, plan }. NULL quota =
-  // unlimited (Enterprise). Soft-fail if the RPC isn't deployed yet so we
-  // don't break the existing UI gating on rollback.
-  let credits: Record<string, unknown> | null = null;
-  try {
-    const { data: creditData, error: creditErr } = await adminClient.rpc(
-      "lit_get_credit_usage",
-      { p_org_id: orgId, p_user_id: user.id },
-    );
-    if (!creditErr) credits = creditData as Record<string, unknown>;
-  } catch (_) {
-    // RPC may not exist in some environments; ignore.
-  }
-
-  // Credits v2 — the unified LIT Credits balance (included + purchased) from the
-  // new credit engine (lit_credit_accounts). Soft-fail so the snapshot never
-  // breaks if the engine isn't present in this environment.
-  let creditBalance: Record<string, unknown> | null = null;
-  try {
-    if (orgId) {
-      const { data: cbData, error: cbErr } = await adminClient.rpc(
-        "lit_credit_balance",
-        { p_org_id: orgId },
-      );
-      if (!cbErr) creditBalance = cbData as Record<string, unknown>;
-    }
-  } catch (_) {
-    // engine not deployed in this env — ignore.
-  }
-
-  const { data: paRow } = await adminClient
-    .from("platform_admins")
-    .select("user_id")
-    .eq("user_id", user.id)
-    .maybeSingle();
-  const isPlatformAdmin = paRow !== null;
-
-  // saved_map_view is enforced by check_usage_limit (migration
-  // 20260624130000) but is NOT emitted by the get_entitlements RPC's
-  // limits/used maps. The frontend's saveViewAllowed gate reads
-  // entitlements.limits.saved_map_view, so derive it here from the
-  // authoritative gate (limit/used) and fold it into the snapshot. We call
-  // check_usage_limit with quantity 0 so it never consumes — it just reports
-  // the current limit + used. Soft-fail (leave the key absent) on error; the
-  // frontend already treats a missing key as blocked for free_trial.
-  let savedMapView: { limit: number | null; used: number } | null = null;
-  try {
-    const { data: smvData, error: smvErr } = await adminClient.rpc(
-      "check_usage_limit",
-      {
-        p_org_id: orgId,
-        p_user_id: user.id,
-        p_feature_key: "saved_map_view",
-        p_quantity: 0,
-      },
-    );
-    if (!smvErr && smvData && typeof smvData === "object") {
-      const row = smvData as Record<string, unknown>;
-      const rawLimit = row.limit;
-      const rawUsed = row.used;
-      savedMapView = {
-        limit:
-          rawLimit === null || rawLimit === undefined
-            ? null
-            : Number(rawLimit),
-        used: typeof rawUsed === "number" ? rawUsed : Number(rawUsed ?? 0) || 0,
-      };
-    }
-  } catch (_) {
-    // RPC unavailable in this env — leave the key absent.
-  }
-
-  // CRM per-seat add-on entitlement. Org-level: read the org's row in
-  // lit_crm_subscriptions (written by billing-webhook). crm_enabled is true
-  // for an active/trialing subscription; crm_seats is the paid seat count.
-  // Soft-fail (disabled) when the org has no row or the table is absent so
-  // rollout/rollback never breaks the snapshot.
-  let crmEnabled = false;
-  let crmSeats = 0;
-  if (orgId) {
-    try {
-      const { data: crmRow } = await adminClient
-        .from("lit_crm_subscriptions")
-        .select("status, seats")
-        .eq("org_id", orgId)
-        .maybeSingle();
-      if (crmRow) {
-        const status = String((crmRow as Record<string, unknown>).status ?? "");
-        crmEnabled = status === "active" || status === "trialing";
-        crmSeats = crmEnabled
-          ? Number((crmRow as Record<string, unknown>).seats ?? 0) || 0
-          : 0;
-      }
-    } catch (_) {
-      // Table not present in this env — leave CRM disabled.
-    }
-  }
-
-  // Credits-v2 metering flag. The LIT Credits UI (header chip, Credit Usage
-  // page, Purchase CTA) should only appear once metering is actually live —
-  // otherwise a trial user sees "25 credits" and assumes that's what governs
-  // access (owner-reported confusion 2026-09-19). Emit the resolved flag so the
-  // UI can hide the credit surfaces while metering is dark, and reveal them
-  // automatically when it's switched on. Enabled = not killed AND rolled out.
-  let creditsMeteringEnabled = false;
-  try {
-    const { data: flagRow } = await adminClient
-      .from("lit_feature_flags")
-      .select("global_kill, rollout")
-      .eq("key", "credits_metering_enabled")
-      .maybeSingle();
-    if (flagRow) {
-      const gk = (flagRow as Record<string, unknown>).global_kill === true;
-      const rollout = Number((flagRow as Record<string, unknown>).rollout ?? 0) || 0;
-      creditsMeteringEnabled = !gk && rollout > 0;
-    }
-  } catch (_) {
-    // flags table absent in this env — leave metering disabled (safe default).
-  }
+  // These lookups are independent once the user's org is resolved.
+  // Running them together avoids serial REST/RPC round trips on every
+  // authenticated page while preserving the existing nullable fallbacks.
+  const [credits, creditBalance, isPlatformAdmin, savedMapView, crmInfo, creditsMeteringEnabled] =
+    await Promise.all([
+      (async (): Promise<Record<string, unknown> | null> => {
+        try {
+          const { data, error } = await adminClient.rpc("lit_get_credit_usage", {
+            p_org_id: orgId, p_user_id: user.id,
+          });
+          return error ? null : (data as Record<string, unknown> | null);
+        } catch { return null; }
+      })(),
+      (async (): Promise<Record<string, unknown> | null> => {
+        if (!orgId) return null;
+        try {
+          const { data, error } = await adminClient.rpc("lit_credit_balance", {
+            p_org_id: orgId,
+          });
+          return error ? null : (data as Record<string, unknown> | null);
+        } catch { return null; }
+      })(),
+      (async (): Promise<boolean> => {
+        try {
+          const { data } = await adminClient.from("platform_admins")
+            .select("user_id").eq("user_id", user.id).maybeSingle();
+          return data !== null;
+        } catch { return false; }
+      })(),
+      (async (): Promise<{ limit: number | null; used: number } | null> => {
+        try {
+          const { data, error } = await adminClient.rpc("check_usage_limit", {
+            p_org_id: orgId, p_user_id: user.id,
+            p_feature_key: "saved_map_view", p_quantity: 0,
+          });
+          if (error || !data || typeof data !== "object") return null;
+          const row = data as Record<string, unknown>;
+          return {
+            limit: row.limit == null ? null : Number(row.limit),
+            used: Number(row.used ?? 0) || 0,
+          };
+        } catch { return null; }
+      })(),
+      (async (): Promise<{ enabled: boolean; seats: number }> => {
+        if (!orgId) return { enabled: false, seats: 0 };
+        try {
+          const { data } = await adminClient.from("lit_crm_subscriptions")
+            .select("status, seats").eq("org_id", orgId).maybeSingle();
+          const status = String((data as any)?.status ?? "");
+          const enabled = status === "active" || status === "trialing";
+          return { enabled, seats: enabled ? Number((data as any)?.seats ?? 0) || 0 : 0 };
+        } catch { return { enabled: false, seats: 0 }; }
+      })(),
+      (async (): Promise<boolean> => {
+        try {
+          const { data } = await adminClient.from("lit_feature_flags")
+            .select("global_kill, rollout").eq("key", "credits_metering_enabled")
+            .maybeSingle();
+          return Boolean(data) && (data as any).global_kill !== true &&
+            (Number((data as any).rollout ?? 0) || 0) > 0;
+        } catch { return false; }
+      })(),
+    ]);
+  const crmEnabled = crmInfo.enabled;
+  const crmSeats = crmInfo.seats;
 
   const entitlements =
     data && typeof data === "object"
