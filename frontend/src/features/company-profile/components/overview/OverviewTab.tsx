@@ -17,6 +17,33 @@ import {
   LatestBolsTable,
 } from "./OverviewWidgets";
 
+/** Air enrichment is only confirmed when a documented record explicitly
+ * identifies air transport; ocean manifests do not prove air shipping. */
+function AirEvidence({ summary }: { summary: {
+  verifiedAir: number; unclassified: number; observedDocuments: number;
+  weightKg: number | null; lastAirDate: string | null; topOrigin: string | null;
+} }) {
+  const verified = summary.verifiedAir > 0;
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white px-4 py-3" aria-label="Air freight intelligence coverage">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-[13px] font-semibold text-slate-900">Air freight intelligence</h3>
+        <span className={verified ? "text-[11px] font-medium text-emerald-700" : "text-[11px] font-medium text-slate-500"}>
+          {verified ? "Verified air records" : "Coverage not verified"}
+        </span>
+      </div>
+      <p className="mt-1 text-[12px] text-slate-600">
+        {verified
+          ? `${summary.verifiedAir.toLocaleString()} source-labeled air shipments${summary.weightKg != null ? ` · ${summary.weightKg.toLocaleString()} kg reported` : ""}${summary.topOrigin ? ` · Top origin: ${summary.topOrigin}` : ""}`
+          : "No source-labeled air waybills are available for this account. This does not mean the company has no air freight activity."}
+      </p>
+      <p className="mt-1 text-[11px] text-slate-400">
+        {summary.observedDocuments.toLocaleString()} stored shipment documents assessed; {summary.unclassified.toLocaleString()} lack a transport-mode label. Air volumes, routes and spend are not estimated from ocean BOLs.
+      </p>
+    </section>
+  );
+}
+
 export function OverviewTab({
   view,
   ds,
@@ -26,6 +53,7 @@ export function OverviewTab({
   onExpandMap,
   sourceNote,
   serviceMix,
+  airSummary,
 }: {
   view: ProfileView;
   ds: ShipmentDataset;
@@ -36,12 +64,15 @@ export function OverviewTab({
   onExpandMap?: () => void;
   sourceNote?: string;
   serviceMix?: ServiceMix | null;
+  airSummary?: { verifiedAir: number; unclassified: number; observedDocuments: number; weightKg: number | null; lastAirDate: string | null; topOrigin: string | null } | null;
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-5">
       <InsightCards view={view} ds={ds} />
 
       <KpiGrid view={view} />
+
+      {airSummary && <AirEvidence summary={airSummary} />}
 
       <LaneMap view={view} onOpenLanesTab={() => onOpenTab?.("lanes")} onExpand={onExpandMap} />
 
