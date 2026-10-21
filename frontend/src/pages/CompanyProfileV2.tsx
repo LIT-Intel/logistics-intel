@@ -989,7 +989,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
       // no extra credit), then re-read the snapshot. Only for slug keys —
       // a bare-UUID deep-link with no snapshot is handled by the synthetic
       // fallback below, not a live fetch.
-      if (!cached.profile && !cached.routeKpis) {
+      if (!cached.snapshotUpdatedAt) {
         const bareKey = String(routeOrStoredId || "").replace(/^company\//i, "");
         // MX pedimento identities (mx:<name> route ids) can NEVER have an
         // ImportYeti snapshot — skip the live fetch + 20s poll entirely so
@@ -1048,7 +1048,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
           // adaptively: 10×2s for the common case, then 8×5s for stragglers
           // (~60s total), bounded + cancel-aware, and ALWAYS (even after a
           // fetch error, since the server-side write may still land).
-          for (let i = 0; i < 18 && !(cached.profile || cached.routeKpis); i++) {
+          for (let i = 0; i < 18 && !cached.snapshotUpdatedAt; i++) {
             await new Promise((r) => setTimeout(r, i < 10 ? 2000 : 5000));
             if (cancelled) return;
             try {
