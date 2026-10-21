@@ -239,6 +239,20 @@ const INDUSTRY_PHRASES = [
   [/\b(consumer services)\b/, 'Consumer Services'],
 ];
 
+// Common metro names are deterministic filters: the market query must not
+// silently drop a specific city just because its industry was recognized.
+// Other cities continue through the AI parser rather than guessed matches.
+const COMMON_MARKET_CITIES = [
+  'new york city', 'new york', 'los angeles', 'chicago', 'houston',
+  'phoenix', 'philadelphia', 'san antonio', 'san diego', 'dallas',
+  'jacksonville', 'austin', 'fort worth', 'columbus', 'charlotte',
+  'indianapolis', 'san francisco', 'seattle', 'denver', 'washington dc',
+  'washington d.c.', 'nashville', 'atlanta', 'miami', 'boston',
+  'detroit', 'portland', 'las vegas', 'memphis', 'louisville',
+  'baltimore', 'minneapolis', 'tampa', 'orlando', 'cleveland',
+  'cincinnati', 'pittsburgh', 'st louis', 'st. louis', 'smyrna',
+];
+
 export function localExtractFilters(query) {
   const q = String(query ?? '').trim();
   if (!q) return {};
@@ -274,6 +288,17 @@ export function localExtractFilters(query) {
     }
   }
   if (states.length) geo.states = states;
+
+  // Require a location preposition for city matching, and prefer longest
+  // multiword cities first (e.g. New York City before New York).
+  const cities = COMMON_MARKET_CITIES
+    .filter((city) => {
+      const escaped = city.replace(/[.*+?^${}()|[\]\\]/g, '\\  if (states.length) geo.states = states;
+
+  const industry = [];');
+      return new RegExp(`\\b(?:in|near|around|within|at)\\s+${escaped}\\b`, 'i').test(q);
+    });
+  if (cities.length) geo.cities = [cities[0] === 'new york city' ? 'New York' : cities[0]];
 
   const industry = [];
   for (const [re, val] of INDUSTRY_PHRASES) {
