@@ -36,6 +36,8 @@ export interface UnifiedShipmentDbRow {
   load_type: string | null;
   shipping_cost_usd: number | string | null;
   container_type: string | null;
+  transport_mode?: string | null;
+  ingest_source?: string | null;
 }
 
 /** ImportYeti recentBols shape (normalized by lib/api.ts normalizeRecentBols). */
