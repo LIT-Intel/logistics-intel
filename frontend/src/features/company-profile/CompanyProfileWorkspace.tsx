@@ -7,6 +7,7 @@
  * period/metric/facet change updates the whole workspace at once.
  */
 import { useMemo, useState, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { miLabel } from "./data/format";
 import type { RecentBolInput } from "./data/normalizeShipments";
 import type { ShipmentDataset } from "./data/types";
@@ -118,6 +119,7 @@ export function CompanyProfileWorkspace({
   shareCompany,
 }: CompanyProfileWorkspaceProps) {
   const { dataset, loading, state, actions, extra, view, lanesView } = workspace;
+  const queryClient = useQueryClient();
   const [mapExpanded, setMapExpanded] = useState(false);
 
   if (loading && !dataset) {
@@ -136,24 +138,23 @@ export function CompanyProfileWorkspace({
 
   if (!dataset || !view) {
     return (
-      <Card className="mx-auto my-10 max-w-xl p-8 text-center">
+      <Card className="mx-auto my-10 max-w-xl p-8 text-center" role="status">
         <div className="text-[16px] font-semibold text-[#0F172A]" style={{ fontFamily: FONT_DISPLAY }}>
-          {workspace.dataError ? "Shipment history could not be loaded" : "Shipment intelligence is on its way"}
+          {workspace.dataError ? "Shipment history could not be loaded" : "No shipment history available yet"}
         </div>
         <p className="mt-2 text-[13px] leading-relaxed text-[#64748b]" style={{ fontFamily: FONT_BODY }}>
-          We&apos;re assembling the bill-of-lading history for {companyName}. In the meantime, the
-          Supply Chain tab has the live trade picture.
+          {workspace.dataError
+            ? `We couldn't retrieve the stored shipment history for ${companyName}. You can retry without leaving this page.`
+            : `We have not yet received usable monthly shipment history for ${companyName}. You can retry the archive lookup.`}
         </p>
-        {onSwitchTab && (
-          <button
-            type="button"
-            onClick={() => onSwitchTab("supply")}
-            className="mt-5 h-[38px] rounded-[10px] bg-[#0F172A] px-5 text-[13px] font-semibold text-white transition-transform hover:bg-[#1e293b] active:scale-[0.97] motion-reduce:active:scale-100"
-            style={{ fontFamily: FONT_BODY }}
-          >
-            Open Supply Chain
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={() => void queryClient.invalidateQueries({ queryKey: ["company-shipments-v2"] })}
+          className="mt-5 h-[38px] rounded-[10px] bg-[#0F172A] px-5 text-[13px] font-semibold text-white hover:bg-[#1e293b]"
+          style={{ fontFamily: FONT_BODY }}
+        >
+          Retry shipment history
+        </button>
       </Card>
     );
   }
