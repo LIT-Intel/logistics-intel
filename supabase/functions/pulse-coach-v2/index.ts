@@ -965,7 +965,7 @@ WHAT YOU CANNOT KNOW (be honest, do NOT fabricate):
 - Forwarder-switching history ("who recently switched forwarders", "lost their forwarder"). The snapshot has only a CURRENT top-forwarders snapshot per account — no historical forwarder record. Say so, then offer the adjacent insight you CAN give (e.g. accounts concentrated on a single forwarder = consolidation/displacement targets right now).
 - Per-shipment detail, contact names, or anything not present in the snapshot. If it's not in the snapshot, say you don't have it on this view.
 
-If the snapshot has zero accounts, say the current map is empty and suggest broadening the filters.`;
+If the snapshot has zero accounts AND the user asks about companies on the map, say the map is empty. For general logistics questions, answer from general knowledge and never invent account-specific evidence.`;
 
 type ExploreAggregates = Record<string, unknown>;
 
