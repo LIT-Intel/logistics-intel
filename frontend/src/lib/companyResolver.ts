@@ -25,6 +25,9 @@ import type {
   ResolveCompanyError,
 } from "./companyProfile.types";
 
+const SAVED_FIELDS = "id,source_company_key,name,domain,website,phone,address_line1,city,state,country_code,postal_code,industry,headcount,revenue,logo_url,shipments_12m,teu_12m,fcl_shipments_12m,lcl_shipments_12m,est_spend_12m,most_recent_shipment_date,top_route_12m,recent_route,primary_mode";
+const DIRECTORY_FIELDS = "id,company_key,canonical_name,company_name,canonical_domain,domain,website,phone,address_line1,city,state,country,postal_code,industry,employee_count,revenue,source,enrichment_status,enriched_at";
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type ResolveInput = {
@@ -140,7 +143,7 @@ function parseCandidates(raw: string): string[] {
 async function tryUuid(client: ResolverClient, value: string) {
   const { data, error } = await client
     .from("lit_companies")
-    .select("*")
+    .select(SAVED_FIELDS)
     .eq("id", value)
     .maybeSingle();
   if (error) return null;
@@ -153,7 +156,7 @@ async function tryCompanyKey(client: ResolverClient, raw: string) {
 
   const { data: companies } = await client
     .from("lit_companies")
-    .select("*")
+    .select(SAVED_FIELDS)
     .in("source_company_key", candidates)
     .limit(1);
 
@@ -163,7 +166,7 @@ async function tryCompanyKey(client: ResolverClient, raw: string) {
 
   const { data: directory } = await client
     .from("lit_company_directory")
-    .select("*")
+    .select(DIRECTORY_FIELDS)
     .in("company_key", candidates)
     .limit(1);
 
@@ -180,7 +183,7 @@ async function tryDomain(client: ResolverClient, rawDomain: string) {
 
   const { data: companies } = await client
     .from("lit_companies")
-    .select("*")
+    .select(SAVED_FIELDS)
     .eq("domain", domain)
     .limit(1);
   if (companies && companies.length > 0) {
@@ -189,7 +192,7 @@ async function tryDomain(client: ResolverClient, rawDomain: string) {
 
   const { data: directory } = await client
     .from("lit_company_directory")
-    .select("*")
+    .select(DIRECTORY_FIELDS)
     .or(`canonical_domain.eq.${domain},domain.eq.${domain}`)
     .limit(1);
   if (directory && directory.length > 0) {
@@ -211,7 +214,7 @@ async function tryNameLocation(
 
   let savedQuery = client
     .from("lit_companies")
-    .select("*")
+    .select(SAVED_FIELDS)
     .ilike("normalized_name", `%${normalized}%`);
   if (city) savedQuery = savedQuery.ilike("city", city);
   if (state) savedQuery = savedQuery.ilike("state", state);
@@ -223,7 +226,7 @@ async function tryNameLocation(
 
   let dirQuery = client
     .from("lit_company_directory")
-    .select("*")
+    .select(DIRECTORY_FIELDS)
     .ilike("normalized_name", `%${normalized}%`);
   if (city) dirQuery = dirQuery.ilike("city", city);
   if (state) dirQuery = dirQuery.ilike("state", state);
