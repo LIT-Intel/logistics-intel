@@ -48,9 +48,10 @@ const PAGE_SIZE = 1000;
 // whole PAGE_SIZE. Garbage / missing -> the MAX_ROWS default.
 function clampLoad(limit: unknown): number {
   const n = Number(limit);
-  if (!Number.isFinite(n) || n <= MAX_ROWS) return MAX_ROWS;
-  const rounded = Math.ceil(n / PAGE_SIZE) * PAGE_SIZE;
-  return Math.min(MAX_LOAD, Math.max(MAX_ROWS, rounded));
+  if (!Number.isFinite(n) || n <= 0) return MAX_ROWS;
+  // The Search map asks for 500 records initially. Respect that request,
+  // rather than silently converting it into five 1000-row database reads.
+  return Math.min(MAX_LOAD, Math.max(100, Math.ceil(n / 100) * 100));
 }
 
 type Geo = {
@@ -249,7 +250,8 @@ async function fetchDirectory(admin: any, f: Filters, maxRows: number = MAX_ROWS
   // back short. maxRows grows when the user clicks "load more".
   const out: Row[] = [];
   for (let from = 0; from < maxRows; from += PAGE_SIZE) {
-    const q = buildDirectoryQueryBase(admin, f).range(from, from + PAGE_SIZE - 1);
+    const pageSize = Math.min(PAGE_SIZE, maxRows - from);
+    const q = buildDirectoryQueryBase(admin, f).range(from, from + pageSize - 1);
     const { data, error } = await q;
     if (error) {
       console.error("[pulse-explore] directory page failed", { from, error });
@@ -257,7 +259,7 @@ async function fetchDirectory(admin: any, f: Filters, maxRows: number = MAX_ROWS
     }
     if (!data || data.length === 0) break;
     for (const r of data) out.push(normalizeDirectoryRow(r as any));
-    if (data.length < PAGE_SIZE) break;
+    if (data.length < pageSize) break;
   }
   return out;
 }
@@ -340,6 +342,7 @@ function normalizeDirectoryRow(r: any): Row {
 async function fetchLive(
   admin: any,
   f: Filters,
+  maxRows: number = MAX_ROWS,
 ): Promise<Row[]> {
   const states = expandStates(f.geo);
   // Pull the live KPIs from lit_companies (shipments_12m / teu_12m /
@@ -352,7 +355,7 @@ async function fetchLive(
     "est_spend_12m, top_route_12m, recent_route, " +
     "most_recent_shipment_date";
   const out: Row[] = [];
-  for (let from = 0; from < MAX_ROWS; from += PAGE_SIZE) {
+  for (let from = 0; from < maxRows; from += PAGE_SIZE) {
     let q = admin.from("lit_companies").select(select);
     if (f.name?.trim()) q = q.ilike("name", `%${f.name.trim()}%`);
     if (f.industry?.length) q = q.in("industry", f.industry);
@@ -370,7 +373,7 @@ async function fetchLive(
     }
     if (f.commercial?.revenue_min != null) q = q.gte("revenue", f.commercial.revenue_min);
     if (f.commercial?.revenue_max != null) q = q.lte("revenue", f.commercial.revenue_max);
-    q = q.range(from, from + PAGE_SIZE - 1);
+    q = q.range(from, Math.min(from + PAGE_SIZE, maxRows) - 1);
     const { data, error } = await q;
     if (error) { console.error("[pulse-explore] live page failed", { from, error }); break; }
     if (!data || data.length === 0) break;
@@ -510,6 +513,9 @@ function indexCanSatisfy(f: Filters): boolean {
   if (f.geo?.regions?.length) return false;
   if (f.geo?.region) return false;
   if (f.geo?.metros?.length) return false;
+  // Index city is a free-text address, not reliably structured. Never
+  // introduce nationwide index rows into a city-specific result set.
+  if (f.geo?.cities?.length) return false;
   if (f.industry?.length) return false;
   if (
     f.commercial &&
@@ -521,7 +527,7 @@ function indexCanSatisfy(f: Filters): boolean {
   return true;
 }
 
-async function fetchIndex(admin: any, f: Filters): Promise<Row[]> {
+async function fetchIndex(admin: any, f: Filters, maxRows: number = MAX_ROWS): Promise<Row[]> {
   // Caller decides whether to invoke this at all (skipped for
   // dataset_filter === "directory_only"). Here we only build the query.
   const indexColumns =
@@ -539,7 +545,7 @@ async function fetchIndex(admin: any, f: Filters): Promise<Row[]> {
     .filter(Boolean);
 
   const out: Row[] = [];
-  for (let from = 0; from < MAX_ROWS; from += PAGE_SIZE) {
+  for (let from = 0; from < maxRows; from += PAGE_SIZE) {
     let q = admin.from("lit_company_index").select(indexColumns);
     if (f.name?.trim()) q = q.ilike("company_name", `%${f.name.trim()}%`);
     if (countryCodes.length) q = q.in("country", countryCodes);
@@ -549,13 +555,13 @@ async function fetchIndex(admin: any, f: Filters): Promise<Row[]> {
     if (f.size?.shipments_max != null) q = q.lte("total_shipments", f.size.shipments_max);
     if (f.size?.teu_min != null) q = q.gte("total_teu", f.size.teu_min);
     if (f.size?.teu_max != null) q = q.lte("total_teu", f.size.teu_max);
-    q = q.range(from, from + PAGE_SIZE - 1);
+    q = q.range(from, Math.min(from + PAGE_SIZE, maxRows) - 1);
     const { data, error } = await q;
     if (error) {
       // Most likely cause pre-migration: canonical_name column missing. Retry
       // once without it so the Explorer keeps working before the DDL lands.
       if (/canonical_name/i.test(error.message ?? "")) {
-        const fallback = await fetchIndexWithoutCanonical(admin, f, countryCodes, from);
+        const fallback = await fetchIndexWithoutCanonical(admin, f, countryCodes, from, maxRows);
         out.push(...fallback);
         break;
       }
@@ -575,12 +581,13 @@ async function fetchIndexWithoutCanonical(
   f: Filters,
   countryCodes: string[],
   startFrom: number,
+  maxRows: number = MAX_ROWS,
 ): Promise<Row[]> {
   const cols =
     "company_id, company_name, country, city, total_shipments, total_teu, " +
     "latest_year_teu, lcl_shipments, updated_at";
   const out: Row[] = [];
-  for (let from = startFrom; from < MAX_ROWS; from += PAGE_SIZE) {
+  for (let from = startFrom; from < maxRows; from += PAGE_SIZE) {
     let q = admin.from("lit_company_index").select(cols);
     if (f.name?.trim()) q = q.ilike("company_name", `%${f.name.trim()}%`);
     if (countryCodes.length) q = q.in("country", countryCodes);
@@ -588,7 +595,7 @@ async function fetchIndexWithoutCanonical(
     if (f.size?.shipments_max != null) q = q.lte("total_shipments", f.size.shipments_max);
     if (f.size?.teu_min != null) q = q.gte("total_teu", f.size.teu_min);
     if (f.size?.teu_max != null) q = q.lte("total_teu", f.size.teu_max);
-    q = q.range(from, from + PAGE_SIZE - 1);
+    q = q.range(from, Math.min(from + PAGE_SIZE, maxRows) - 1);
     const { data, error } = await q;
     if (error) { console.error("[pulse-explore] index fallback page failed", { from, error }); break; }
     if (!data || data.length === 0) break;
@@ -994,8 +1001,8 @@ Deno.serve(async (req: Request) => {
   const effectiveMax = clampLoad(body.limit);
   const [directoryRows, liveRows, indexRows, directoryTotal] = await Promise.all([
     dataset === "live_only" ? Promise.resolve([] as Row[]) : fetchDirectory(admin, filters, effectiveMax),
-    dataset === "directory_only" ? Promise.resolve([] as Row[]) : fetchLive(admin, filters),
-    includeIndex ? fetchIndex(admin, filters) : Promise.resolve([] as Row[]),
+    dataset === "directory_only" ? Promise.resolve([] as Row[]) : fetchLive(admin, filters, effectiveMax),
+    includeIndex ? fetchIndex(admin, filters, effectiveMax) : Promise.resolve([] as Row[]),
     // True universe count (cheap head-count, runs in parallel). Lets the UI show
     // the real match total even though we only LOAD the top MAX_ROWS.
     dataset === "live_only" ? Promise.resolve(null) : countDirectory(admin, filters),

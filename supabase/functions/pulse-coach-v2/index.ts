@@ -952,7 +952,9 @@ const EXPLORE_REASON_SYSTEM = `You are Pulse Coach, a freight-sales analyst embe
 
 RULES:
 - Ground every claim in the snapshot. Never invent companies, numbers, lanes, or forwarders that are not present.
-- Answer the user's actual question first, in 1-2 sentences, then support it with specifics (named accounts, TEU, lanes, forwarders, states) drawn from the snapshot.
+- Understand natural-language requests, follow-up questions, and the user's recent conversation without requiring any particular phrasing. Answer the actual question first in 1-2 sentences. For freight sales questions, use named accounts, TEU, lanes, forwarders, and states only when grounded in the snapshot.
+- When the question is general logistics, strategy, writing, or explanation rather than a request for account data, answer it using general professional knowledge and clearly distinguish that from facts in the current map. Don't claim the map demonstrates something it doesn't.
+- If the user asks for an action (send outreach, save to CRM, change filters), do not pretend that an action occurred. Offer a concrete draft or explain which UI action is needed.
 - When the user asks for a count ("give me 2", "top 50", "show 1000"), the sample_rows have ALREADY been sorted by opportunity score and sliced to the requested N — list/work with exactly what you were given. If sample_count < requested_count, say how many are actually available.
 - Write in markdown. Use a short numbered or bulleted list when naming accounts. Lead with the answer, no preamble.
 - Freight-operator tone. Second person. Never say "as an AI". Never name third-party data vendors (Apollo, Lusha, Panjiva, ImportYeti, Resend) — say "our shipment-data sources".
@@ -1066,12 +1068,13 @@ async function reasonOverExploreSnapshot(args: {
   filters: any;
   totals: ExploreAggregates;
   sampleRows: any[];
+  history?: Array<{ question: string; answer: string }>;
 }): Promise<{
   classification: string;
   answer_md: string;
   cta: { label: string; url: string } | null;
 }> {
-  const { question, filters, totals, sampleRows } = args;
+  const { question, filters, totals, sampleRows, history = [] } = args;
 
   // Detect not-answerable intents so we can nudge the model toward honesty
   // even if it would otherwise try to invent a trend.
@@ -1110,6 +1113,10 @@ async function reasonOverExploreSnapshot(args: {
 
   const userPayload = {
     question,
+    recent_conversation: history.slice(-6).map((turn) => ({
+      question: String(turn.question ?? "").slice(0, 500),
+      answer: String(turn.answer ?? "").slice(0, 1600),
+    })),
     active_filters: filters ?? {},
     aggregates_over_all_accounts: totals ?? {},
     sample_rows: sampleRows,
@@ -1241,7 +1248,8 @@ serve(async (req) => {
 
     const filters = body?.filters ?? {};
     const totals = body?.totals ?? {};
-    const sampleRows = Array.isArray(body?.sample_rows) ? body.sample_rows : [];
+    const sampleRows = Array.isArray(body?.sample_rows) ? body.sample_rows.slice(0, 80) : [];
+    const history = Array.isArray(body?.history) ? body.history.slice(-6) : [];
 
     const orgId = await resolveOrgId(supa, userId);
     const gateResp = await gatePulseAi(supa, orgId, userId);
@@ -1273,6 +1281,7 @@ serve(async (req) => {
       filters: offMap ? { note: "server-grounded search (off-map query)" } : filters,
       totals: effectiveTotals,
       sampleRows: effectiveRows,
+      history,
     });
 
     await supa.from("lit_usage_ledger").insert({

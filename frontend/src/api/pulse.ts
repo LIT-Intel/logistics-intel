@@ -210,6 +210,7 @@ export async function reasonOverExplore(input: {
   filters: Record<string, unknown>;
   totals: Record<string, unknown>;
   sampleRows: Record<string, unknown>[];
+  history?: Array<{ question: string; answer: string }>;
 }): Promise<PulseCoachAnswer> {
   const { data, error } = await supabase.functions.invoke("pulse-coach-v2", {
     body: {
@@ -218,6 +219,7 @@ export async function reasonOverExplore(input: {
       filters: input.filters,
       totals: input.totals,
       sample_rows: input.sampleRows,
+      history: input.history ?? [],
     },
   });
   if (error) {

@@ -34,10 +34,12 @@ function fmtNum(n) {
 
 function fmtMoneyM(v) {
   if (v == null || !Number.isFinite(Number(v))) return '—';
+  // Directory revenue is stored in USD, not in millions.
   const n = Number(v);
-  if (n >= 1_000) return `$${(n / 1_000).toFixed(2)}B`;
-  if (n >= 1) return `$${n.toFixed(1)}M`;
-  return `$${(n * 1000).toFixed(0)}k`;
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(2)}B`;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}k`;
+  return `${n.toFixed(0)}`;
 }
 
 // Tiny markdown→HTML pass: bold, italics, line breaks. Coach replies
@@ -172,7 +174,9 @@ function buildExploreSnapshot({ rows, insights, filters, question }) {
 
   // COUNT intent: slice exactly N; otherwise a representative top-60 sample.
   const requested = parseCountIntent(question);
-  const sampleN = requested != null ? requested : 60;
+  // Keep the AI context bounded even when the user asks for thousands of rows.
+  // The report/export continues to use the full filtered result set.
+  const sampleN = Math.min(requested != null ? requested : 60, 80);
   const sampleRows = sorted.slice(0, sampleN).map(trimRow);
 
   const sumTeu = rows.reduce((a, r) => {
@@ -366,7 +370,8 @@ const SUGGESTIONS = [
 ];
 
 export default function InsightsPanel({ rows, insights, filters, requireCoach, requirePdf }) {
-  const [thread, setThread] = useState([]); // [{question, answer, loading}]
+  const [thread, setThread] = useState([]); // [{id, question, answer, loading}]
+  const nextTurnId = useRef(0);
   const [input, setInput] = useState('');
   const scrollRef = useRef(null);
 
@@ -395,7 +400,10 @@ export default function InsightsPanel({ rows, insights, filters, requireCoach, r
       return;
     }
     setInput('');
-    setThread((prev) => [...prev, { question, answer: '', loading: true }]);
+    const turnId = ++nextTurnId.current;
+    const history = thread.filter((t) => !t.loading && t.answer).slice(-6)
+      .map((t) => ({ question: t.question, answer: t.answer }));
+    setThread((prev) => [...prev, { id: turnId, question, answer: '', loading: true }]);
     // Build a STRUCTURED snapshot (aggregates over all rows + a capped,
     // opportunity-sorted sample). No prose blurb concatenated into the
     // question — that's what contaminated the server parser before.
@@ -406,11 +414,12 @@ export default function InsightsPanel({ rows, insights, filters, requireCoach, r
         filters: filters ?? {},
         totals,
         sampleRows,
+        history,
       });
       const answer = resp?.answer_md || 'No answer returned.';
-      setThread((prev) => prev.map((t, i) => i === prev.length - 1 ? { question, answer, loading: false } : t));
+      setThread((prev) => prev.map((t) => t.id === turnId ? { ...t, answer, loading: false } : t));
     } catch (err) {
-      setThread((prev) => prev.map((t, i) => i === prev.length - 1 ? { question, answer: `Error: ${err?.message ?? 'coach failed'}`, loading: false } : t));
+      setThread((prev) => prev.map((t) => t.id === turnId ? { ...t, answer: `Error: ${err?.message ?? 'coach failed'}`, loading: false } : t));
     }
   }
 
@@ -427,8 +436,8 @@ export default function InsightsPanel({ rows, insights, filters, requireCoach, r
         {summary && (
           <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-[12px] text-slate-700 leading-snug">
             <strong>{summary.total.toLocaleString()}</strong> accounts ·{' '}
-            <strong>{fmtMoneyM(summary.totalRev)}</strong> revenue ·{' '}
-            <strong>{fmtNum(summary.totalTeu)} TEU</strong>
+            <strong>{summary.totalRev > 0 ? fmtMoneyM(summary.totalRev) : 'Revenue unavailable'}</strong> ·{' '}
+            <strong>{summary.totalTeu > 0 ? `${fmtNum(summary.totalTeu)} TEU` : 'TEU unavailable'}</strong>
             {summary.topIndustry && <> · top industry <strong>{summary.topIndustry.label}</strong></>}
             {summary.topMetro && <> · heaviest in <strong>{summary.topMetro.label}</strong></>}
           </div>
@@ -462,7 +471,7 @@ export default function InsightsPanel({ rows, insights, filters, requireCoach, r
         )}
 
         {thread.map((entry, i) => (
-          <div key={i} className="space-y-2">
+          <div key={entry.id ?? i} className="space-y-2">
             <div className="rounded-lg bg-cyan-600 text-white px-3 py-2 text-[13px] leading-snug">
               {entry.question}
             </div>
