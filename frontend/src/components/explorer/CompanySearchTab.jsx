@@ -577,6 +577,12 @@ export default function CompanySearchTab() {
         return next;
       }, { replace: true });
       let mf = localExtractFilters(q);
+      const geographyRequested = /\\b(?:in|near|around|within|at)\\s+[a-z]/i.test(q);
+      const hasGeography = (filters) => Boolean(
+        filters?.geo?.cities?.length || filters?.geo?.states?.length ||
+        filters?.geo?.countries?.length || filters?.geo?.regions?.length
+      );
+      const unresolvedGeography = geographyRequested && !hasGeography(mf);
       // Deterministic parse paints results IMMEDIATELY when it found
       // anything; the LLM refine below then merges in whatever the regex
       // layer missed (industry synonyms, typos, cities, size ranges)
@@ -584,15 +590,21 @@ export default function CompanySearchTab() {
       // nothing at all, the LLM parse is the whole answer — its output
       // reaches the filters now (parsedToFilters unwraps the {ok,parsed}
       // envelope; it silently produced {} for months).
-      if (hasAnyFilter(mf)) setMarketFilters(mf);
-      if (!hasAnyFilter(mf) || !mf.industry?.length) {
+      if (unresolvedGeography) setMarketFilters({});
+      else if (hasAnyFilter(mf)) setMarketFilters(mf);
+      if (unresolvedGeography || !hasAnyFilter(mf) || !mf.industry?.length) {
         let merged = mf;
         try {
           const llm = parsedToFilters(await parseExploreQuery(q));
           // Deterministic wins on conflict; LLM fills the gaps.
           merged = { ...llm, ...mf, geo: { ...(llm.geo || {}), ...(mf.geo || {}) } };
         } catch { /* LLM cold or down — the deterministic result stands */ }
-        if (handledQRef.current === q) setMarketFilters(merged);
+        if (handledQRef.current === q) {
+          if (unresolvedGeography && !hasGeography(merged)) {
+            setMarketFilters({});
+            toast.error('Location was not resolved. Please include the city and state.');
+          } else setMarketFilters(merged);
+        }
       }
       return;
     }
