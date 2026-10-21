@@ -980,6 +980,14 @@ function ProfilePanel({ rawId }: { rawId: string }) {
       if (cancelled) return;
 
       const snapshotMissingInitially = !cached.snapshotUpdatedAt;
+      // Paint an existing snapshot immediately. Do not hold all profile UI
+      // hostage to a refresh or a background ImportYeti provider request.
+      if (cached.profile && !cancelled) {
+        setProfile(cached.profile);
+        setRouteKpis(cached.routeKpis ?? cached.profile.routeKpis ?? null);
+        setSnapshotUpdatedAt(cached.snapshotUpdatedAt);
+        applyYearFromProfile(cached.profile);
+      }
       setLoading(false); // Render identity immediately; live provider refresh is secondary.
       setRefreshing(!cached.profile && !cached.routeKpis);
 
@@ -1437,10 +1445,22 @@ function ProfilePanel({ rawId }: { rawId: string }) {
   // One BOL-archive load + one filter-state instance, shared by the
   // editorial hero above the tab bar and the Overview / Trade Lanes /
   // Lane History tab bodies. Must run before the early returns below.
+  // Search-open navigates with the ImportYeti slug. It is the direct key
+  // of the shipment archive and monthly-rollup tables; prefer it over a
+  // provisional aggregator/CRM UUID or directory identity. Otherwise newly
+  // opened companies can show "Shipment intelligence is on its way" even
+  // though their full monthly history already exists in Supabase.
+  const incomingRouteKey = String(routeOrStoredId ?? "").trim();
+  const routeArchiveKey =
+    incomingRouteKey && !UUID_RE.test(incomingRouteKey.replace(/^company\\//i, "")) &&
+    !/^mx[:-]/i.test(incomingRouteKey)
+      ? incomingRouteKey
+      : null;
   const v2CompanyKey =
+    routeArchiveKey ??
+    (activeProfile as any)?.source_company_key ??
     (bundle?.identity as any)?.source_company_key ??
     (bundle?.identity as any)?.sourceCompanyKey ??
-    (activeProfile as any)?.source_company_key ??
     companyId ??
     null;
   const v2Workspace = useCompanyProfileWorkspace(
