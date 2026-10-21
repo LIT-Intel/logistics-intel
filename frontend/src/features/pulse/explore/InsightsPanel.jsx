@@ -23,6 +23,7 @@ import { reasonOverExplore } from '@/api/pulse';
 import { generatePulseReportPdf } from './pulseReportPdf';
 import { emailPulseReport } from '@/api/pulse-report-email';
 import { toast } from 'sonner';
+import ReactMarkdown from 'react-markdown';
 
 function fmtNum(n) {
   if (n == null) return '—';
@@ -45,14 +46,7 @@ function fmtMoneyM(v) {
 // Tiny markdown→HTML pass: bold, italics, line breaks. Coach replies
 // are short markdown — no code blocks, no images — so this is enough.
 function renderMarkdown(md) {
-  if (!md) return null;
-  const html = md
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/`(.+?)`/g, '<code class="bg-slate-100 px-1 rounded text-[12px]">$1</code>')
-    .replace(/\n- /g, '\n• ')
-    .replace(/\n/g, '<br/>');
-  return <span dangerouslySetInnerHTML={{ __html: html }} />;
+  return md ? <ReactMarkdown>{md}</ReactMarkdown> : null;
 }
 
 // Aggregate a per-key count from row entries, return top-N as a structured
@@ -395,10 +389,6 @@ export default function InsightsPanel({ rows, insights, filters, requireCoach, r
     // Trial-preview gating — surface upgrade modal before hitting the
     // server. Server-side `pulse_ai` gate is the real boundary.
     if (requireCoach && !requireCoach()) return;
-    if (!rows.length) {
-      toast.error('Run a search first — Harvey needs data to ground its answer.');
-      return;
-    }
     setInput('');
     const turnId = ++nextTurnId.current;
     const history = thread.filter((t) => !t.loading && t.answer).slice(-6)

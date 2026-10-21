@@ -965,7 +965,7 @@ WHAT YOU CANNOT KNOW (be honest, do NOT fabricate):
 - Forwarder-switching history ("who recently switched forwarders", "lost their forwarder"). The snapshot has only a CURRENT top-forwarders snapshot per account — no historical forwarder record. Say so, then offer the adjacent insight you CAN give (e.g. accounts concentrated on a single forwarder = consolidation/displacement targets right now).
 - Per-shipment detail, contact names, or anything not present in the snapshot. If it's not in the snapshot, say you don't have it on this view.
 
-If the snapshot has zero accounts, say the current map is empty and suggest broadening the filters.`;
+If the snapshot has zero accounts AND the user asks about companies on the map, say the map is empty. For general logistics questions, answer from general knowledge and never invent account-specific evidence.`;
 
 type ExploreAggregates = Record<string, unknown>;
 
@@ -1086,7 +1086,10 @@ async function reasonOverExploreSnapshot(args: {
   if (wantsSwitch) limitations.push("This question asks about forwarder/carrier switching history, but the snapshot has only a CURRENT top-forwarders view — no historical record of switches. Be explicit, then pivot to the adjacent current-state insight (e.g. single-forwarder concentration = displacement target).");
 
   const accountCount = Number((totals as any)?.account_count ?? 0);
-  if (!sampleRows.length && accountCount === 0) {
+  const requiresMapEvidence =
+    /\\b(these|those|on (?:the|this) map|in (?:the|these) results|this list|current map|current results)\\b/i.test(question) ||
+    /\\b(which|find|rank|list|show|top)\\b.{0,90}\\b(companies|accounts|shippers|manufacturers|importers|carriers|forwarders|suppliers)\\b/i.test(question);
+  if (!sampleRows.length && accountCount === 0 && requiresMapEvidence) {
     return {
       classification: "data_business_question",
       answer_md:
@@ -1096,6 +1099,11 @@ async function reasonOverExploreSnapshot(args: {
   }
 
   if (!OPENAI_API_KEY) {
+    if (accountCount === 0) return {
+      classification: "general_question",
+      answer_md: "I can answer that when the AI analysis service is available. Account-specific questions also require search results.",
+      cta: null,
+    };
     // Graceful degradation: deterministic summary so the panel still answers.
     const top = sampleRows.slice(0, 5).map((r: any, i: number) => {
       const loc = [r.city, r.state, r.country].filter(Boolean).join(", ");
@@ -1231,7 +1239,15 @@ serve(async (req) => {
   }
 
   const supa = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
-  const ctx = await loadContext(supa, userId);
+  // Account/map Q&A has its own authenticated usage gate and structured
+  // snapshot. Do not block that response behind unrelated inbox, CRM,
+  // subscription and campaign lookups. The full context is only needed
+  // by proactive/agent modes.
+  const ctx: ContextBlock = mode === "explore_reason"
+    ? { user: {}, org: {}, subscription: {}, usage: {}, campaigns: {},
+        inbox: {}, saved: {}, tasks: {}, integrations: {},
+        recent_activity: {}, help_articles: [] }
+    : await loadContext(supa, userId);
 
   // ── Explorer Coach: reason over the on-screen result set ──────────────
   // The frontend sends structured input { question, filters, totals
