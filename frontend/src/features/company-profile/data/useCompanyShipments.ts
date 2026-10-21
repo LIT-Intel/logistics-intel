@@ -97,6 +97,7 @@ export function useCompanyArchiveBundle(companyKey: string | null | undefined) {
     return {bolRows:bols.data ?? [],tsRows:ts.data ?? [],laneRows:lanes.data ?? []};
   },[bols.data,ts.data,lanes.data]);
   return {data, airSummary: bols.data ? airCoverage(bols.data) : null,
+    monthlyLoading: ts.isLoading || (isUuid && resolved.isLoading),
     isLoading:(isUuid && resolved.isLoading) || (bols.isLoading && ts.isLoading && lanes.isLoading),
     detailsLoading:bols.isLoading || lanes.isLoading,
     isError:resolved.isError || bols.isError || ts.isError || lanes.isError};
@@ -151,16 +152,20 @@ export function useShipmentDataset(
 ): ShipmentDatasetResult {
   const bundle = useCompanyArchiveBundle(companyKey);
   const dataset = useMemo(() => {
+    // The document archive is intentionally just a bounded BOL sample.
+    // Don't briefly display its 50 documents as "12M shipments" while
+    // the full monthly rollup (e.g. 399) is still fetching.
+    if (companyKey && bundle.monthlyLoading) return null;
     const b = bundle.data ?? { bolRows: [], tsRows: [], laneRows: [] };
     if (!bundle.data && !(recentBols && recentBols.length)) return null;
     return assembleDataset(b, recentBols ?? null);
-  }, [bundle.data, recentBols]);
+  }, [bundle.data, bundle.monthlyLoading, companyKey, recentBols]);
   return {
     airSummary: bundle.airSummary,
     detailsLoading: bundle.detailsLoading,
     dataError: bundle.isError,
     dataset,
-    loading: bundle.isLoading,
+    loading: bundle.isLoading || Boolean(companyKey && bundle.monthlyLoading),
     isSnapshotFallback: !!dataset && dataset.source === "snapshot" && dataset.rows.length > 0,
   };
 }
