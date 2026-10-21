@@ -991,7 +991,7 @@ export default function CompanySearchTab() {
     // When credits metering is authoritatively disabled, avoid the roughly
     // two-second extra unlock request on the FIRST Open click. If the
     // snapshot is missing or metering is enabled, retain the server gate.
-    if (meteringKnownOff || (entitlements && !creditsMeteringEnabled)) { proceed(); return; }
+    if (meteringKnownOff || (entitlements?.credits_metering_enabled === false && !creditsMeteringEnabled)) { proceed(); return; }
     const res = await unlockCompany({
       source_company_key: iyKey,
       company_id: row.company_id ?? null,
