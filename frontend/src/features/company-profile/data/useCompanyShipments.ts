@@ -96,7 +96,8 @@ export function useCompanyArchiveBundle(companyKey: string | null | undefined) {
     if(!bols.data && !ts.data && !lanes.data) return null;
     return {bolRows:bols.data ?? [],tsRows:ts.data ?? [],laneRows:lanes.data ?? []};
   },[bols.data,ts.data,lanes.data]);
-  return {data, isLoading:(isUuid && resolved.isLoading) || (bols.isLoading && ts.isLoading && lanes.isLoading),
+  return {data, airSummary: bols.data ? airCoverage(bols.data) : null,
+    isLoading:(isUuid && resolved.isLoading) || (bols.isLoading && ts.isLoading && lanes.isLoading),
     detailsLoading:bols.isLoading || lanes.isLoading,
     isError:resolved.isError || bols.isError || ts.isError || lanes.isError};
 }
@@ -133,7 +134,7 @@ function airCoverage(rows: UnifiedShipmentDbRow[]): AirCoverageSummary {
 }
 
 export interface ShipmentDatasetResult {
-  airSummary: AirCoverageSummary;
+  airSummary: AirCoverageSummary | null;
   detailsLoading: boolean;
   dataError: boolean;
   dataset: ShipmentDataset | null;
@@ -155,7 +156,7 @@ export function useShipmentDataset(
     return assembleDataset(b, recentBols ?? null);
   }, [bundle.data, recentBols]);
   return {
-    airSummary: airCoverage(bundle.data?.bolRows ?? []),
+    airSummary: bundle.airSummary,
     detailsLoading: bundle.detailsLoading,
     dataError: bundle.isError,
     dataset,
