@@ -298,11 +298,6 @@ export function localExtractFilters(query) {
   );
   if (cities.length) geo.cities = [cities[0] === 'new york city' ? 'New York' : cities[0]];
 
-  const industry = [];');
-      return new RegExp(`\\b(?:in|near|around|within|at)\\s+${escaped}\\b`, 'i').test(q);
-    });
-  if (cities.length) geo.cities = [cities[0] === 'new york city' ? 'New York' : cities[0]];
-
   const industry = [];
   for (const [re, val] of INDUSTRY_PHRASES) {
     if (!re.test(lower)) continue;
