@@ -1452,7 +1452,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
   // though their full monthly history already exists in Supabase.
   const incomingRouteKey = String(routeOrStoredId ?? "").trim();
   const routeArchiveKey =
-    incomingRouteKey && !UUID_RE.test(incomingRouteKey.replace(/^company\\//i, "")) &&
+    incomingRouteKey && !UUID_RE.test(incomingRouteKey.replace(/^company\//i, "")) &&
     !/^mx[:-]/i.test(incomingRouteKey)
       ? incomingRouteKey
       : null;
