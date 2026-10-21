@@ -12,7 +12,7 @@ import type { RecentBolInput } from "./data/normalizeShipments";
 import type { ShipmentDataset } from "./data/types";
 import { computeLanes, computeView } from "./data/selectors";
 import { useCountUp } from "./data/useCountUp";
-import { useShipmentDataset } from "./data/useCompanyShipments";
+import { useShipmentDataset, type AirCoverageSummary } from "./data/useCompanyShipments";
 import { useProfileState } from "./data/useProfileState";
 import { sourceServiceMix, type ServiceMix } from "./data/serviceMix";
 import { Card, FONT_BODY, FONT_DISPLAY } from "./components/ui";
@@ -30,6 +30,7 @@ export type WorkspaceTab = "overview" | "lanes" | "history";
 /** The page-level workspace handle: one data load + one state instance shared
  *  by the editorial hero (above the tab bar) and every v2 tab body. */
 export interface WorkspaceHandle {
+  airSummary: AirCoverageSummary | null;
   serviceMix?: ServiceMix | null;
   detailsLoading?: boolean;
   dataError?: boolean;
@@ -73,7 +74,7 @@ export function useCompanyProfileWorkspace(
     [dataset, ready, state, actions],
   );
 
-  return { serviceMix: sourceServiceMix(sourceLoads), dataset, loading, detailsLoading: demoDataset ? false : fetched.detailsLoading, dataError: demoDataset ? false : fetched.dataError, isSnapshotFallback, state, actions, extra, ready, view, lanesView };
+  return { airSummary: demoDataset ? null : fetched.airSummary, serviceMix: sourceServiceMix(sourceLoads), dataset, loading, detailsLoading: demoDataset ? false : fetched.detailsLoading, dataError: demoDataset ? false : fetched.dataError, isSnapshotFallback, state, actions, extra, ready, view, lanesView };
 }
 
 export interface CompanyProfileWorkspaceProps {
@@ -194,6 +195,7 @@ export function CompanyProfileWorkspace({
                 view={view}
                 ds={dataset}
                 serviceMix={workspace.serviceMix}
+                airSummary={workspace.airSummary}
                 extra={extra}
                 onOpenTab={handleOpenTab}
                 onExpandMap={() => setMapExpanded(true)}

@@ -29,7 +29,7 @@ const FIVE_MIN = 5 * 60 * 1000;
 const BOL_COLS =
   "id,bol_number,house_bol,master_bol,bol_date,scac,carrier_name,shipper_name," +
   "origin_country,origin_country_code,destination_country_code,origin_port,destination_port," +
-  "hs_code,product_description,container_count,teu,weight_kg,lcl,load_type,shipping_cost_usd,container_type";
+  "hs_code,product_description,container_count,teu,weight_kg,lcl,load_type,shipping_cost_usd,container_type,transport_mode,ingest_source";
 
 /** "company/tesla" | "tesla" → "tesla" (rollup + archive tables key on the bare slug) */
 export const toArchiveSlug = (companyKey: string | null | undefined): string | null => {
@@ -101,7 +101,39 @@ export function useCompanyArchiveBundle(companyKey: string | null | undefined) {
     isError:resolved.isError || bols.isError || ts.isError || lanes.isError};
 }
 
+// This summarizes ONLY records explicitly labeled as air by a source.
+// Ocean BOLs or rows with missing transport_mode cannot establish air volume.
+export interface AirCoverageSummary {
+  verifiedAir: number;
+  unclassified: number;
+  observedDocuments: number;
+  weightKg: number | null;
+  lastAirDate: string | null;
+  topOrigin: string | null;
+}
+
+function airCoverage(rows: UnifiedShipmentDbRow[]): AirCoverageSummary {
+  const air = rows.filter((r) => /^air(?:\s|$)/i.test(String(r.transport_mode ?? "").trim()));
+  const unknown = rows.filter((r) => !String(r.transport_mode ?? "").trim());
+  const origins = new Map<string, number>();
+  let weight = 0;
+  let weightKnown = false;
+  let lastAirDate: string | null = null;
+  for (const row of air) {
+    const origin = (row.origin_country ?? row.origin_country_code ?? "").trim();
+    if (origin) origins.set(origin, (origins.get(origin) ?? 0) + 1);
+    const w = Number(row.weight_kg);
+    if (row.weight_kg != null && Number.isFinite(w)) { weight += w; weightKnown = true; }
+    if (row.bol_date && (!lastAirDate || row.bol_date > lastAirDate)) lastAirDate = row.bol_date;
+  }
+  const topOrigin = [...origins.entries()].sort((a,b) => b[1]-a[1])[0]?.[0] ?? null;
+  return { verifiedAir: air.length, unclassified: unknown.length,
+    observedDocuments: rows.length, weightKg: weightKnown ? weight : null,
+    lastAirDate, topOrigin };
+}
+
 export interface ShipmentDatasetResult {
+  airSummary: AirCoverageSummary;
   detailsLoading: boolean;
   dataError: boolean;
   dataset: ShipmentDataset | null;
@@ -123,6 +155,7 @@ export function useShipmentDataset(
     return assembleDataset(b, recentBols ?? null);
   }, [bundle.data, recentBols]);
   return {
+    airSummary: airCoverage(bundle.data?.bolRows ?? []),
     detailsLoading: bundle.detailsLoading,
     dataError: bundle.isError,
     dataset,
