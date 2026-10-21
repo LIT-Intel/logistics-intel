@@ -23,7 +23,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Link,
   useNavigate,
@@ -721,6 +721,7 @@ function DirectoryOnlyEmptyState({
 
 function ProfilePanel({ rawId }: { rawId: string }) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const auth = useAuth();
   const { user, fullName } = auth ?? ({} as any);
   // Premium Intel tab was retired 2026-06-16 — its cards were folded into
@@ -812,7 +813,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [routeOrStoredId]);
+  }, [routeOrStoredId, queryClient]);
 
   // Synchronous fallback to the raw route id so loaders never see null while
   // the async slug→UUID resolver is in flight. For UUID inputs the resolver
@@ -989,7 +990,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
       // no extra credit), then re-read the snapshot. Only for slug keys —
       // a bare-UUID deep-link with no snapshot is handled by the synthetic
       // fallback below, not a live fetch.
-      if (!cached.profile && !cached.routeKpis) {
+      if (!cached.snapshotUpdatedAt) {
         const bareKey = String(routeOrStoredId || "").replace(/^company\//i, "");
         // MX pedimento identities (mx:<name> route ids) can NEVER have an
         // ImportYeti snapshot — skip the live fetch + 20s poll entirely so
@@ -1048,7 +1049,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
           // adaptively: 10×2s for the common case, then 8×5s for stragglers
           // (~60s total), bounded + cancel-aware, and ALWAYS (even after a
           // fetch error, since the server-side write may still land).
-          for (let i = 0; i < 18 && !(cached.profile || cached.routeKpis); i++) {
+          for (let i = 0; i < 18 && !cached.snapshotUpdatedAt; i++) {
             await new Promise((r) => setTimeout(r, i < 10 ? 2000 : 5000));
             if (cancelled) return;
             try {
@@ -1067,6 +1068,13 @@ function ProfilePanel({ rawId }: { rawId: string }) {
         setRouteKpis(cached.routeKpis || null);
         setSnapshotUpdatedAt(cached.snapshotUpdatedAt || null);
         if (cached.profile) applyYearFromProfile(cached.profile);
+        // Search-open may have cached an empty archive while the upstream
+        // ImportYeti snapshot was still being generated. Invalidate that
+        // archive once the real snapshot lands; otherwise its five-minute
+        // React Query staleTime requires a hard reload to repaint the chart.
+        if (cached.snapshotUpdatedAt) {
+          void queryClient.invalidateQueries({ queryKey: ["company-shipments-v2"] });
+        }
       } else if (!seedProfile) {
         // No snapshot AND no seed → honest empty. When a seed painted the
         // page, keep it — the search KPIs stay up rather than flashing to
