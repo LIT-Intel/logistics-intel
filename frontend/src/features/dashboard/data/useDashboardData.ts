@@ -60,24 +60,32 @@ async function fetchBulkMonthly(slugs: string[]): Promise<RawTsRow[]> {
   // single-shot fetch silently dropped ~86% of the history and rendered most
   // recently-saved companies as zeros (owner report 2026-09-28).
   const PAGE = 1000;
+  // Fetch independent pages in bounded parallel groups to avoid 40+ serial
+  // round trips on large workspaces. Keep page order deterministic; never
+  // silently return incomplete history when a page fails.
+  const WINDOW = 4;
   const out: RawTsRow[] = [];
   for (let i = 0; i < slugs.length; i += 100) {
     const chunk = slugs.slice(i, i + 100);
-    for (let from = 0; ; from += PAGE) {
-      const { data, error } = await supabase
-        .from("lit_company_time_series_monthly")
-        .select("company_id,year,month,shipments,teu")
-        .in("company_id", chunk)
-        .order("company_id", { ascending: true })
-        .order("year", { ascending: true })
-        .order("month", { ascending: true })
-        .range(from, from + PAGE - 1);
-      if (error) {
-        console.error("fetchBulkMonthly page failed:", error.message);
-        break;
+    for (let from = 0; ; from += PAGE * WINDOW) {
+      const pages = await Promise.all(
+        Array.from({ length: WINDOW }, (_, page) => {
+          const start = from + page * PAGE;
+          return supabase
+            .from("lit_company_time_series_monthly")
+            .select("company_id,year,month,shipments,teu")
+            .in("company_id", chunk)
+            .order("company_id", { ascending: true })
+            .order("year", { ascending: true })
+            .order("month", { ascending: true })
+            .range(start, start + PAGE - 1);
+        }),
+      );
+      for (const { data, error } of pages) {
+        if (error) throw new Error(`fetchBulkMonthly page failed: ${error.message}`);
+        out.push(...((data ?? []) as unknown as RawTsRow[]));
       }
-      out.push(...((data ?? []) as unknown as RawTsRow[]));
-      if (!data || data.length < PAGE) break;
+      if (pages.some(({ data }) => !data || data.length < PAGE)) break;
     }
   }
   return out;
