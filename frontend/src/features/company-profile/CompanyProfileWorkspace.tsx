@@ -122,7 +122,7 @@ export function CompanyProfileWorkspace({
   const queryClient = useQueryClient();
   const [mapExpanded, setMapExpanded] = useState(false);
 
-  if (loading && !dataset) {
+  if ((loading && !dataset) || (dataset && !view)) {
     return (
       <div className="flex flex-col gap-4 py-2" aria-busy>
         {[72, 200, 320].map((h, i) => (
