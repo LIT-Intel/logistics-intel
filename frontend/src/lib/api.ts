@@ -2886,7 +2886,7 @@ export function normalizeIyCompanyProfile(
   return normalizeCompanyProfile(mergedData, companyId);
 }
 
-export async function getIyCompanyProfile({
+async function requestIyCompanyProfile({
   companyKey,
   query,
   userGoal,
@@ -3020,6 +3020,30 @@ export async function getIyCompanyProfile({
     companyProfile,
     enrichment: data?.enrichment ?? null,
   };
+}
+
+// Search pre-warm and CompanyProfileV2 can mount concurrently for the same
+// shipper. Coalesce their identical cache-driven requests, then remove the
+// entry on completion so later visits can check fresher cached data.
+// Explicit paid refreshes are never deduplicated.
+const pendingIyProfiles = new Map<string, Promise<{ companyProfile: IyCompanyProfile; enrichment: any | null }>>();
+
+export function getIyCompanyProfile(input: {
+  companyKey: string;
+  query?: string;
+  userGoal?: string;
+  forceRefresh?: boolean;
+}): Promise<{ companyProfile: IyCompanyProfile; enrichment: any | null }> {
+  const key = normalizeCompanyIdToSlug(input.companyKey);
+  if (!key) return Promise.reject(new Error("getIyCompanyProfile: company key is required"));
+  if (input.forceRefresh || input.query || input.userGoal) return requestIyCompanyProfile(input);
+  const pending = pendingIyProfiles.get(key);
+  if (pending) return pending;
+  const run = requestIyCompanyProfile(input).finally(() => {
+    if (pendingIyProfiles.get(key) === run) pendingIyProfiles.delete(key);
+  });
+  pendingIyProfiles.set(key, run);
+  return run;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
