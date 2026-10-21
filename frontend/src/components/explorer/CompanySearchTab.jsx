@@ -80,6 +80,7 @@ import { normalizeCompanySearchResults, extractStateCode } from '@/lib/explorer/
 import { normalizeName } from '@/lib/companyResolver';
 import { stashProfileSeed } from '@/lib/profileSeed';
 import { useUpgradeModal } from '@/components/billing/UpgradeModal';
+import { useEntitlements } from '@/hooks/useEntitlements';
 import { countryFlag, compactLocation } from '@/lib/explorer/countryFlags';
 import CountryFlag from './CountryFlag';
 import { unlockCompany } from '@/api/entitlements';
@@ -251,6 +252,7 @@ const naResidualQuery = (q, stateCodes = []) => {
 
 export default function CompanySearchTab() {
   const { setSelectedCompany } = useExplorer();
+  const { entitlements, creditsMeteringEnabled } = useEntitlements();
   const navigate = useNavigate();
   const { show: showUpgrade } = useUpgradeModal();
   const [sp, setSp] = useSearchParams();
@@ -985,7 +987,11 @@ export default function CompanySearchTab() {
     // the workspace level; re-opening an already-owned company is free. On an
     // insufficient balance we block the open and offer a top-up rather than
     // silently failing. unlockCompany() fails OPEN on any transient error.
-    if (meteringKnownOff) { proceed(); return; }
+    // Reuse the server-issued plan snapshot already held in React Query.
+    // When credits metering is authoritatively disabled, avoid the roughly
+    // two-second extra unlock request on the FIRST Open click. If the
+    // snapshot is missing or metering is enabled, retain the server gate.
+    if (meteringKnownOff || (entitlements?.credits_metering_enabled === false && !creditsMeteringEnabled)) { proceed(); return; }
     const res = await unlockCompany({
       source_company_key: iyKey,
       company_id: row.company_id ?? null,
@@ -999,7 +1005,7 @@ export default function CompanySearchTab() {
         action: { label: 'Add credits', onClick: () => navigate('/app/billing/credits') },
       });
     }
-  }, [navigate, resolveKeylessOpen]);
+  }, [navigate, resolveKeylessOpen, entitlements, creditsMeteringEnabled]);
 
   const onOpenDetails = useCallback(async (row, e) => {
     e?.stopPropagation?.();
