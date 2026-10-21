@@ -23,7 +23,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Link,
   useNavigate,
@@ -721,6 +721,7 @@ function DirectoryOnlyEmptyState({
 
 function ProfilePanel({ rawId }: { rawId: string }) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const auth = useAuth();
   const { user, fullName } = auth ?? ({} as any);
   // Premium Intel tab was retired 2026-06-16 — its cards were folded into
@@ -812,7 +813,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [routeOrStoredId]);
+  }, [routeOrStoredId, queryClient]);
 
   // Synchronous fallback to the raw route id so loaders never see null while
   // the async slug→UUID resolver is in flight. For UUID inputs the resolver
@@ -1067,6 +1068,13 @@ function ProfilePanel({ rawId }: { rawId: string }) {
         setRouteKpis(cached.routeKpis || null);
         setSnapshotUpdatedAt(cached.snapshotUpdatedAt || null);
         if (cached.profile) applyYearFromProfile(cached.profile);
+        // Search-open may have cached an empty archive while the upstream
+        // ImportYeti snapshot was still being generated. Invalidate that
+        // archive once the real snapshot lands; otherwise its five-minute
+        // React Query staleTime requires a hard reload to repaint the chart.
+        if (cached.snapshotUpdatedAt) {
+          void queryClient.invalidateQueries({ queryKey: ["company-shipments-v2"] });
+        }
       } else if (!seedProfile) {
         // No snapshot AND no seed → honest empty. When a seed painted the
         // page, keep it — the search KPIs stay up rather than flashing to
