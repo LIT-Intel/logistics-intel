@@ -65,8 +65,9 @@ function Section({id,index,title,sub,children}:{id:string;index:string;title:str
  <div className="mb-4 flex items-center gap-2"><span className="rounded-md bg-teal-50 px-2 py-1 font-mono text-[11px] font-bold text-teal-700">{index}</span><div><h3 className="text-[16px] font-bold tracking-tight text-[#0e1e36]">{title}</h3>{sub&&<p className="text-[11px] text-slate-500">{sub}</p>}</div></div>{children}</section>;
 }
 const explain=(v:string)=> <span className="text-[11px] leading-5 text-slate-600">{v}</span>;
-export default function AccountDossierV2({companyName,companyKey,report,tradeKpis,topRoutes,generatedAt}:{
+export default function AccountDossierV2({companyName,companyKey,companyMeta,report,tradeKpis,topRoutes,generatedAt}:{
  companyName:string;companyKey?:string|null;
+ companyMeta?:{hq?:string|null;vertical?:string|null};
  report?:{company_summary?:unknown;why_now?:unknown;web_sources?:Array<{title?:string;url?:string}>}|null;
  tradeKpis?:{shipments12m?:number|null;teu12m?:number|null;activeLanes?:number|null}|null;
  topRoutes?:Array<{route?:string|null;shipments?:number|null;teu?:number|null}>|null;
@@ -93,9 +94,13 @@ export default function AccountDossierV2({companyName,companyKey,report,tradeKpi
  // The legacy LLM summary is intentionally excluded: existing saved reports
  // can contain unsourced quantities that contradict the customs rollup.
  // Only deterministic evidence enters this first-generation dossier.
- const summary = recent.length
-   ? `LIT's monthly shipment history records ${fmt(shipments)} shipments and ${fmt(teu)} TEU across the latest ${recent.length} reported months. The ${docs.length} detailed documents available for this account provide a separate, bounded view of origin and service-provider activity.`
-   : "A verified full-history shipment summary is not currently available for this account.";
+ const summaryParts=[companyName];
+ if(companyMeta?.vertical)summaryParts.push("is categorized as "+companyMeta.vertical+" in LIT firmographics");
+ if(companyMeta?.hq)summaryParts.push("and has a recorded profile location of "+companyMeta.hq);
+ const companyDescription=summaryParts.join(" ");
+ const summary=recent.length
+  ? companyDescription+". LIT customs history includes "+fmt(shipments)+" shipments and "+fmt(teu)+" TEU across the latest "+recent.length+" reported months. The "+docs.length+" detailed documents provide a limited view of origin countries and service providers, not a full 12-month ranking."
+  : companyDescription+". A complete monthly customs history has not been verified for this company.";
  const hasFacts=!!facts;
  const [exportBusy,setExportBusy]=useState(false);
  const [references,setReferences]=useState<Array<{title:string;url:string;snippet:string}>>([]);
