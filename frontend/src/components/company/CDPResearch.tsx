@@ -1038,10 +1038,15 @@ function TopLanesPanel({
                     </>
                   )}
                   {sharePct != null && (
-                    <span className="text-slate-500">{` · ${sharePct}% of trailing-12m volume`}</span>
+                    <span className="text-slate-500">{` · ${sharePct}% of listed lanes`}</span>
                   )}
                   {mix && <span className="text-slate-500">{` · ${mix}`}</span>}
                 </span>
+                {sharePct != null && (
+                  <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-100" aria-label={`${sharePct}% share of listed lane shipments`}>
+                    <div className="h-full rounded-full bg-blue-500" style={{ width: `${sharePct}%` }} />
+                  </div>
+                )}
               </li>
             );
           })}
