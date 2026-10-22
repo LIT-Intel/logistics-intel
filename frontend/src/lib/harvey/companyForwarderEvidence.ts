@@ -35,7 +35,7 @@ export function normalizeHost(value: string | null | undefined): string | null {
     return parsed.hostname.toLowerCase().replace(/^www\./,"")||null;
   } catch { return null; }
 }
-function selectDirectoryRow(rows: DirectoryRow[], name: string, website?: string | null): {row:DirectoryRow;matchMethod:CompanyForwarderSummary["matchMethod"]}|null {
+export function selectDirectoryRow(rows: DirectoryRow[], name: string, website?: string | null): {row:DirectoryRow;matchMethod:CompanyForwarderSummary["matchMethod"]}|null {
   const targetHost=normalizeHost(website);
   if (targetHost) {
     const domainMatches=rows.filter(r=>normalizeHost(r.website)===targetHost||normalizeHost(r.domain)===targetHost);
