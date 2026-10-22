@@ -1,3 +1,4 @@
+import AccountDossierV2 from "./AccountDossierV2";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import {
@@ -154,6 +155,7 @@ type TopRouteItem = {
 
 type CDPResearchProps = {
   companyName: string;
+  companyKey?: string | null;
   companyMeta?: {
     ticker?: string | null;
     hq?: string | null;
@@ -181,6 +183,7 @@ type CDPResearchProps = {
 
 export default function CDPResearch({
   companyName,
+  companyKey,
   companyMeta,
   tradeKpis,
   topRoutes,
@@ -238,12 +241,13 @@ export default function CDPResearch({
       ) : !hasReport ? (
         <EmptyState onPulse={onPulse} usage={pulseUsage} />
       ) : (
-        <ReportBody
-          report={report!}
+        <AccountDossierV2
           companyName={companyName}
+          companyKey={companyKey}
+          report={report}
           tradeKpis={tradeKpis}
           topRoutes={topRoutes}
-          navigate={navigate}
+          generatedAt={pulseBrief?.generatedAt}
         />
       )}
     </div>
@@ -253,11 +257,15 @@ export default function CDPResearch({
     <>
       <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-start">
         {briefBody}
-        <PulseSidebar
-          pulseBrief={pulseBrief}
-          pulseUsage={pulseUsage}
-          report={report}
-        />
+        <aside className="hidden rounded-xl border border-slate-200 bg-white p-4 lg:sticky lg:top-3 lg:block">
+          <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Research navigator</div>
+          <nav aria-label="Account dossier sections" className="mt-4 flex flex-col gap-3 text-[12px] text-slate-600">
+            {[["01","Executive synthesis","lit-dossier-executive"],["02","Shipment cadence","lit-dossier-monthly"],["03","Suppliers & commodities","lit-dossier-sourcing"],["04","Trade lanes","lit-dossier-lanes"],["05","Carriers & incumbents","lit-dossier-carriers"],["06","Air intelligence","lit-dossier-air"],["07","Commercial assessment","lit-dossier-assessment"]].map(([num,label,id])=>
+              <a key={id} href={`#${id}`} className="hover:text-teal-700"><span className="mr-2 font-mono text-teal-700">{num}</span>{label}</a>
+            )}
+          </nav>
+          <div className="mt-6 rounded-lg bg-slate-50 p-3 text-[11px] leading-5 text-slate-600">All charts use stored shipment records. Sample-specific rankings display their own denominators. Company Profile's initial loading path remains unchanged.</div>
+        </aside>
       </div>
       {expanded && (
         <div
