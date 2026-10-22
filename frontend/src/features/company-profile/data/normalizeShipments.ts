@@ -1,3 +1,4 @@
+import { isVerifiedDischargePort } from "@/lib/bols/portValidity";
 /**
  * normalizeShipments — adapts real backend payloads into `ShipmentRow[]`.
  *
@@ -209,7 +210,7 @@ export function normalizeUnifiedShipments(
       oc,
       dc,
       oPort: clean(r.origin_port),
-      dPort: clean(r.destination_port),
+      dPort: isVerifiedDischargePort(r.destination_port, r.ingest_source) ? clean(r.destination_port) : "—",
       carrier: scac || "—",
       carrierName: clean(r.carrier_name) || scac || "Unknown carrier",
       mode: isLcl ? "LCL" : r.lcl === false || clean(r.load_type).toUpperCase() === "FCL" ? "FCL" : "Unknown",
@@ -272,7 +273,7 @@ export function normalizeRecentBols(
       oc,
       dc,
       oPort: clean(b.origin),
-      dPort: clean(b.destination),
+      dPort: "—", // Snapshot destination names are not validated ocean discharge ports.
       carrier: scac || "—",
       carrierName: clean(b.carrier_name) || scac || "Unknown carrier",
       mode: isLcl ? "LCL" : b.lcl === false ? "FCL" : "Unknown",
