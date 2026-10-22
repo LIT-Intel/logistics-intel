@@ -1,3 +1,4 @@
+import { useCompanyForwarderEvidence } from "@/lib/harvey/companyForwarderEvidence";
 import { auditMonthlyTeu, isSuspiciousTeu } from "@/features/company-profile/data/teuQuality";
 import DossierChart from "./DossierChart";
 import { isVerifiedDischargePort } from "@/lib/bols/portValidity";
@@ -87,6 +88,7 @@ export default function AccountDossierV2({companyName,companyKey,companyMeta,rep
  generatedAt?:string|null;
 }){
  const q=useBriefFacts(companyKey);
+ const forwarderQuery=useCompanyForwarderEvidence(companyName,companyMeta?.domain);
  const facts=q.data;
  const ranked=useMemo(()=>{
   const docs=facts?.documents??[];
@@ -228,6 +230,15 @@ export default function AccountDossierV2({companyName,companyKey,companyMeta,rep
    <p className="mt-3 text-[11px] text-slate-500">Bar lengths are relative to the largest listed route, not estimated market share.</p>
   </Section>
   <Section id="lit-dossier-carriers" index="05" title="Carrier & forwarder intelligence" sub="Carrier observations; avoid unsupported incumbent claims">
+   {forwarderQuery.data?.entries?.length ? <div className="mb-4 rounded-lg border border-teal-200 bg-teal-50 p-4">
+    <h4 className="text-[13px] font-bold text-slate-900">Historical forwarder & booking relationships</h4>
+    <p className="mt-1 text-[11px] leading-5 text-slate-600">Source: {forwarderQuery.data.sourceFile||"company directory"}. Provider-reported company-wide historical relationships. They do not prove the current incumbent on any specific lane or a 12-month share.</p>
+    <div className="mt-3 grid gap-2 sm:grid-cols-2">{forwarderQuery.data.entries.slice(0,8).map((e,i)=><div key={e.name+"-"+i} className="rounded-md bg-white p-3 text-[11px]">
+      <div className="flex justify-between gap-3"><strong className="text-slate-800">{e.normalizedName}</strong><span className="shrink-0 font-semibold">{e.reportedPercent==null?"—":e.reportedPercent.toFixed(1)+"%*"}</span></div>
+      <p className="mt-1 text-slate-500">{e.role==="freight_intermediary"?"Forwarder/intermediary":e.role==="ocean_carrier"?"Ocean carrier":e.role==="direct_to_carrier"?"Direct-to-carrier label":"Provider type not verified"}</p>
+    </div>)}</div>
+    <p className="mt-3 text-[10px] text-slate-500">* Historical provider-reported share; stored TEU not shown until quality validation. No lane-level booking attribution is asserted.</p>
+   </div> : <p className="mb-3 text-xs text-slate-500">Historical forwarder lookup: {forwarderQuery.isPending?"Loading…":forwarderQuery.isError?"Unavailable":"No uniquely matched directory relationship available."}</p>}
    <Ranking title="Carriers named in documents" rows={ranked.carriers} total={docs.length} empty="No confirmed carrier names are available in the document sample."/>
    <p className="mt-3 text-xs text-slate-600">{observedCarriers>0?`${observedCarriers} distinct named carriers are observed in the sample. Forwarder-controlled versus direct bookings cannot be inferred without broker/booking evidence.`:"Direct versus forwarder-managed bookings cannot be established from the available evidence."}</p>
   </Section>
