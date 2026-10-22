@@ -3001,6 +3001,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
               companyName={companyName}
               companyKey={v2CompanyKey}
               companyMeta={{
+                domain: companyDomain,
                 ticker: companyEnrichment?.enrichment_params?.ticker ?? null,
                 hq:
                   companyAddress ||

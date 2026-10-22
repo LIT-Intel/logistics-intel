@@ -1,3 +1,5 @@
+import DossierChart from "./DossierChart";
+import { isVerifiedDischargePort } from "@/lib/bols/portValidity";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
@@ -13,7 +15,7 @@ type DocRow = {
  bol_number:string|null; bol_date:string|null; shipper_name:string|null;
  origin_country:string|null; origin_port:string|null; destination_port:string|null;
  carrier_name:string|null; hs_code:string|null; product_description:string|null;
- transport_mode:string|null; teu:number|string|null;
+ transport_mode:string|null; ingest_source?:string|null; teu:number|string|null;
 };
 type Rank = { name:string; count:number; teu:number };
 export type BriefFacts = { companyKey:string; months:MonthRow[]; documents:DocRow[]; retrievedAt:string };
@@ -32,7 +34,7 @@ export async function loadBriefFacts(companyKey:string):Promise<BriefFacts>{
  if(!key || key.length>180)throw new Error("Valid shipment archive company key required");
  const [months,documents]=await Promise.all([
   supabase.from("lit_company_time_series_monthly").select("year,month,shipments,teu").eq("company_id",key).order("year").order("month").limit(600),
-  supabase.from("lit_unified_shipments").select("bol_number,bol_date,shipper_name,origin_country,origin_port,destination_port,carrier_name,hs_code,product_description,transport_mode,teu")
+  supabase.from("lit_unified_shipments").select("bol_number,bol_date,shipper_name,origin_country,origin_port,destination_port,carrier_name,hs_code,product_description,transport_mode,ingest_source,teu")
   .eq("company_id",key).order("bol_date",{ascending:false}).limit(500),
  ]);
  if(months.error)throw new Error("Monthly source: "+months.error.message);
@@ -43,29 +45,15 @@ export function useBriefFacts(companyKey:string|null|undefined){
  return useQuery({queryKey:["account-dossier-v2",companyKey],enabled:!!companyKey,
   queryFn:()=>loadBriefFacts(companyKey!),staleTime:5*60*1000,gcTime:15*60*1000,retry:1});
 }
-function Chart({months,metric}:{months:MonthRow[];metric:"teu"|"shipments"}){
- if(!months.length)return <p className="py-9 text-center text-xs text-slate-500">No monthly history available from this source.</p>;
- const values=months.map(m=>n(m[metric]));const max=Math.max(1,...values);
- const step=months.length>15?Math.ceil(months.length/12):1;
- const width=720,height=185,pl=10,pr=10,top=10,bottom=25,chartW=width-pl-pr,chartH=height-top-bottom;
- const coordinates=values.map((v,i)=>({x:pl+(i/(Math.max(1,values.length-1)))*chartW,y:top+chartH-(v/max)*chartH}));
- const line=coordinates.map((p,i)=>(i?"L":"M")+p.x.toFixed(1)+" "+p.y.toFixed(1)).join(" ");
- return <svg viewBox={`0 0 ${width} ${height}`} className="w-full" role="img" aria-label={`Verified monthly ${metric} trend`}>
-  {[0,.25,.5,.75,1].map(f=><line key={f} x1={pl} x2={width-pr} y1={top+chartH*f} y2={top+chartH*f} stroke="#e8edf3" strokeWidth="1"/>)}
-  <path d={line} fill="none" stroke={metric==="teu"?"#099b9b":"#437df0"} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round"/>
-  {coordinates.map((p,i)=><circle key={i} cx={p.x} cy={p.y} r={2.4} fill={metric==="teu"?"#099b9b":"#437df0"}/>)}
-  {months.map((m,i)=>i%step===0?<text key={i} x={coordinates[i].x} y={height-4} fill="#72829a" fontSize="10" textAnchor="middle">{new Date(Date.UTC(m.year,m.month-1,1)).toLocaleDateString("en-US",{month:"short",year:"2-digit"})}</text>:null)}
- </svg>;
-}
 function Ranking({title,rows,total,empty}:{title:string;rows:Rank[];total:number;empty:string}){
  return <div className="rounded-xl border border-slate-200 p-4">
   <h4 className="text-[13px] font-semibold text-slate-900">{title}</h4>
   <p className="mt-1 text-[10px] text-slate-500">Shares of {total} sampled documents; not the full shipment universe</p>
   {!rows.length?<p className="py-7 text-xs text-slate-500">{empty}</p>:
    <div className="mt-4 space-y-3">{rows.map(row=>{
-    const share=total?row.count/total*100:0;return <div key={row.name}>
+    const share=total?row.count/total*100:0;return <div key={row.name} tabIndex={0} title={`${row.name}: ${row.count} source documents · ${share.toFixed(1)}% of sampled rows`} aria-label={`${row.name}: ${row.count} records, ${share.toFixed(1)} percent of document sample`}>
      <div className="mb-1 flex justify-between gap-3 text-[11px]"><span className="max-w-[74%] truncate text-slate-700" title={row.name}>{row.name}</span><strong className="shrink-0 text-slate-700">{row.count} · {share.toFixed(0)}%</strong></div>
-     <div className="h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-teal-600" style={{width:`${Math.min(100,share)}%`}}/></div>
+     <div className="h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="lit-dossier-bar h-full origin-left rounded-full bg-teal-600" style={{width:`${Math.min(100,share)}%`}}/></div>
     </div>})}</div>}
  </div>;
 }
@@ -77,8 +65,9 @@ function Section({id,index,title,sub,children}:{id:string;index:string;title:str
  <div className="mb-4 flex items-center gap-2"><span className="rounded-md bg-teal-50 px-2 py-1 font-mono text-[11px] font-bold text-teal-700">{index}</span><div><h3 className="text-[16px] font-bold tracking-tight text-[#0e1e36]">{title}</h3>{sub&&<p className="text-[11px] text-slate-500">{sub}</p>}</div></div>{children}</section>;
 }
 const explain=(v:string)=> <span className="text-[11px] leading-5 text-slate-600">{v}</span>;
-export default function AccountDossierV2({companyName,companyKey,report,tradeKpis,topRoutes,generatedAt}:{
+export default function AccountDossierV2({companyName,companyKey,companyMeta,report,tradeKpis,topRoutes,generatedAt}:{
  companyName:string;companyKey?:string|null;
+ companyMeta?:{hq?:string|null;vertical?:string|null;domain?:string|null};
  report?:{company_summary?:unknown;why_now?:unknown;web_sources?:Array<{title?:string;url?:string}>}|null;
  tradeKpis?:{shipments12m?:number|null;teu12m?:number|null;activeLanes?:number|null}|null;
  topRoutes?:Array<{route?:string|null;shipments?:number|null;teu?:number|null}>|null;
@@ -88,7 +77,8 @@ export default function AccountDossierV2({companyName,companyKey,report,tradeKpi
  const facts=q.data;
  const ranked=useMemo(()=>{
   const docs=facts?.documents??[];
-  return {suppliers:aggregate(docs,"shipper_name"),origins:aggregate(docs,"origin_country"),ports:aggregate(docs,"destination_port"),carriers:aggregate(docs,"carrier_name"),commodities:aggregate(docs,"hs_code")};
+ const detailCoverage=shipments>0?Math.min(100,Math.round(100*docs.length/shipments)):null;
+  return {suppliers:aggregate(docs,"shipper_name"),origins:aggregate(docs,"origin_country"),ports:aggregate(docs.filter(d=>isVerifiedDischargePort(d.destination_port,d.ingest_source)),"destination_port"),carriers:aggregate(docs,"carrier_name"),commodities:aggregate(docs,"hs_code")};
  },[facts]);
  const ts=useMemo(()=>[...(facts?.months??[])].filter(m=>m.month>=1&&m.month<=12).sort((a,b)=>dateKey(a)-dateKey(b)),[facts]);
  const latest=ts.length?dateKey(ts[ts.length-1]):null;
@@ -98,26 +88,56 @@ export default function AccountDossierV2({companyName,companyKey,report,tradeKpi
  const prior=previous.reduce((sum,m)=>sum+n(m.shipments),0);
  const rate=prior>0?((shipments-prior)/prior*100):null;
  const docs=facts?.documents??[];
+ const validPortDocs=docs.filter(d=>isVerifiedDischargePort(d.destination_port,d.ingest_source)).length;
  const observedCarriers=ranked.carriers.length,air=docs.filter(d=>/^air(?:\s|$)/i.test(label(d.transport_mode))),unknown=docs.filter(d=>!label(d.transport_mode)).length;
  const topOrigin=ranked.origins[0]?.name??null;
  // The legacy LLM summary is intentionally excluded: existing saved reports
  // can contain unsourced quantities that contradict the customs rollup.
  // Only deterministic evidence enters this first-generation dossier.
- const summary = recent.length
-   ? `LIT's monthly shipment history records ${fmt(shipments)} shipments and ${fmt(teu)} TEU across the latest ${recent.length} reported months. The ${docs.length} detailed documents available for this account provide a separate, bounded view of origin and service-provider activity.`
-   : "A verified full-history shipment summary is not currently available for this account.";
+ const summaryParts=[companyName];
+ if(companyMeta?.vertical)summaryParts.push("is categorized as "+companyMeta.vertical+" in LIT firmographics");
+ if(companyMeta?.hq)summaryParts.push("and has a recorded profile location of "+companyMeta.hq);
+ const companyDescription=summaryParts.join(" ");
+ const summary=recent.length
+  ? companyDescription+". LIT customs history includes "+fmt(shipments)+" shipments and "+fmt(teu)+" TEU across the latest "+recent.length+" reported months. The "+docs.length+" detailed documents provide a limited view of origin countries and service providers, not a full 12-month ranking."
+  : companyDescription+". A complete monthly customs history has not been verified for this company.";
  const hasFacts=!!facts;
  const [exportBusy,setExportBusy]=useState(false);
  const [references,setReferences]=useState<Array<{title:string;url:string;snippet:string}>>([]);
+ const [researchContext,setResearchContext]=useState("");
+ const [researchSignals,setResearchSignals]=useState("");
  const [researchBusy,setResearchBusy]=useState(false);
  const [researchError,setResearchError]=useState<string|null>(null);
  const runPublicResearch=async()=>{
+  if(researchBusy)return;
   setResearchBusy(true);setResearchError(null);
   try {
-   const {data,error}=await supabase.functions.invoke("pulse-web-discover",{body:{query:companyName+" company official website facilities operations",limit:8,persist:false}});
-   if(error||!data?.ok) throw new Error("Public research provider unavailable");
-   const rows=Array.isArray(data.results)?data.results:[];
-   setReferences(rows.filter((r:any)=>/^https:\/\//i.test(String(r.website||""))).map((r:any)=>({title:String(r.title||r.name||"Reference"),url:String(r.website),snippet:String(r.snippet||"")})).slice(0,8));
+   // Existing authenticated, usage-gated source-research function. It queries
+   // the public web, returns attributable sources, and caches repeat requests.
+   const {data:saved}=await supabase.from("lit_saved_companies").select("company_id").eq("source_company_key",companyKey).maybeSingle();
+   const {data,error}=await supabase.functions.invoke("pulse-brief",{body:{
+     company_name:companyName,company_id:saved?.company_id??null,domain:companyMeta?.domain??null,source_company_key:companyKey,
+     snapshot_summary:{shipments_12m:recent.length?shipments:null,teu_12m:recent.length?teu:null},
+   }});
+   if(error||!data?.ok)throw new Error(String(data?.error||"Research source is unavailable or not included in this plan."));
+   const section=data.sections??{};
+   const rows=Array.isArray(section.sources)?section.sources:[];
+   const companyDomain=String(companyMeta?.domain||"").toLowerCase().replace(/^https?:\/\//,"").replace(/^www\./,"").split("/")[0];
+   const companyPhrase=companyName.toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
+   const verified=rows.filter((r:any)=>{
+    try {
+     const u=new URL(String(r.url||""));
+     if(!["https:","http:"].includes(u.protocol))return false;
+     const host=u.hostname.toLowerCase().replace(/^www\./,"");
+     if(companyDomain&&(host===companyDomain||host.endsWith("."+companyDomain)))return true;
+     const text=String(r.title||"")+" "+String(r.snippet||"");
+     return text.toLowerCase().replace(/[^a-z0-9]+/g," ").includes(companyPhrase);
+    } catch{return false}
+   }).slice(0,8);
+   setReferences(verified.map((r:any)=>({title:String(r.title||"Public source"),url:String(r.url),snippet:String(r.snippet||"")})));
+   // No uncited summary: narrative is only displayed when source URLs exist.
+   setResearchContext(verified.length?String(section.company_context||section.public_web_context||""):"");
+   setResearchSignals(verified.length?String(section.recent_signals||""):"");
   }catch(e){setResearchError(e instanceof Error?e.message:"Research unavailable");}
   finally{setResearchBusy(false);}
  };
@@ -126,25 +146,28 @@ export default function AccountDossierV2({companyName,companyKey,report,tradeKpi
   setExportBusy(true);
   try {
    const {exportAccountDossierPdf}=await import("./exportAccountDossierPdf");
-   await exportAccountDossierPdf({companyName,facts,topRoutes,summary});
+   await exportAccountDossierPdf({companyName,facts,topRoutes,summary,researchContext,researchSignals,references});
   } catch(error) {
    console.error("Account dossier PDF export failed",error);
    alert("Could not export the dossier. Please try again.");
   } finally {setExportBusy(false);}
  };
- return <div className="space-y-3 bg-[#f3f6fa] p-3 sm:p-5">
+ return <div className="space-y-3 bg-[#f3f6fa] p-3 sm:p-5"><style>{`@keyframes litBarReveal{from{transform:scaleX(0)}to{transform:scaleX(1)}}.lit-dossier-bar{animation:litBarReveal 450ms cubic-bezier(.23,1,.32,1) both}@media(prefers-reduced-motion:reduce){.lit-dossier-bar{animation:none}}`}</style>
   <div className="rounded-xl bg-[#0d2039] p-5 text-white sm:p-7">
    <div className="mb-2 flex justify-end"><button data-lt-dossier-pdf type="button" disabled={!facts||exportBusy} onClick={()=>void exportPdf()} className="rounded-md border border-white/25 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-white/20 disabled:opacity-40">{exportBusy?"Preparing PDF…":"Export report PDF"}</button></div>
    <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-teal-300">LIT / ACCOUNT INTELLIGENCE DOSSIER</div>
    <h2 className="mt-3 text-[25px] font-bold tracking-tight sm:text-[30px]">{companyName}</h2>
    <p className="mt-2 text-xs text-slate-300">Verified customs intelligence · Evidence-backed analysis · {generatedAt?new Date(generatedAt).toLocaleDateString("en-US"):"Research date pending"}</p>
    <div className="mt-5 grid grid-cols-2 gap-4 border-t border-white/20 pt-4 sm:grid-cols-4">
-    {[["SHIPMENTS / 12M",hasFacts&&recent.length?fmt(shipments):"—"],["TEU / 12M",hasFacts&&recent.length?fmt(teu):"—"],["OBSERVED DOCUMENTS",hasFacts?fmt(docs.length):"—"],["CHANGE VS PRIOR YEAR",rate===null?"—":`${rate>=0?"+":""}${rate.toFixed(1)}%`]].map(([name,value])=><div key={name}><div className="text-[9px] uppercase tracking-widest text-slate-400">{name}</div><div className="mt-1 text-[23px] font-bold">{value}</div></div>)}
+    {[["SHIPMENTS / 12M",hasFacts&&recent.length?fmt(shipments):"—"],["TEU / 12M",hasFacts&&recent.length?fmt(teu):"—"],["BOL DETAILS AVAILABLE",hasFacts?fmt(docs.length):"—"],["CHANGE VS PRIOR YEAR",rate===null?"—":`${rate>=0?"+":""}${rate.toFixed(1)}%`]].map(([name,value])=><div key={name}><div className="text-[9px] uppercase tracking-widest text-slate-400">{name}</div><div className="mt-1 text-[23px] font-bold">{value}</div></div>)}
    </div>
+   <p className="mt-3 text-[11px] leading-5 text-slate-300">Detailed shipment coverage: {detailCoverage==null?"Not measured":`${docs.length} of ${fmt(shipments)} annual shipments · approximately ${detailCoverage}%`}. Deep BOL ingestion is separate from full monthly summary coverage.</p>
   </div>
   {q.isLoading?<div role="status" className="rounded-lg bg-white p-8 text-center text-sm text-slate-600">Loading stored shipment evidence…</div>:q.error?<div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">Could not load this company’s archived intelligence. <button className="ml-2 underline" onClick={()=>void q.refetch()}>Retry</button></div>:null}
   <Section id="lit-dossier-executive" index="01" title="The short version" sub="Research synthesis with evidence limitations">
-   <p className="text-[12px] leading-6 text-slate-700">{summary||"Company-specific written analysis will appear when verified research is generated."}</p>
+   <p className="text-[12px] leading-6 text-slate-700">{summary}</p>
+   {researchContext?<div className="mt-4 border-l-[3px] border-teal-600 bg-teal-50 px-4 py-3"><h4 className="text-xs font-bold text-slate-900">Executive company context · Public research</h4><p className="mt-2 text-[12px] leading-6 text-slate-700">{researchContext}</p><a href="#lit-dossier-research" className="mt-2 inline-block text-[11px] font-semibold text-teal-800 underline">View {references.length} supporting sources</a></div>:
+     <p className="mt-3 text-xs text-slate-500">A sourced company overview, expansion news, and supply-chain developments can be added using <button type="button" className="font-semibold text-blue-700 underline" onClick={()=>void runPublicResearch()} disabled={researchBusy}>{researchBusy?"research in progress…":"Research company sources"}</button>. This research runs separately from the shipment charts.</p>}
    <div className="mt-4 grid gap-2 sm:grid-cols-2">
     <div className="rounded-lg bg-teal-50 p-3">{explain(recent.length?`Observed monthly customs records show ${fmt(shipments)} shipments and ${fmt(teu)} TEU in the latest 12 recorded months.`:"A complete monthly history is not available for this company.")}</div>
     <div className="rounded-lg bg-blue-50 p-3">{explain(topOrigin?`The leading origin among ${docs.length} available shipment documents is ${topOrigin}. Full-account origin share is not established by this sample.`:"The document sample does not establish a leading origin country.")}</div>
@@ -155,8 +178,8 @@ export default function AccountDossierV2({companyName,companyKey,report,tradeKpi
     <NumberTile label="12M Shipments" value={recent.length?fmt(shipments):"—"}/><NumberTile label="12M TEU" value={recent.length?fmt(teu):"—"}/><NumberTile label="YoY shipments" value={rate===null?"—":`${rate.toFixed(1)}%`}/><NumberTile label="Months available" value={fmt(ts.length)}/>
    </div>
    <div className="grid gap-4 lg:grid-cols-2">
-    <div><div className="mb-1 text-xs font-semibold text-slate-700">Monthly shipments</div><Chart months={ts.slice(-24)} metric="shipments"/></div>
-    <div><div className="mb-1 text-xs font-semibold text-slate-700">Monthly TEU</div><Chart months={ts.slice(-24)} metric="teu"/></div>
+    <div><div className="mb-1 text-xs font-semibold text-slate-700">Monthly shipments</div><DossierChart months={ts.slice(-24)} metric="shipments"/></div>
+    <div><div className="mb-1 text-xs font-semibold text-slate-700">Monthly TEU</div><DossierChart months={ts.slice(-24)} metric="teu"/></div>
    </div>
    <p className="mt-2 text-[11px] text-slate-500">Source: stored monthly company trade history. Latest period is determined by the most recent reported month; YoY compares equivalent available periods only.</p>
   </Section>
@@ -164,14 +187,15 @@ export default function AccountDossierV2({companyName,companyKey,report,tradeKpi
    <div className="grid gap-3 lg:grid-cols-2">
     <Ranking title="Top listed suppliers" rows={ranked.suppliers} total={docs.length} empty="Supplier names are not available in this document sample."/>
     <Ranking title="Origin country distribution" rows={ranked.origins} total={docs.length} empty="Origin countries are not available."/>
-    <Ranking title="Destination ports" rows={ranked.ports} total={docs.length} empty="Port-of-entry information is not available."/>
+    <Ranking title="Verified discharge ports" rows={ranked.ports} total={docs.filter(d=>isVerifiedDischargePort(d.destination_port,d.ingest_source)).length} empty="No ocean discharge port has been verified. Country-level and inland delivery values are excluded."/>
     <Ranking title="Product HS classifications" rows={ranked.commodities} total={docs.length} empty="No source-verified HS codes in the available records."/>
    </div>
   </Section>
+  <p className="rounded-md bg-slate-50 px-3 py-2 text-[11px] text-slate-600">Discharge-port coverage: {validPortDocs} of {docs.length} available documents have a verified port field. Inland locations and country names are never labeled as ocean ports.</p>
   <Section id="lit-dossier-lanes" index="04" title="Observed trade lanes" sub="Real route records returned by LIT">
    {topRoutes?.length?<div className="space-y-3">{topRoutes.slice(0,8).map((r,i)=>{
     const max=Math.max(1,...topRoutes.map(x=>n(x.shipments)));
-    return <div key={i}><div className="mb-1 flex justify-between gap-2 text-xs"><span className="text-slate-700">{r.route||"Route undisclosed"}</span><span className="shrink-0 font-semibold">{r.shipments==null?"—":fmt(n(r.shipments))} BOLs</span></div><div className="h-1.5 rounded-full bg-slate-100"><div className="h-full rounded-full bg-blue-500" style={{width:`${Math.min(100,n(r.shipments)/max*100)}%`}}/></div></div>})}</div>:<p className="text-xs text-slate-500">Verified route ranking is not available for this account.</p>}
+    return <div key={i} tabIndex={0} title={`${r.route||"Route undisclosed"}: ${r.shipments??"Unknown"} observed shipments and ${r.teu??"Unknown"} TEU`}><div className="mb-1 flex justify-between gap-2 text-xs"><span className="text-slate-700">{r.route||"Route undisclosed"}</span><span className="shrink-0 font-semibold">{r.shipments==null?"—":fmt(n(r.shipments))} BOLs</span></div><div className="h-1.5 rounded-full bg-slate-100"><div className="lit-dossier-bar h-full rounded-full bg-blue-500" style={{width:`${Math.min(100,n(r.shipments)/max*100)}%`}}/></div></div>})}</div>:<p className="text-xs text-slate-500">Verified route ranking is not available for this account.</p>}
    <p className="mt-3 text-[11px] text-slate-500">Bar lengths are relative to the largest listed route, not estimated market share.</p>
   </Section>
   <Section id="lit-dossier-carriers" index="05" title="Carrier & forwarder intelligence" sub="Carrier observations; avoid unsupported incumbent claims">
@@ -186,6 +210,7 @@ export default function AccountDossierV2({companyName,companyKey,report,tradeKpi
    <p className="mb-3 text-xs leading-5 text-slate-600">Search public company references and inspect their source links. These are attributed search snippets, not verified proof of an operational claim. Running research may consume a provider credit.</p>
    <button type="button" disabled={researchBusy} onClick={()=>void runPublicResearch()} className="rounded-md bg-[#0b203c] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{researchBusy?"Researching…":"Research company sources"}</button>
    {researchError&&<p role="alert" className="mt-3 text-xs text-amber-700">{researchError}</p>}
+   {researchSignals&&<p className="mt-3 rounded-lg bg-teal-50 p-3 text-xs leading-6 text-slate-700">{researchSignals}</p>}
    <div className="mt-4 grid gap-2">{references.map((r,i)=><div key={r.url+"-"+i} className="rounded-md border border-slate-200 p-3"><a href={r.url} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-blue-700 underline">{r.title}</a><p className="mt-1 text-[11px] leading-5 text-slate-600">{r.snippet.slice(0,280)}</p></div>)}</div>
   </Section>
   <Section id="lit-dossier-assessment" index="08" title="Harvey's commercial assessment" sub="Observed facts distinguished from testable sales hypotheses">
