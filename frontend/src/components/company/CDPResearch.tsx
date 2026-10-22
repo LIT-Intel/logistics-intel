@@ -275,7 +275,7 @@ export default function CDPResearch({
         <aside className="hidden rounded-xl border border-slate-200 bg-white p-4 lg:sticky lg:top-3 lg:block">
           <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Research navigator</div>
           <nav aria-label="Account dossier sections" className="mt-4 flex flex-col gap-3 text-[12px] text-slate-600">
-            {[["01","Executive synthesis","lit-dossier-executive"],["02","Shipment cadence","lit-dossier-monthly"],["03","Suppliers & commodities","lit-dossier-sourcing"],["04","Trade lanes","lit-dossier-lanes"],["05","Carriers & incumbents","lit-dossier-carriers"],["06","Air intelligence","lit-dossier-air"],["07","Commercial assessment","lit-dossier-assessment"]].map(([num,label,id])=>
+            {[["01","Executive synthesis","lit-dossier-executive"],["02","Shipment cadence","lit-dossier-monthly"],["03","Suppliers & commodities","lit-dossier-sourcing"],["04","Trade lanes","lit-dossier-lanes"],["05","Carriers & incumbents","lit-dossier-carriers"],["06","Air intelligence","lit-dossier-air"],["07","Public research","lit-dossier-research"],["08","Commercial assessment","lit-dossier-assessment"]].map(([num,label,id])=>
               <a key={id} href={`#${id}`} className="hover:text-teal-700"><span className="mr-2 font-mono text-teal-700">{num}</span>{label}</a>
             )}
           </nav>
