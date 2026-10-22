@@ -103,6 +103,14 @@ export async function exportAccountDossierPdf(args:{companyName:string;facts:Bri
  title("03  Monthly shipment intelligence");
  trend("shipments");trend("teu");
  next();title("04  Supplier, origin and commodity intelligence");
+ if(args.facts.providerSuppliers.length){
+  para("BROADER SUPPLIER INDEX: ImportYeti company-level historical supplier summary, updated "+(args.facts.providerAsOf?args.facts.providerAsOf.slice(0,10):"date unavailable")+". Counts are provider-reported, not verified from the 50 detailed BOLs, and may cover different years. Do not interpret them as trailing-12-month shares.");
+  for(const p of args.facts.providerSuppliers.slice(0,10)){
+   ensure(18);doc.setFont("helvetica","normal");doc.setFontSize(9);doc.setTextColor(...gray);
+   doc.text(clean(p.name).slice(0,61),L,y);doc.text(String(p.count)+" reported",R,y,{align:"right"});y+=18;
+  }
+  y+=8;
+ }
  para(`All rankings below are calculated only from ${args.facts.documents.length} accessible shipment documents; they do not imply full-year supplier or carrier market shares.`);
  ranked("Top listed suppliers",rank(args.facts.documents,"shipper_name"),args.facts.documents.length);
  ranked("Origin countries",rank(args.facts.documents,"origin_country"),args.facts.documents.length);
