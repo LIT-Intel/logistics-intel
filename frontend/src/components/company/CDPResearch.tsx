@@ -1,3 +1,4 @@
+import AccountDossierV2 from "./AccountDossierV2";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import {
@@ -154,6 +155,7 @@ type TopRouteItem = {
 
 type CDPResearchProps = {
   companyName: string;
+  companyKey?: string | null;
   companyMeta?: {
     ticker?: string | null;
     hq?: string | null;
@@ -181,6 +183,7 @@ type CDPResearchProps = {
 
 export default function CDPResearch({
   companyName,
+  companyKey,
   companyMeta,
   tradeKpis,
   topRoutes,
@@ -207,6 +210,16 @@ export default function CDPResearch({
 
   const briefBody = (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      {hasReport && !pulseError ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
+          <div className="text-[12px] font-bold tracking-wide text-slate-800">Account Intelligence <span className="ml-2 text-[10px] font-normal text-slate-500">Verified data dossier</span></div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={onRefresh} disabled={pulseLoading} className="rounded-md border border-slate-200 px-3 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">{pulseLoading ? "Refreshing…" : "Refresh analysis"}</button>
+            <button type="button" onClick={() => document.querySelector<HTMLButtonElement>("[data-lt-dossier-pdf]")?.click()} className="rounded-md bg-[#0b203c] px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-[#183c65]">Export dossier PDF</button>
+            <button type="button" onClick={() => setExpanded(true)} className="rounded-md border border-slate-200 px-3 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50">Expand</button>
+          </div>
+        </div>
+      ) : (
       <BriefHeader
         companyName={companyName}
         companyMeta={companyMeta}
@@ -216,7 +229,11 @@ export default function CDPResearch({
         onPulse={onPulse}
         onRefresh={onRefresh}
         onShareHtml={onShareHtml}
-        onExportPdf={onExportPdf}
+        onExportPdf={() => {
+          const dossierButton = document.querySelector<HTMLButtonElement>("[data-lt-dossier-pdf]");
+          if (dossierButton) dossierButton.click();
+          else onExportPdf();
+        }}
         onExportExecutivePdf={onExportExecutivePdf}
         onShareEmail={onShareEmail}
         onExpand={() => setExpanded(true)}
@@ -225,6 +242,7 @@ export default function CDPResearch({
         exportLoading={exportLoading}
       />
 
+      )}
       {limitExceeded ? (
         <LimitExceededState
           message={pulseError!.message}
@@ -238,12 +256,13 @@ export default function CDPResearch({
       ) : !hasReport ? (
         <EmptyState onPulse={onPulse} usage={pulseUsage} />
       ) : (
-        <ReportBody
-          report={report!}
+        <AccountDossierV2
           companyName={companyName}
+          companyKey={companyKey}
+          report={report}
           tradeKpis={tradeKpis}
           topRoutes={topRoutes}
-          navigate={navigate}
+          generatedAt={pulseBrief?.generatedAt}
         />
       )}
     </div>
@@ -253,11 +272,15 @@ export default function CDPResearch({
     <>
       <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-start">
         {briefBody}
-        <PulseSidebar
-          pulseBrief={pulseBrief}
-          pulseUsage={pulseUsage}
-          report={report}
-        />
+        <aside className="hidden rounded-xl border border-slate-200 bg-white p-4 lg:sticky lg:top-3 lg:block">
+          <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Research navigator</div>
+          <nav aria-label="Account dossier sections" className="mt-4 flex flex-col gap-3 text-[12px] text-slate-600">
+            {[["01","Executive synthesis","lit-dossier-executive"],["02","Shipment cadence","lit-dossier-monthly"],["03","Suppliers & commodities","lit-dossier-sourcing"],["04","Trade lanes","lit-dossier-lanes"],["05","Carriers & incumbents","lit-dossier-carriers"],["06","Air intelligence","lit-dossier-air"],["07","Public research","lit-dossier-research"],["08","Commercial assessment","lit-dossier-assessment"]].map(([num,label,id])=>
+              <a key={id} href={`#${id}`} className="hover:text-teal-700"><span className="mr-2 font-mono text-teal-700">{num}</span>{label}</a>
+            )}
+          </nav>
+          <div className="mt-6 rounded-lg bg-slate-50 p-3 text-[11px] leading-5 text-slate-600">All charts use stored shipment records. Sample-specific rankings display their own denominators. Company Profile's initial loading path remains unchanged.</div>
+        </aside>
       </div>
       {expanded && (
         <div
