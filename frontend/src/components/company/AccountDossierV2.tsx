@@ -67,7 +67,7 @@ function Section({id,index,title,sub,children}:{id:string;index:string;title:str
 const explain=(v:string)=> <span className="text-[11px] leading-5 text-slate-600">{v}</span>;
 export default function AccountDossierV2({companyName,companyKey,companyMeta,report,tradeKpis,topRoutes,generatedAt}:{
  companyName:string;companyKey?:string|null;
- companyMeta?:{hq?:string|null;vertical?:string|null};
+ companyMeta?:{hq?:string|null;vertical?:string|null;domain?:string|null};
  report?:{company_summary?:unknown;why_now?:unknown;web_sources?:Array<{title?:string;url?:string}>}|null;
  tradeKpis?:{shipments12m?:number|null;teu12m?:number|null;activeLanes?:number|null}|null;
  topRoutes?:Array<{route?:string|null;shipments?:number|null;teu?:number|null}>|null;
@@ -116,7 +116,7 @@ export default function AccountDossierV2({companyName,companyKey,companyMeta,rep
    // the public web, returns attributable sources, and caches repeat requests.
    const {data:saved}=await supabase.from("lit_saved_companies").select("company_id").eq("source_company_key",companyKey).maybeSingle();
    const {data,error}=await supabase.functions.invoke("pulse-brief",{body:{
-     company_name:companyName,company_id:saved?.company_id??null,source_company_key:companyKey,
+     company_name:companyName,company_id:saved?.company_id??null,domain:companyMeta?.domain??null,source_company_key:companyKey,
      snapshot_summary:{shipments_12m:recent.length?shipments:null,teu_12m:recent.length?teu:null},
    }});
    if(error||!data?.ok)throw new Error(String(data?.error||"Research source is unavailable or not included in this plan."));
