@@ -122,8 +122,17 @@ export default function AccountDossierV2({companyName,companyKey,companyMeta,rep
    if(error||!data?.ok)throw new Error(String(data?.error||"Research source is unavailable or not included in this plan."));
    const section=data.sections??{};
    const rows=Array.isArray(section.sources)?section.sources:[];
+   const companyDomain=String(companyMeta?.domain||"").toLowerCase().replace(/^https?:\/\//,"").replace(/^www\./,"").split("/")[0];
+   const companyPhrase=companyName.toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
    const verified=rows.filter((r:any)=>{
-    try {const u=new URL(String(r.url||""));return u.protocol==="https:"||u.protocol==="http:"}catch{return false}
+    try {
+     const u=new URL(String(r.url||""));
+     if(!["https:","http:"].includes(u.protocol))return false;
+     const host=u.hostname.toLowerCase().replace(/^www\./,"");
+     if(companyDomain&&(host===companyDomain||host.endsWith("."+companyDomain)))return true;
+     const text=String(r.title||"")+" "+String(r.snippet||"");
+     return text.toLowerCase().replace(/[^a-z0-9]+/g," ").includes(companyPhrase);
+    } catch{return false}
    }).slice(0,8);
    setReferences(verified.map((r:any)=>({title:String(r.title||"Public source"),url:String(r.url),snippet:String(r.snippet||"")})));
    // No uncited summary: narrative is only displayed when source URLs exist.
