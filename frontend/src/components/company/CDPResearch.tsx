@@ -258,6 +258,7 @@ export default function CDPResearch({
       ) : (
         <AccountDossierV2
           companyName={companyName}
+          companyMeta={companyMeta}
           companyKey={companyKey}
           report={report}
           tradeKpis={tradeKpis}
