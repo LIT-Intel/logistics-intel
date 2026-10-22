@@ -100,8 +100,8 @@ export async function handoffToHarvey(req: HarveyCopilotRequest): Promise<{ lead
  */
 export function isDirectoryForwarderQuestion(question:string):boolean {
  const q=question.toLowerCase();
- return /\\b(?:find|show|list|which|give me|identify|accounts?|companies|shippers|prospects)\\b/.test(q)
-    && /\\b(?:dsv|expeditors|kuehne|direct to carrier|bco direct)\\b/.test(q);
+ return /\b(?:find|show|list|which|give me|identify|accounts?|companies|shippers|prospects)\b/.test(q)
+    && /\b(?:dsv|expeditors|kuehne|direct to carrier|bco direct)\b/.test(q);
 }
 export async function searchHarveyHistoricalForwarders(question:string):Promise<HarveyAnswer> {
  const {data,error}=await supabase.functions.invoke("harvey-copilot",{
