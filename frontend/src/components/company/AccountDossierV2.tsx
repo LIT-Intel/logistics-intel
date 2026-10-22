@@ -51,7 +51,7 @@ function Ranking({title,rows,total,empty}:{title:string;rows:Rank[];total:number
   <p className="mt-1 text-[10px] text-slate-500">Shares of {total} sampled documents; not the full shipment universe</p>
   {!rows.length?<p className="py-7 text-xs text-slate-500">{empty}</p>:
    <div className="mt-4 space-y-3">{rows.map(row=>{
-    const share=total?row.count/total*100:0;return <div key={row.name}>
+    const share=total?row.count/total*100:0;return <div key={row.name} tabIndex={0} title={`${row.name}: ${row.count} source documents · ${share.toFixed(1)}% of sampled rows`} aria-label={`${row.name}: ${row.count} records, ${share.toFixed(1)} percent of document sample`}>
      <div className="mb-1 flex justify-between gap-3 text-[11px]"><span className="max-w-[74%] truncate text-slate-700" title={row.name}>{row.name}</span><strong className="shrink-0 text-slate-700">{row.count} · {share.toFixed(0)}%</strong></div>
      <div className="h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="lit-dossier-bar h-full origin-left rounded-full bg-teal-600" style={{width:`${Math.min(100,share)}%`}}/></div>
     </div>})}</div>}
@@ -195,7 +195,7 @@ export default function AccountDossierV2({companyName,companyKey,companyMeta,rep
   <Section id="lit-dossier-lanes" index="04" title="Observed trade lanes" sub="Real route records returned by LIT">
    {topRoutes?.length?<div className="space-y-3">{topRoutes.slice(0,8).map((r,i)=>{
     const max=Math.max(1,...topRoutes.map(x=>n(x.shipments)));
-    return <div key={i}><div className="mb-1 flex justify-between gap-2 text-xs"><span className="text-slate-700">{r.route||"Route undisclosed"}</span><span className="shrink-0 font-semibold">{r.shipments==null?"—":fmt(n(r.shipments))} BOLs</span></div><div className="h-1.5 rounded-full bg-slate-100"><div className="h-full rounded-full bg-blue-500" style={{width:`${Math.min(100,n(r.shipments)/max*100)}%`}}/></div></div>})}</div>:<p className="text-xs text-slate-500">Verified route ranking is not available for this account.</p>}
+    return <div key={i} tabIndex={0} title={`${r.route||"Route undisclosed"}: ${r.shipments??"Unknown"} observed shipments and ${r.teu??"Unknown"} TEU`}><div className="mb-1 flex justify-between gap-2 text-xs"><span className="text-slate-700">{r.route||"Route undisclosed"}</span><span className="shrink-0 font-semibold">{r.shipments==null?"—":fmt(n(r.shipments))} BOLs</span></div><div className="h-1.5 rounded-full bg-slate-100"><div className="lit-dossier-bar h-full rounded-full bg-blue-500" style={{width:`${Math.min(100,n(r.shipments)/max*100)}%`}}/></div></div>})}</div>:<p className="text-xs text-slate-500">Verified route ranking is not available for this account.</p>}
    <p className="mt-3 text-[11px] text-slate-500">Bar lengths are relative to the largest listed route, not estimated market share.</p>
   </Section>
   <Section id="lit-dossier-carriers" index="05" title="Carrier & forwarder intelligence" sub="Carrier observations; avoid unsupported incumbent claims">
