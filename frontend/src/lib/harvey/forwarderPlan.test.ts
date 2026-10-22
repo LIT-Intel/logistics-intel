@@ -1,3 +1,4 @@
+import {isDirectoryForwarderQuestion} from "@/api/harveyCopilot";
 import { describe, it, expect } from "vitest";
 import { planForwarderLookup, validateForwarderSearchPlan } from "../../../../supabase/functions/_shared/harvey_forwarder_plan";
 describe("Harvey 2.0 provider query planner",()=>{
@@ -19,5 +20,13 @@ describe("Harvey 2.0 provider query planner",()=>{
   expect(plan?.limit).toBe(100);
   expect(validateForwarderSearchPlan({...plan,providerName:"*"})).toBeNull();
   expect(validateForwarderSearchPlan({...plan,sortBy:"teu"})).toBeNull();
+ });
+});
+
+describe("Harvey widget provider search routing",()=>{
+ it("routes supported prospecting questions, not broad unrelated chats",()=>{
+  expect(isDirectoryForwarderQuestion("Find 25 Georgia companies using DSV")).toBe(true);
+  expect(isDirectoryForwarderQuestion("Show accounts using Expeditors")).toBe(true);
+  expect(isDirectoryForwarderQuestion("What is DSV?")).toBe(false);
  });
 });
