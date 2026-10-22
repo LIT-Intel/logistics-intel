@@ -19,7 +19,8 @@ type DocRow = {
  transport_mode:string|null; ingest_source?:string|null; teu:number|string|null;
 };
 type Rank = { name:string; count:number; teu:number };
-export type BriefFacts = { companyKey:string; months:MonthRow[]; documents:DocRow[]; retrievedAt:string };
+type ProviderSupplier = { name:string; country:string|null; count:number; lastSeen:string|null };
+export type BriefFacts = { companyKey:string; months:MonthRow[]; documents:DocRow[]; providerSuppliers:ProviderSupplier[]; providerAsOf:string|null; retrievedAt:string };
 const n=(x:unknown)=> {const v=Number(x);return Number.isFinite(v)?v:0};
 const fmt=(x:number)=>new Intl.NumberFormat("en-US",{maximumFractionDigits:1}).format(x);
 const label=(s:string|null|undefined)=>String(s??"").trim();
@@ -33,14 +34,25 @@ const aggregate=(rows:DocRow[],field:keyof DocRow):Rank[]=>{
 export async function loadBriefFacts(companyKey:string):Promise<BriefFacts>{
  const key=companyKey.trim();
  if(!key || key.length>180)throw new Error("Valid shipment archive company key required");
- const [months,documents]=await Promise.all([
+ const [months,documents,provider]=await Promise.all([
   supabase.from("lit_company_time_series_monthly").select("year,month,shipments,teu").eq("company_id",key).order("year").order("month").limit(600),
   supabase.from("lit_unified_shipments").select("bol_number,bol_date,shipper_name,origin_country,origin_port,destination_port,carrier_name,hs_code,product_description,transport_mode,ingest_source,teu")
   .eq("company_id",key).order("bol_date",{ascending:false}).limit(500),
+  supabase.from("lit_importyeti_company_snapshot").select("top_suppliers:parsed_summary->top_suppliers,updated_at").eq("company_id",key).maybeSingle(),
  ]);
  if(months.error)throw new Error("Monthly source: "+months.error.message);
  if(documents.error)throw new Error("Document source: "+documents.error.message);
- return {companyKey:key,months:(months.data??[]) as MonthRow[],documents:(documents.data??[]) as DocRow[],retrievedAt:new Date().toISOString()};
+ const rawProvider=((provider.data as any)?.top_suppliers);
+ const providerSuppliers:ProviderSupplier[]=Array.isArray(rawProvider)
+  ?rawProvider.map((row:any)=>({
+    name:String(row?.name??"").trim(),
+    country:row?.country?String(row.country):null,
+    count:Math.max(0,Number(row?.shipment_count)||0),
+    lastSeen:row?.last_shipment_date?String(row.last_shipment_date):null,
+  })).filter((row:ProviderSupplier)=>row.name && !/^(missing|unknown|n\/a|not available)/i.test(row.name) && row.count>0)
+    .sort((a:ProviderSupplier,b:ProviderSupplier)=>b.count-a.count).slice(0,15):[];
+ return {companyKey:key,months:(months.data??[]) as MonthRow[],documents:(documents.data??[]) as DocRow[],
+  providerSuppliers,providerAsOf:((provider.data as any)?.updated_at??null),retrievedAt:new Date().toISOString()};
 }
 export function useBriefFacts(companyKey:string|null|undefined){
  return useQuery({queryKey:["account-dossier-v2",companyKey],enabled:!!companyKey,
@@ -192,7 +204,15 @@ export default function AccountDossierV2({companyName,companyKey,companyMeta,rep
    </div>
    <p className="mt-2 text-[11px] text-slate-500">Source: stored monthly company trade history. Latest period is determined by the most recent reported month; YoY compares equivalent available periods only.</p>
   </Section>
-  <Section id="lit-dossier-sourcing" index="03" title="Suppliers, origins & commodities" sub="Measured in available detailed shipment documents">
+  <Section id="lit-dossier-sourcing" index="03" title="Suppliers, origins & commodities" sub="Two distinct sources: historical provider aggregates and available detailed BOL records">
+   {facts?.providerSuppliers?.length?<div className="mb-4 rounded-lg border border-teal-200 bg-teal-50 p-4">
+    <h4 className="text-[13px] font-bold text-slate-900">Broader provider-reported supplier activity</h4>
+    <p className="mt-1 text-[11px] leading-5 text-slate-600">From the saved ImportYeti company supplier summary (updated {facts.providerAsOf?new Date(facts.providerAsOf).toLocaleDateString("en-US"):"date unavailable"}). These are source-reported historical shipment counts, not verified against individual BOL IDs and not necessarily restricted to the last 12 months. No TEU share is estimated.</p>
+    <div className="mt-3 grid gap-2 sm:grid-cols-2">{facts.providerSuppliers.slice(0,10).map(p=><div key={p.name+"-"+p.country} className="rounded-md bg-white px-3 py-2 text-[11px]">
+      <div className="flex justify-between gap-3"><span className="font-semibold text-slate-800">{p.name}</span><strong className="shrink-0 tabular-nums">{p.count} reported</strong></div>
+      <p className="mt-1 text-slate-500">{p.country||"Origin not specified"}{p.lastSeen?" · last reported "+p.lastSeen:""}</p>
+    </div>)}</div>
+   </div>:null}
    <div className="grid gap-3 lg:grid-cols-2">
     <Ranking title="Top listed suppliers" rows={ranked.suppliers} total={docs.length} empty="Supplier names are not available in this document sample."/>
     <Ranking title="Origin country distribution" rows={ranked.origins} total={docs.length} empty="Origin countries are not available."/>
