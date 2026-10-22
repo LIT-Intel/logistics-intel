@@ -1,3 +1,4 @@
+import { auditMonthlyTeu, isSuspiciousTeu } from "@/features/company-profile/data/teuQuality";
 import DossierChart from "./DossierChart";
 import { isVerifiedDischargePort } from "@/lib/bols/portValidity";
 import { useMemo, useState } from "react";
@@ -84,7 +85,9 @@ export default function AccountDossierV2({companyName,companyKey,companyMeta,rep
  const latest=ts.length?dateKey(ts[ts.length-1]):null;
  const recent=latest==null?[]:ts.filter(m=>dateKey(m)>latest-12);
  const previous=latest==null?[]:ts.filter(m=>dateKey(m)>latest-24&&dateKey(m)<=latest-12);
- const shipments=recent.reduce((sum,m)=>sum+n(m.shipments),0),teu=recent.reduce((sum,m)=>sum+n(m.teu),0);
+ const shipments=recent.reduce((sum,m)=>sum+n(m.shipments),0);
+ const teuIntegrity=auditMonthlyTeu(recent);
+ const teu=teuIntegrity.valid?recent.reduce((sum,m)=>sum+n(m.teu),0):null;
  const prior=previous.reduce((sum,m)=>sum+n(m.shipments),0);
  const rate=prior>0?((shipments-prior)/prior*100):null;
  const docs=facts?.documents??[];
@@ -160,7 +163,7 @@ export default function AccountDossierV2({companyName,companyKey,companyMeta,rep
    <h2 className="mt-3 text-[25px] font-bold tracking-tight sm:text-[30px]">{companyName}</h2>
    <p className="mt-2 text-xs text-slate-300">Verified customs intelligence · Evidence-backed analysis · {generatedAt?new Date(generatedAt).toLocaleDateString("en-US"):"Research date pending"}</p>
    <div className="mt-5 grid grid-cols-2 gap-4 border-t border-white/20 pt-4 sm:grid-cols-4">
-    {[["SHIPMENTS / 12M",hasFacts&&recent.length?fmt(shipments):"—"],["TEU / 12M",hasFacts&&recent.length?fmt(teu):"—"],["BOL DETAILS AVAILABLE",hasFacts?fmt(docs.length):"—"],["CHANGE VS PRIOR YEAR",rate===null?"—":`${rate>=0?"+":""}${rate.toFixed(1)}%`]].map(([name,value])=><div key={name}><div className="text-[9px] uppercase tracking-widest text-slate-400">{name}</div><div className="mt-1 text-[23px] font-bold">{value}</div></div>)}
+    {[["SHIPMENTS / 12M",hasFacts&&recent.length?fmt(shipments):"—"],["TEU / 12M",hasFacts&&recent.length&&teu!==null?fmt(teu):"—"],["BOL DETAILS AVAILABLE",hasFacts?fmt(docs.length):"—"],["CHANGE VS PRIOR YEAR",rate===null?"—":`${rate>=0?"+":""}${rate.toFixed(1)}%`]].map(([name,value])=><div key={name}><div className="text-[9px] uppercase tracking-widest text-slate-400">{name}</div><div className="mt-1 text-[23px] font-bold">{value}</div></div>)}
    </div>
    <p className="mt-3 text-[11px] leading-5 text-slate-300">Detailed shipment coverage: {detailCoverage==null?"Not measured":`${docs.length} of ${fmt(shipments)} annual shipments · approximately ${detailCoverage}%`}. Deep BOL ingestion is separate from full monthly summary coverage.</p>
   </div>
@@ -174,13 +177,14 @@ export default function AccountDossierV2({companyName,companyKey,companyMeta,rep
     <div className="rounded-lg bg-blue-50 p-3">{explain(topOrigin?`The leading origin among ${docs.length} available shipment documents is ${topOrigin}. Full-account origin share is not established by this sample.`:"The document sample does not establish a leading origin country.")}</div>
    </div>
   </Section>
+  {!teuIntegrity.valid&&<div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-xs font-semibold text-amber-900">TEU integrity warning: {teuIntegrity.flaggedMonths} monthly record(s) failed plausibility screening. TEU totals and modeled freight spend are withheld until verified. Shipment counts remain separate.</div>}
   <Section id="lit-dossier-monthly" index="02" title="Shipment volume & cadence" sub="Historical monthly records; not the limited bill-of-lading sample">
    <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-    <NumberTile label="12M Shipments" value={recent.length?fmt(shipments):"—"}/><NumberTile label="12M TEU" value={recent.length?fmt(teu):"—"}/><NumberTile label="YoY shipments" value={rate===null?"—":`${rate.toFixed(1)}%`}/><NumberTile label="Months available" value={fmt(ts.length)}/>
+    <NumberTile label="12M Shipments" value={recent.length?fmt(shipments):"—"}/><NumberTile label="12M TEU" value={recent.length&&teu!==null?fmt(teu):"—"}/><NumberTile label="YoY shipments" value={rate===null?"—":`${rate.toFixed(1)}%`}/><NumberTile label="Months available" value={fmt(ts.length)}/>
    </div>
    <div className="grid gap-4 lg:grid-cols-2">
     <div><div className="mb-1 text-xs font-semibold text-slate-700">Monthly shipments</div><DossierChart months={ts.slice(-24)} metric="shipments"/></div>
-    <div><div className="mb-1 text-xs font-semibold text-slate-700">Monthly TEU</div><DossierChart months={ts.slice(-24)} metric="teu"/></div>
+    <div><div className="mb-1 text-xs font-semibold text-slate-700">Monthly TEU · under quality review</div><DossierChart months={ts.slice(-24).map(m=>isSuspiciousTeu(m.shipments,m.teu)?{...m,teu:null}:m)} metric="teu"/></div>
    </div>
    <p className="mt-2 text-[11px] text-slate-500">Source: stored monthly company trade history. Latest period is determined by the most recent reported month; YoY compares equivalent available periods only.</p>
   </Section>
