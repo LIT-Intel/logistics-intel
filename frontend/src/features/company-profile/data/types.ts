@@ -64,6 +64,8 @@ export interface RollupData {
   lastMi: number | null; // latest mi with volume
   totalShipments: number;
   totalTeu: number;
+  /** Months where raw TEU failed basic plausibility screening. */
+  unverifiedTeuMonths?: number[];
 }
 
 /** A company's normalized shipment archive plus the derived time frame. */
