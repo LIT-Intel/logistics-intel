@@ -34,6 +34,11 @@ function normalizeWords(s:string){return s.toLowerCase().replace(/[^a-z0-9]+/g,"
 export function planForwarderLookup(text:unknown):{plan:ForwarderSearchPlan|null;clarification:string|null}{
  if(typeof text!=="string" || text.length>1500)return {plan:null,clarification:"Please provide a shorter freight-provider search question."};
  const q=normalizeWords(text);
+ // These concepts require separate verified shipment-lane/monthly tools.
+ // Never answer a Germany-lane or verified TEU question using an undated
+ // company-level directory snapshot.
+ if(/\b(?:german|germany|rotterdam|antwerp|lane|routes?|load(?:ing)? ports?|12 months|last year|past year|recent|teus?|shipments?|incumbent|current|today)\b/.test(q))
+   return {plan:null,clarification:"I can search historical company-level provider relationships, but I cannot verify a specific trade lane, recent booking, shipment count, or TEU from this directory source."};
  const hit=Object.entries(REVIEWED_PROVIDERS).find(([name])=>new RegExp(`\\b${name.replace(/ /g,"\\s+")}\\b`,"i").test(q));
  if(!hit)return {plan:null,clarification:"Which named forwarder or direct-booking label should I search for? Supported first-pass provider names include DSV, Expeditors, and Kuehne+Nagel."};
  const geographical=Object.entries(STATES).sort((a,b)=>b[0].length-a[0].length)
