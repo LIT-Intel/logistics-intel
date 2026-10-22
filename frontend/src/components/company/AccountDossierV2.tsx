@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
-import { BarChart3, Globe2, Package, Ship, Plane, AlertCircle, ShieldCheck, TrendingUp, FileSearch } from "lucide-react";
+import { ShieldCheck } from "lucide-react";
 
 /** Account Intelligence 2.0 — evidence-driven report, not AI-invented statistics.
  * Only mounted in the Pulse AI tab, so no additional Company Profile critical-path calls.
