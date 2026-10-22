@@ -98,13 +98,17 @@ export default function AccountDossierV2({companyName,companyKey,companyMeta,rep
  // The legacy LLM summary is intentionally excluded: existing saved reports
  // can contain unsourced quantities that contradict the customs rollup.
  // Only deterministic evidence enters this first-generation dossier.
- const summaryParts=[companyName];
- if(companyMeta?.vertical)summaryParts.push("is categorized as "+companyMeta.vertical+" in LIT firmographics");
- if(companyMeta?.hq)summaryParts.push("and has a recorded profile location of "+companyMeta.hq);
- const companyDescription=summaryParts.join(" ");
- const summary=recent.length
-  ? companyDescription+". LIT customs history includes "+fmt(shipments)+" shipments and "+fmt(teu)+" TEU across the latest "+recent.length+" reported months. The "+docs.length+" detailed documents provide a limited view of origin countries and service providers, not a full 12-month ranking."
-  : companyDescription+". A complete monthly customs history has not been verified for this company.";
+ const usableIndustry=companyMeta?.vertical&& !["unknown","n/a","other",""].includes(String(companyMeta.vertical).toLowerCase())?companyMeta.vertical:null;
+ const usableHq=companyMeta?.hq&& !["unknown","n/a",""].includes(String(companyMeta.hq).toLowerCase())?companyMeta.hq:null;
+ const companyIntro=companyName+(usableIndustry?" is classified in LIT as "+usableIndustry:"")+(usableHq?" and has a recorded headquarters/location of "+usableHq:"")+". ";
+ const volumeSentence=recent.length
+  ? "The recorded monthly import history contains "+fmt(shipments)+" shipments during the latest "+recent.length+" reported months. "+(teu===null?"TEU totals failed source-quality screening and must not be used for freight-spend calculations.":"Those records report "+fmt(teu)+" TEU, subject to provider coverage.")
+  : "LIT has not confirmed a complete recent monthly shipment-history series for this account.";
+ const providerSentence=docs.length
+  ? "Available detailed bills of lading cover "+fmt(docs.length)+" documents"+(topOrigin?", led by "+topOrigin+" among identified origins":"")+"."+(ranked.carriers.length?" The most frequently named ocean carrier in this sample is "+ranked.carriers[0].name+" ("+ranked.carriers[0].count+" records).":" No carrier lineup is verified from these documents.")
+  : "No detailed bill-of-lading records are available to confirm individual suppliers or carrier usage.";
+ const analystCaveat="Supplier and carrier findings describe the accessible document sample, not the full yearly shipping program. A sourced public-company research section can add products, facilities, recent corporate activity and evidence-backed supply-chain developments.";
+ const summary=[companyIntro,volumeSentence,providerSentence,analystCaveat].join(" ");
  const hasFacts=!!facts;
  const [exportBusy,setExportBusy]=useState(false);
  const [references,setReferences]=useState<Array<{title:string;url:string;snippet:string}>>([]);
