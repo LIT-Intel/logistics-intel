@@ -7,6 +7,7 @@ import {
   type HarveyContext,
 } from "../_shared/harvey_copilot.ts";
 import { callLlm, resolveLlmModel } from "../_shared/llm.ts";
+import { executeForwarderDirectorySearch } from "../_shared/harvey_forwarder_search.ts";
 
 const FN = "harvey-copilot";
 const FLAG = "harvey_contextual_copilot";
@@ -24,7 +25,7 @@ const ALLOWED_CTA_ROUTES = [
 type ConversationTurn = { role: "user" | "assistant"; content: string };
 
 type Body = {
-  action?: "context" | "handoff" | "ask";
+  action?: "context" | "handoff" | "ask" | "search_forwarders";
   company_id?: string | null;
   source_company_key?: string | null;
   company_name?: string | null;
@@ -418,8 +419,12 @@ Deno.serve(async (req: Request) => {
 
   let body: Body;
   try { body = await req.json(); } catch { return json({ ok: false, error: "invalid_json", request_id: rid }, 400); }
-  if (body.action && body.action !== "context" && body.action !== "handoff" && body.action !== "ask") {
+  if (body.action && body.action !== "context" && body.action !== "handoff" && body.action !== "ask" && body.action !== "search_forwarders") {
     return json({ ok: false, error: "invalid_action", request_id: rid }, 400);
+  }
+  if(body.action==="search_forwarders"){
+    const result=await executeForwarderDirectorySearch(auth.userClient,body.question);
+    return json({ ...result, request_id:rid },result.ok?200:result.error==="directory_query_failed"?503:422);
   }
   const hasCompanyReference = Boolean(body.company_id || body.source_company_key || body.company_name || body.domain);
   const context = hasCompanyReference ? await buildContext(auth, orgId, body) : null;
