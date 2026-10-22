@@ -3160,7 +3160,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
         </div>
         {panelOpen && !["overview", "lanes", "history"].includes(tab) && (
           <CDPDetailsPanel
-            crmPanel={<>{crmPanel}<IncumbentForwarderCard bols={(profile as any)?.recentBols ?? []} /></>}
+            crmPanel={<>{crmPanel}<IncumbentForwarderCard companyName={companyName} website={companyWebsite || companyDomain || null} bols={(profile as any)?.recentBols ?? []} /></>}
             company={
               {
                 domain: companyDomain,
