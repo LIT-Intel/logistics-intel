@@ -98,15 +98,30 @@ export default function AccountDossierV2({companyName,companyKey,report,tradeKpi
  const hasFacts=!!facts;
  const [exportBusy,setExportBusy]=useState(false);
  const [references,setReferences]=useState<Array<{title:string;url:string;snippet:string}>>([]);
+ const [researchContext,setResearchContext]=useState("");
+ const [researchSignals,setResearchSignals]=useState("");
  const [researchBusy,setResearchBusy]=useState(false);
  const [researchError,setResearchError]=useState<string|null>(null);
  const runPublicResearch=async()=>{
+  if(researchBusy)return;
   setResearchBusy(true);setResearchError(null);
   try {
-   const {data,error}=await supabase.functions.invoke("pulse-web-discover",{body:{query:companyName+" company official website facilities operations",limit:8,persist:false}});
-   if(error||!data?.ok) throw new Error("Public research provider unavailable");
-   const rows=Array.isArray(data.results)?data.results:[];
-   setReferences(rows.filter((r:any)=>/^https:\/\//i.test(String(r.website||""))).map((r:any)=>({title:String(r.title||r.name||"Reference"),url:String(r.website),snippet:String(r.snippet||"")})).slice(0,8));
+   // Existing authenticated, usage-gated source-research function. It queries
+   // the public web, returns attributable sources, and caches repeat requests.
+   const {data,error}=await supabase.functions.invoke("pulse-brief",{body:{
+     company_name:companyName,source_company_key:companyKey,
+     snapshot_summary:{shipments_12m:recent.length?shipments:null,teu_12m:recent.length?teu:null},
+   }});
+   if(error||!data?.ok)throw new Error(String(data?.error||"Research source is unavailable or not included in this plan."));
+   const section=data.sections??{};
+   const rows=Array.isArray(section.sources)?section.sources:[];
+   const verified=rows.filter((r:any)=>{
+    try {const u=new URL(String(r.url||""));return u.protocol==="https:"||u.protocol==="http:"}catch{return false}
+   }).slice(0,8);
+   setReferences(verified.map((r:any)=>({title:String(r.title||"Public source"),url:String(r.url),snippet:String(r.snippet||"")})));
+   // No uncited summary: narrative is only displayed when source URLs exist.
+   setResearchContext(verified.length?String(section.company_context||section.public_web_context||""):"");
+   setResearchSignals(verified.length?String(section.recent_signals||""):"");
   }catch(e){setResearchError(e instanceof Error?e.message:"Research unavailable");}
   finally{setResearchBusy(false);}
  };
@@ -115,7 +130,7 @@ export default function AccountDossierV2({companyName,companyKey,report,tradeKpi
   setExportBusy(true);
   try {
    const {exportAccountDossierPdf}=await import("./exportAccountDossierPdf");
-   await exportAccountDossierPdf({companyName,facts,topRoutes,summary});
+   await exportAccountDossierPdf({companyName,facts,topRoutes,summary,researchContext,researchSignals,references});
   } catch(error) {
    console.error("Account dossier PDF export failed",error);
    alert("Could not export the dossier. Please try again.");
@@ -133,7 +148,9 @@ export default function AccountDossierV2({companyName,companyKey,report,tradeKpi
   </div>
   {q.isLoading?<div role="status" className="rounded-lg bg-white p-8 text-center text-sm text-slate-600">Loading stored shipment evidence…</div>:q.error?<div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">Could not load this company’s archived intelligence. <button className="ml-2 underline" onClick={()=>void q.refetch()}>Retry</button></div>:null}
   <Section id="lit-dossier-executive" index="01" title="The short version" sub="Research synthesis with evidence limitations">
-   <p className="text-[12px] leading-6 text-slate-700">{summary||"Company-specific written analysis will appear when verified research is generated."}</p>
+   <p className="text-[12px] leading-6 text-slate-700">{summary}</p>
+   {researchContext?<div className="mt-4 border-l-[3px] border-teal-600 bg-teal-50 px-4 py-3"><h4 className="text-xs font-bold text-slate-900">Executive company context · Public research</h4><p className="mt-2 text-[12px] leading-6 text-slate-700">{researchContext}</p><a href="#lit-dossier-research" className="mt-2 inline-block text-[11px] font-semibold text-teal-800 underline">View {references.length} supporting sources</a></div>:
+     <p className="mt-3 text-xs text-slate-500">A sourced company overview, expansion news, and supply-chain developments can be added using <button type="button" className="font-semibold text-blue-700 underline" onClick={()=>void runPublicResearch()} disabled={researchBusy}>{researchBusy?"research in progress…":"Research company sources"}</button>. This research runs separately from the shipment charts.</p>}
    <div className="mt-4 grid gap-2 sm:grid-cols-2">
     <div className="rounded-lg bg-teal-50 p-3">{explain(recent.length?`Observed monthly customs records show ${fmt(shipments)} shipments and ${fmt(teu)} TEU in the latest 12 recorded months.`:"A complete monthly history is not available for this company.")}</div>
     <div className="rounded-lg bg-blue-50 p-3">{explain(topOrigin?`The leading origin among ${docs.length} available shipment documents is ${topOrigin}. Full-account origin share is not established by this sample.`:"The document sample does not establish a leading origin country.")}</div>
@@ -176,6 +193,7 @@ export default function AccountDossierV2({companyName,companyKey,report,tradeKpi
    <p className="mb-3 text-xs leading-5 text-slate-600">Search public company references and inspect their source links. These are attributed search snippets, not verified proof of an operational claim. Running research may consume a provider credit.</p>
    <button type="button" disabled={researchBusy} onClick={()=>void runPublicResearch()} className="rounded-md bg-[#0b203c] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{researchBusy?"Researching…":"Research company sources"}</button>
    {researchError&&<p role="alert" className="mt-3 text-xs text-amber-700">{researchError}</p>}
+   {researchSignals&&<p className="mt-3 rounded-lg bg-teal-50 p-3 text-xs leading-6 text-slate-700">{researchSignals}</p>}
    <div className="mt-4 grid gap-2">{references.map((r,i)=><div key={r.url+"-"+i} className="rounded-md border border-slate-200 p-3"><a href={r.url} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-blue-700 underline">{r.title}</a><p className="mt-1 text-[11px] leading-5 text-slate-600">{r.snippet.slice(0,280)}</p></div>)}</div>
   </Section>
   <Section id="lit-dossier-assessment" index="08" title="Harvey's commercial assessment" sub="Observed facts distinguished from testable sales hypotheses">
