@@ -291,9 +291,12 @@ export function localExtractFilters(query) {
 
   // Require a location preposition for city matching, and prefer longest
   // multiword cities first (e.g. New York City before New York).
+  const normalizePlace = (v) =>
+    ` ${v.toLowerCase().replace(/[.,!?;:]/g, ' ').replace(/\\s+/g, ' ').trim()} `;
+  const placeQuery = normalizePlace(q);
   const cities = COMMON_MARKET_CITIES.filter((city) =>
     ['in', 'near', 'around', 'within', 'at'].some((prep) =>
-      lower.includes(` ${prep} ${city} `),
+      placeQuery.includes(` ${prep} ${normalizePlace(city).trim()} `),
     ),
   );
   if (cities.length) geo.cities = [cities[0] === 'new york city' ? 'New York' : cities[0]];
