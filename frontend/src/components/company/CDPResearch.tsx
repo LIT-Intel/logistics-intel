@@ -210,6 +210,16 @@ export default function CDPResearch({
 
   const briefBody = (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      {hasReport && !pulseError ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
+          <div className="text-[12px] font-bold tracking-wide text-slate-800">Account Intelligence <span className="ml-2 text-[10px] font-normal text-slate-500">Verified data dossier</span></div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={onRefresh} disabled={pulseLoading} className="rounded-md border border-slate-200 px-3 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">{pulseLoading ? "Refreshing…" : "Refresh analysis"}</button>
+            <button type="button" onClick={() => document.querySelector<HTMLButtonElement>("[data-lt-dossier-pdf]")?.click()} className="rounded-md bg-[#0b203c] px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-[#183c65]">Export dossier PDF</button>
+            <button type="button" onClick={() => setExpanded(true)} className="rounded-md border border-slate-200 px-3 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50">Expand</button>
+          </div>
+        </div>
+      ) : (
       <BriefHeader
         companyName={companyName}
         companyMeta={companyMeta}
@@ -232,6 +242,7 @@ export default function CDPResearch({
         exportLoading={exportLoading}
       />
 
+      )}
       {limitExceeded ? (
         <LimitExceededState
           message={pulseError!.message}
