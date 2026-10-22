@@ -521,7 +521,7 @@ function buildReportSchema() {
       },
       similar_companies: {
         type: "array",
-        minItems: 5,
+        minItems: 0,
         maxItems: 5,
         items: {
           type: "object",
@@ -1256,7 +1256,7 @@ Hard rules:
 - Use ONLY the internal company/shipment/contact data provided in the payload. You have NO web access. If a fact is not in the payload, do not state it — list it in missing_data.
 - If data is missing, list it in missing_data.
 - Never fabricate emails, phone numbers, job titles, company revenue, employee count, shipment volume, carriers, forwarders, suppliers, or contacts.
-- For company news / expansion / leadership narrative, you may use well-established general knowledge about the company, but mark anything uncertain as [Enrichment in Progress] rather than guessing specifics.
+- For company news, expansion, parent company, financial or leadership narrative, use only explicitly provided evidence. Do not rely on memory or general knowledge as a factual source. If evidence is absent, mark it [Enrichment in Progress].
 
 TRADE-DATA GROUNDING (NON-NEGOTIABLE — the most common failure mode):
 - ALL trade figures — trade lanes / routes, TEU / volume, ocean carriers, headquarters location, and port-of-entry gateway — MUST come ONLY from the provided LIT trade data (snapshot.headline_trade_facts, snapshot.normalized_json.routeKpis, snapshot.normalized_json.topRoutes, company.address).
@@ -1266,7 +1266,7 @@ TRADE-DATA GROUNDING (NON-NEGOTIABLE — the most common failure mode):
 - The Executive Macro Briefing must be consistent with the REAL lanes, REAL origin countries, and REAL TEU magnitude in the provided data.
 - NOTE: the structured numeric trade fields (trade_lane_velocity, logistics_volumetrics, headquarters, port gateway) are recomputed deterministically from the LIT data after you respond, so your narrative MUST agree with the real numbers or it will visibly contradict the figures shown next to it.
 - Every web_sources item must be based on a real web result.
-- similar_companies must contain exactly 5 companies.
+- similar_companies may contain 0 to 5 matches, but ONLY when their real identity and similarity evidence are present in the input. Return [] when no verified matches are provided; never invent names to fill a quota.
 - Each similar company must include search_url in this format: /search?q=Company%20Name
 - Focus on practical freight sales opportunities.
 - Prioritize why this company is worth contacting now.
@@ -1294,8 +1294,8 @@ ABSOLUTE EXCLUSION RULES:
 - NO placeholder filler. When a real value is unknown, return the string "[Enrichment in Progress]" so the PDF renders the pending badge instead of fake data.
 
 corporate_metadata:
-- parent_company: the legal parent if different from the brand name (e.g. "Gap Inc.", "Inditex", "Berkshire Hathaway"). If same as brand, repeat the brand name. (This field is narrative — web research is allowed for it.)
-- naics_sector: NAICS sector / 2-4 digit classification phrased like "Retail — General Merchandise" or "Manufacturing — Motor Vehicles". (Narrative — web research allowed.)
+- parent_company: only report a legal parent when the provided data explicitly confirms it. Otherwise use "[Enrichment in Progress]". You cannot browse or verify ownership independently.
+- naics_sector: use a NAICS sector/code only when included in the supplied data. Otherwise use "[Enrichment in Progress]"; do not infer a specific code from a company name.
 - headquarters_location: corporate HQ — use ONLY the address in the provided LIT data (snapshot.headline_trade_facts.headquarters_address / company.address). Do NOT browse for or guess the HQ. This value is overwritten from LIT data after you respond, so do not invent one.
 - primary_port_gateway: the dominant US port-of-entry — derive ONLY from the real top lane's US destination in the provided LIT data. Do NOT invent a port (e.g. do NOT write "New York / Newark" unless the real destination data says so). This value is overwritten from LIT data after you respond.
 
