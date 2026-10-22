@@ -100,13 +100,12 @@ export default function AccountDossierV2({companyName,companyKey,report,tradeKpi
  const docs=facts?.documents??[];
  const observedCarriers=ranked.carriers.length,air=docs.filter(d=>/^air(?:\s|$)/i.test(label(d.transport_mode))),unknown=docs.filter(d=>!label(d.transport_mode)).length;
  const topOrigin=ranked.origins[0]?.name??null;
- const summary=(()=>{
-  const text=report?.company_summary;
-  if(typeof text==="string")return text;
-  if(text&&typeof text==="object"&&!Array.isArray(text)){
-   const obj=text as Record<string,unknown>;return String(obj.summary??obj.body??obj.headline??"");
-  }return "";
- })();
+ // The legacy LLM summary is intentionally excluded: existing saved reports
+ // can contain unsourced quantities that contradict the customs rollup.
+ // Only deterministic evidence enters this first-generation dossier.
+ const summary = recent.length
+   ? `LIT's monthly shipment history records ${fmt(shipments)} shipments and ${fmt(teu)} TEU across the latest ${recent.length} reported months. The ${docs.length} detailed documents available for this account provide a separate, bounded view of origin and service-provider activity.`
+   : "A verified full-history shipment summary is not currently available for this account.";
  const hasFacts=!!facts;
  const [exportBusy,setExportBusy]=useState(false);
  const exportPdf=async()=>{
