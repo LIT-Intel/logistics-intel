@@ -1,3 +1,4 @@
+import { isVerifiedDischargePort } from "@/lib/bols/portValidity";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
@@ -13,7 +14,7 @@ type DocRow = {
  bol_number:string|null; bol_date:string|null; shipper_name:string|null;
  origin_country:string|null; origin_port:string|null; destination_port:string|null;
  carrier_name:string|null; hs_code:string|null; product_description:string|null;
- transport_mode:string|null; teu:number|string|null;
+ transport_mode:string|null; ingest_source?:string|null; teu:number|string|null;
 };
 type Rank = { name:string; count:number; teu:number };
 export type BriefFacts = { companyKey:string; months:MonthRow[]; documents:DocRow[]; retrievedAt:string };
@@ -32,7 +33,7 @@ export async function loadBriefFacts(companyKey:string):Promise<BriefFacts>{
  if(!key || key.length>180)throw new Error("Valid shipment archive company key required");
  const [months,documents]=await Promise.all([
   supabase.from("lit_company_time_series_monthly").select("year,month,shipments,teu").eq("company_id",key).order("year").order("month").limit(600),
-  supabase.from("lit_unified_shipments").select("bol_number,bol_date,shipper_name,origin_country,origin_port,destination_port,carrier_name,hs_code,product_description,transport_mode,teu")
+  supabase.from("lit_unified_shipments").select("bol_number,bol_date,shipper_name,origin_country,origin_port,destination_port,carrier_name,hs_code,product_description,transport_mode,ingest_source,teu")
   .eq("company_id",key).order("bol_date",{ascending:false}).limit(500),
  ]);
  if(months.error)throw new Error("Monthly source: "+months.error.message);
@@ -88,7 +89,7 @@ export default function AccountDossierV2({companyName,companyKey,report,tradeKpi
  const facts=q.data;
  const ranked=useMemo(()=>{
   const docs=facts?.documents??[];
-  return {suppliers:aggregate(docs,"shipper_name"),origins:aggregate(docs,"origin_country"),ports:aggregate(docs,"destination_port"),carriers:aggregate(docs,"carrier_name"),commodities:aggregate(docs,"hs_code")};
+  return {suppliers:aggregate(docs,"shipper_name"),origins:aggregate(docs,"origin_country"),ports:aggregate(docs.filter(d=>isVerifiedDischargePort(d.destination_port,d.ingest_source)),"destination_port"),carriers:aggregate(docs,"carrier_name"),commodities:aggregate(docs,"hs_code")};
  },[facts]);
  const ts=useMemo(()=>[...(facts?.months??[])].filter(m=>m.month>=1&&m.month<=12).sort((a,b)=>dateKey(a)-dateKey(b)),[facts]);
  const latest=ts.length?dateKey(ts[ts.length-1]):null;
@@ -98,6 +99,7 @@ export default function AccountDossierV2({companyName,companyKey,report,tradeKpi
  const prior=previous.reduce((sum,m)=>sum+n(m.shipments),0);
  const rate=prior>0?((shipments-prior)/prior*100):null;
  const docs=facts?.documents??[];
+ const validPortDocs=docs.filter(d=>isVerifiedDischargePort(d.destination_port,d.ingest_source)).length;
  const observedCarriers=ranked.carriers.length,air=docs.filter(d=>/^air(?:\s|$)/i.test(label(d.transport_mode))),unknown=docs.filter(d=>!label(d.transport_mode)).length;
  const topOrigin=ranked.origins[0]?.name??null;
  // The legacy LLM summary is intentionally excluded: existing saved reports
@@ -164,10 +166,11 @@ export default function AccountDossierV2({companyName,companyKey,report,tradeKpi
    <div className="grid gap-3 lg:grid-cols-2">
     <Ranking title="Top listed suppliers" rows={ranked.suppliers} total={docs.length} empty="Supplier names are not available in this document sample."/>
     <Ranking title="Origin country distribution" rows={ranked.origins} total={docs.length} empty="Origin countries are not available."/>
-    <Ranking title="Destination ports" rows={ranked.ports} total={docs.length} empty="Port-of-entry information is not available."/>
+    <Ranking title="Verified discharge ports" rows={ranked.ports} total={docs.filter(d=>isVerifiedDischargePort(d.destination_port,d.ingest_source)).length} empty="No ocean discharge port has been verified. Country-level and inland delivery values are excluded."/>
     <Ranking title="Product HS classifications" rows={ranked.commodities} total={docs.length} empty="No source-verified HS codes in the available records."/>
    </div>
   </Section>
+  <p className="rounded-md bg-slate-50 px-3 py-2 text-[11px] text-slate-600">Discharge-port coverage: {validPortDocs} of {docs.length} available documents have a verified port field. Inland locations and country names are never labeled as ocean ports.</p>
   <Section id="lit-dossier-lanes" index="04" title="Observed trade lanes" sub="Real route records returned by LIT">
    {topRoutes?.length?<div className="space-y-3">{topRoutes.slice(0,8).map((r,i)=>{
     const max=Math.max(1,...topRoutes.map(x=>n(x.shipments)));
