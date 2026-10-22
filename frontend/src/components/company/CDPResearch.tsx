@@ -618,7 +618,7 @@ function ReportBody({
           <SnapshotTile
             label="Shipments (12m)"
             value={tradeKpis?.shipments12m != null ? Number(tradeKpis.shipments12m).toLocaleString() : "—"}
-            sub="BOL records"
+            sub="12-month trade activity"
           />
           <SnapshotTile
             label="Active Lanes"
@@ -632,6 +632,12 @@ function ReportBody({
             up={true}
           />
         </div>
+        <p className="font-body mt-2 text-[11px] leading-relaxed text-slate-500">
+          Shipments and TEU are sourced from the profile's available 12-month
+          trade-history snapshot, not from the bounded set of document samples.
+          Missing fields are shown as unavailable, not zero. Air freight is
+          not inferred from ocean bills of lading.
+        </p>
       </BriefSection>
 
       {/* 03 Top Lanes — render real snapshot routes first, then AI
@@ -1099,8 +1105,12 @@ function bulletToHtml(bullet: Bullet): string {
 
 function emphasizeNumbers(text: string): string {
   if (!text) return "";
-  // Bold key numeric tokens (percentages, +/-, numbers with commas, $ amounts).
-  return text.replace(
+  // AI-authored prose is untrusted. Escape HTML *before* introducing our own
+  // safe <strong> spans so injected markup cannot execute in the brief.
+  const escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+  return escaped.replace(
     /(\$[\d,]+(?:\.\d+)?[KMB]?|\b[+-]?\d{1,3}(?:,\d{3})+(?:\.\d+)?\b|\b[+-]?\d+(?:\.\d+)?%|\b\d+\s*(?:TEU|BOL|shipments?|lanes?)\b)/gi,
     '<strong style="color:#0F172A">$1</strong>',
   );
