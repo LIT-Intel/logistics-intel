@@ -69,7 +69,8 @@ export async function exportAccountDossierPdf(args:{companyName:string;facts:Bri
   doc.setFont("helvetica","bold");doc.setFontSize(11);doc.setTextColor(...navy);
   doc.text(metric==="teu"?"Monthly TEU":"Monthly shipments",L,y);y+=15;
   if(months.length<2){para("Monthly trend requires at least two available data points.");return;}
-  const values=months.map(m=>metric==="teu"&&isSuspiciousTeu(m.shipments,m.teu)?0:numeric(m[metric]));const max=Math.max(1,...values);
+  if(metric==="teu"&&months.some(m=>isSuspiciousTeu(m.shipments,m.teu))){para("TEU trend withheld: one or more monthly source values failed data-quality screening. No zero-volume substitute is charted.");return;}
+  const values=months.map(m=>numeric(m[metric]));const max=Math.max(1,...values);
   const x=L+3,yt=y+6,w=R-L-6,h=82;doc.setDrawColor(224,231,239);
   for(let i=0;i<4;i++)doc.line(x,yt+i*h/3,x+w,yt+i*h/3);
   doc.setDrawColor(...teal);doc.setLineWidth(2);
