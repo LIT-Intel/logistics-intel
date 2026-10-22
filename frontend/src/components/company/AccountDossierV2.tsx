@@ -77,7 +77,7 @@ export default function AccountDossierV2({companyName,companyKey,companyMeta,rep
  const facts=q.data;
  const ranked=useMemo(()=>{
   const docs=facts?.documents??[];
- const detailCoverage=shipments>0?Math.min(100,Math.round(100*docs.length/shipments)):null;
+
   return {suppliers:aggregate(docs,"shipper_name"),origins:aggregate(docs,"origin_country"),ports:aggregate(docs.filter(d=>isVerifiedDischargePort(d.destination_port,d.ingest_source)),"destination_port"),carriers:aggregate(docs,"carrier_name"),commodities:aggregate(docs,"hs_code")};
  },[facts]);
  const ts=useMemo(()=>[...(facts?.months??[])].filter(m=>m.month>=1&&m.month<=12).sort((a,b)=>dateKey(a)-dateKey(b)),[facts]);
@@ -88,6 +88,7 @@ export default function AccountDossierV2({companyName,companyKey,companyMeta,rep
  const prior=previous.reduce((sum,m)=>sum+n(m.shipments),0);
  const rate=prior>0?((shipments-prior)/prior*100):null;
  const docs=facts?.documents??[];
+ const detailCoverage=shipments>0?Math.min(100,Math.round(100*docs.length/shipments)):null;
  const validPortDocs=docs.filter(d=>isVerifiedDischargePort(d.destination_port,d.ingest_source)).length;
  const observedCarriers=ranked.carriers.length,air=docs.filter(d=>/^air(?:\s|$)/i.test(label(d.transport_mode))),unknown=docs.filter(d=>!label(d.transport_mode)).length;
  const topOrigin=ranked.origins[0]?.name??null;
