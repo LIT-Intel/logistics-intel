@@ -109,8 +109,9 @@ export default function AccountDossierV2({companyName,companyKey,report,tradeKpi
   try {
    // Existing authenticated, usage-gated source-research function. It queries
    // the public web, returns attributable sources, and caches repeat requests.
+   const {data:saved}=await supabase.from("lit_saved_companies").select("company_id").eq("source_company_key",companyKey).maybeSingle();
    const {data,error}=await supabase.functions.invoke("pulse-brief",{body:{
-     company_name:companyName,source_company_key:companyKey,
+     company_name:companyName,company_id:saved?.company_id??null,source_company_key:companyKey,
      snapshot_summary:{shipments_12m:recent.length?shipments:null,teu_12m:recent.length?teu:null},
    }});
    if(error||!data?.ok)throw new Error(String(data?.error||"Research source is unavailable or not included in this plan."));
