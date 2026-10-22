@@ -39,6 +39,15 @@ export function planForwarderLookup(text:unknown):{plan:ForwarderSearchPlan|null
  // company-level directory snapshot.
  if(/\b(?:german|germany|rotterdam|antwerp|lane|routes?|load(?:ing)? ports?|12 months|last year|past year|recent|teus?|shipments?|incumbent|current|today)\b/.test(q))
    return {plan:null,clarification:"I can search historical company-level provider relationships, but I cannot verify a specific trade lane, recent booking, shipment count, or TEU from this directory source."};
+ // Negated provider queries require a separate negative-match plan.
+ // Never invert a user's request into the opposite prospect list.
+ if(/\b(?:without|exclude|remove|not using|don't use|do not use)\s+(?:any\s+)?(?:of\s+)?(?:dsv|expeditors|kuehne|bco direct)\b/.test(q))
+  return {plan:null,clarification:"Excluding a named provider requires a verified negative-match query; that operation is not enabled in this first historical lookup."};
+ const mentioned=[...new Set(Object.entries(REVIEWED_PROVIDERS)
+   .filter(([name])=>new RegExp("\\b"+name.replace(/ /g,"\\s+")+"\\b","i").test(q))
+   .map(([,canonical])=>canonical))];
+ if(mentioned.length>1)
+  return {plan:null,clarification:"I can look up one provider at a time in this first release. Please choose which provider to investigate."};
  const hit=Object.entries(REVIEWED_PROVIDERS).find(([name])=>new RegExp(`\\b${name.replace(/ /g,"\\s+")}\\b`,"i").test(q));
  if(!hit)return {plan:null,clarification:"Which named forwarder or direct-booking label should I search for? Supported first-pass provider names include DSV, Expeditors, and Kuehne+Nagel."};
  const geographical=Object.entries(STATES).sort((a,b)=>b[0].length-a[0].length)
