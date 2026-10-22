@@ -2832,7 +2832,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
                 saving={savingStar}
               />
             ) : (
-            <CompanyProfileWorkspace crmPanel={<>{crmPanel}<IncumbentForwarderCard bols={(profile as any)?.recentBols ?? []} /></>}
+            <CompanyProfileWorkspace crmPanel={<>{crmPanel}<IncumbentForwarderCard bols={(profile as any)?.recentBols ?? []} companyName={companyName} website={companyWebsite || companyDomain || null} /></>}
               tab={tab as WorkspaceTab}
               workspace={v2Workspace}
               companyName={companyName}
