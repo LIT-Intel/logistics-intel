@@ -1,3 +1,4 @@
+import { isSuspiciousTeu } from "./teuQuality";
 /**
  * rollups — blends the ALREADY-SAVED monthly customs rollups into the v2
  * dataset (owner directive 2026-09-26: "each saved company already saves the
@@ -74,6 +75,7 @@ export function normalizeRollups(
   let lastMi: number | null = null;
   let totalShipments = 0;
   let totalTeu = 0;
+  const unverifiedTeuMonths: number[] = [];
   const touch = (mi: number) => {
     if (firstMi == null || mi < firstMi) firstMi = mi;
     if (lastMi == null || mi > lastMi) lastMi = mi;
@@ -83,7 +85,9 @@ export function normalizeRollups(
     const mi = (r.year - firstYear) * 12 + (r.month - 1);
     if (mi < 0 || mi > maxMi) continue;
     const shipments = num(r.shipments);
-    const teu = num(r.teu);
+    const qualityFlag = isSuspiciousTeu(shipments, r.teu);
+    if (qualityFlag) unverifiedTeuMonths.push(mi);
+    const teu = qualityFlag ? 0 : num(r.teu);
     const o = byMi[mi] || (byMi[mi] = { shipments: 0, teu: 0 });
     o.shipments += shipments;
     o.teu += teu;
@@ -111,7 +115,7 @@ export function normalizeRollups(
   }
 
   if (firstMi == null) return null;
-  return { byMi, laneByKey, firstMi, lastMi, totalShipments, totalTeu };
+  return { byMi, laneByKey, firstMi, lastMi, totalShipments, totalTeu, unverifiedTeuMonths };
 }
 
 // ---------------------------------------------------------------- assemble

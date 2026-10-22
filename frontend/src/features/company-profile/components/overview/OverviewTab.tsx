@@ -68,6 +68,7 @@ export function OverviewTab({
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-5">
+      {view.teuUnverified && <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-[12px] leading-5 text-amber-900"><strong>TEU source integrity review.</strong> One or more reported monthly TEU records failed plausibility checks. Total TEU, estimated freight spend and average TEU per shipment are hidden until the source is verified. Shipment counts remain separately reported. Supplier, carrier and lane shares represent available detailed BOL records only.</div>}
       <InsightCards view={view} ds={ds} />
 
       <KpiGrid view={view} />

@@ -1,0 +1,41 @@
+name: TEU integrity regression
+on:
+  pull_request:
+    paths:
+      - "frontend/src/features/company-profile/data/teuQuality.ts"
+      - "frontend/src/features/company-profile/data/teuQuality.test.ts"
+      - "frontend/src/features/company-profile/data/rollups.ts"
+      - "frontend/src/features/company-profile/data/selectors.ts"
+      - "frontend/src/components/company/AccountDossierV2.tsx"
+      - "frontend/src/components/company/exportAccountDossierPdf.ts"
+      - ".github/workflows/teu-integrity-regression.yml"
+  push:
+    branches: [main]
+    paths:
+      - "frontend/src/features/company-profile/data/teuQuality.ts"
+      - "frontend/src/features/company-profile/data/teuQuality.test.ts"
+      - "frontend/src/features/company-profile/data/rollups.ts"
+      - "frontend/src/features/company-profile/data/selectors.ts"
+      - "frontend/src/components/company/AccountDossierV2.tsx"
+      - "frontend/src/components/company/exportAccountDossierPdf.ts"
+      - ".github/workflows/teu-integrity-regression.yml"
+permissions:
+  contents: read
+jobs:
+  integrity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --ignore-scripts --no-audit
+      - run: npx vitest run src/features/company-profile/data/teuQuality.test.ts src/features/company-profile/data/rollups.test.ts

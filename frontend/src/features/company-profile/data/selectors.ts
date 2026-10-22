@@ -337,6 +337,7 @@ export interface ProfileView {
   /** trust chip text: blended → "N shipments · M BOL docs", else "M of T BOLs" */
   provenance: string;
   modeled: { teu: boolean; spend: boolean };
+  teuUnverified: boolean;
 }
 
 export function computeView(ds: ShipmentDataset, st: ProfileState, A: ProfileActions): ProfileView {
@@ -344,6 +345,7 @@ export function computeView(ds: ShipmentDataset, st: ProfileState, A: ProfileAct
   const metric = st.metric;
   const ROWS = ds.rows;
   const LAST_MI = ds.lastMi;
+  const teuUnverified=(ds.rollup?.unverifiedTeuMonths??[]).some(mi=>mi>=st.m0&&mi<=st.m1);
   const FY = ds.firstYear;
   const mv = (r: ShipmentRow): number => (metric === "shipments" ? 1 : r[metric]);
   const fmtM = (v: number): string => (metric === "spend" ? fmtMoney(v) : fmtNum(v));
@@ -457,7 +459,7 @@ export function computeView(ds: ShipmentDataset, st: ProfileState, A: ProfileAct
     const modeled = (k.id === "teu" && S.teuModeled) || (k.id === "spend" && S.spendModeled) || (k.id === "avgTeu" && S.teuModeled);
     return {
       ...k,
-      value: fmtK(k.fmt, v),
+      value: teuUnverified && ["teu","spend","avgTeu"].includes(k.id) ? "—" : fmtK(k.fmt, v),
       valueN: raw ?? 0,
       modeled,
       delta: k.fmt === "days" ? "" : fmtDelta(p),
@@ -465,12 +467,12 @@ export function computeView(ds: ShipmentDataset, st: ProfileState, A: ProfileAct
       deltaFg: tone.fg,
       deltaBg: tone.bg,
       deltaIcon: tone.icon,
-      prior:
+      prior: teuUnverified && ["teu","spend","avgTeu"].includes(k.id) ? "Data under review" :
         k.fmt === "days"
           ? (lastLabelOverride ?? (S.last ? fmtDate(S.last.ts) : "—"))
           : "prior " + fmtK(k.fmt, (P as any)[k.id] || 0),
       spark: ["shipments", "teu", "spend", "containers"].includes(k.id) ? spark(k.id as keyof MonthAgg) : "",
-      hasSpark: ["shipments", "teu", "spend", "containers"].includes(k.id),
+      hasSpark: (!teuUnverified || !["teu","spend"].includes(k.id)) && ["shipments", "teu", "spend", "containers"].includes(k.id),
       pinned: !st.pins || st.pins.includes(k.id),
       onPin: () => A.pin(k.id),
       onTrace: () => A.trace(null, null, k.label),
@@ -829,6 +831,7 @@ export function computeView(ds: ShipmentDataset, st: ProfileState, A: ProfileAct
       return reported && (docs.shipments > reported.shipments || docs.teu > reported.teu);
     }),
     modeled: { teu: S.teuModeled, spend: S.spendModeled },
+    teuUnverified,
   };
 }
 
