@@ -108,6 +108,19 @@ export default function AccountDossierV2({companyName,companyKey,report,tradeKpi
    : "A verified full-history shipment summary is not currently available for this account.";
  const hasFacts=!!facts;
  const [exportBusy,setExportBusy]=useState(false);
+ const [references,setReferences]=useState<Array<{title:string;url:string;snippet:string}>>([]);
+ const [researchBusy,setResearchBusy]=useState(false);
+ const [researchError,setResearchError]=useState<string|null>(null);
+ const runPublicResearch=async()=>{
+  setResearchBusy(true);setResearchError(null);
+  try {
+   const {data,error}=await supabase.functions.invoke("pulse-web-discover",{body:{query:companyName+" company official website facilities operations",limit:8,persist:false}});
+   if(error||!data?.ok) throw new Error("Public research provider unavailable");
+   const rows=Array.isArray(data.results)?data.results:[];
+   setReferences(rows.filter((r:any)=>/^https:\/\//i.test(String(r.website||""))).map((r:any)=>({title:String(r.title||r.name||"Reference"),url:String(r.website),snippet:String(r.snippet||"")})).slice(0,8));
+  }catch(e){setResearchError(e instanceof Error?e.message:"Research unavailable");}
+  finally{setResearchBusy(false);}
+ };
  const exportPdf=async()=>{
   if(!facts||exportBusy)return;
   setExportBusy(true);
@@ -169,7 +182,13 @@ export default function AccountDossierV2({companyName,companyKey,report,tradeKpi
    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3"><NumberTile label="Verified air docs" value={fmt(air.length)}/><NumberTile label="Mode unspecified" value={fmt(unknown)}/><NumberTile label="Coverage" value={air.length?"Partial":"Not verified"}/></div>
    <p className="mt-3 text-xs leading-5 text-slate-600">Only documents explicitly labeled Air count as air activity. Unclassified ocean BOL records do not establish the presence or absence of air shipments.</p>
   </Section>
-  <Section id="lit-dossier-assessment" index="07" title="Harvey's commercial assessment" sub="Observed facts distinguished from testable sales hypotheses">
+  <Section id="lit-dossier-research" index="07" title="Public company research" sub="On-demand sourced references, separate from customs data">
+   <p className="mb-3 text-xs leading-5 text-slate-600">Search public company references and inspect their source links. These are attributed search snippets, not verified proof of an operational claim. Running research may consume a provider credit.</p>
+   <button type="button" disabled={researchBusy} onClick={()=>void runPublicResearch()} className="rounded-md bg-[#0b203c] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{researchBusy?"Researching…":"Research company sources"}</button>
+   {researchError&&<p role="alert" className="mt-3 text-xs text-amber-700">{researchError}</p>}
+   <div className="mt-4 grid gap-2">{references.map((r,i)=><div key={r.url+"-"+i} className="rounded-md border border-slate-200 p-3"><a href={r.url} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-blue-700 underline">{r.title}</a><p className="mt-1 text-[11px] leading-5 text-slate-600">{r.snippet.slice(0,280)}</p></div>)}</div>
+  </Section>
+  <Section id="lit-dossier-assessment" index="08" title="Harvey's commercial assessment" sub="Observed facts distinguished from testable sales hypotheses">
    <div className="grid gap-3 sm:grid-cols-2">
     <div className="rounded-lg border border-teal-200 bg-teal-50 p-4"><div className="text-[11px] font-bold uppercase tracking-wider text-teal-800">Verified behavior</div><p className="mt-2 text-xs leading-5 text-slate-700">{recent.length?`${fmt(shipments)} shipments in the most recent 12 reported monthly periods. ${ranked.origins.length} countries represented in the ${docs.length}-document sample.`:"No complete monthly profile has been verified."}</p></div>
     <div className="rounded-lg border border-blue-200 bg-blue-50 p-4"><div className="text-[11px] font-bold uppercase tracking-wider text-blue-800">Next research question</div><p className="mt-2 text-xs leading-5 text-slate-700">Confirm the incumbent forwarder, booking control, and whether supplier routing decisions can be consolidated before presenting displacement or rate-saving claims.</p></div>
