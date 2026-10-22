@@ -10,6 +10,10 @@ describe("Harvey 2.0 provider query planner",()=>{
   expect(planForwarderLookup("Rank DSV accounts by TEU last year").plan).toBeNull();
   expect(planForwarderLookup("Find current DSV incumbent relationships").plan).toBeNull();
  });
+ it("does not reverse excluded-provider requests or silently drop a second provider",()=>{
+  expect(planForwarderLookup("Find Georgia companies without DSV").plan).toBeNull();
+  expect(planForwarderLookup("Find accounts using DSV and Expeditors").plan).toBeNull();
+ });
  it("caps results and validates provider allowlist",()=>{
   const plan=planForwarderLookup("List 999 DSV accounts in Georgia").plan;
   expect(plan?.limit).toBe(100);
