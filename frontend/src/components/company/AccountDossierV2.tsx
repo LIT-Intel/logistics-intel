@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { BarChart3, Globe2, Package, Ship, Plane, AlertCircle, ShieldCheck, TrendingUp, FileSearch } from "lucide-react";
@@ -108,8 +108,21 @@ export default function AccountDossierV2({companyName,companyKey,report,tradeKpi
   }return "";
  })();
  const hasFacts=!!facts;
+ const [exportBusy,setExportBusy]=useState(false);
+ const exportPdf=async()=>{
+  if(!facts||exportBusy)return;
+  setExportBusy(true);
+  try {
+   const {exportAccountDossierPdf}=await import("./exportAccountDossierPdf");
+   await exportAccountDossierPdf({companyName,facts,topRoutes,summary});
+  } catch(error) {
+   console.error("Account dossier PDF export failed",error);
+   alert("Could not export the dossier. Please try again.");
+  } finally {setExportBusy(false);}
+ };
  return <div className="space-y-3 bg-[#f3f6fa] p-3 sm:p-5">
   <div className="rounded-xl bg-[#0d2039] p-5 text-white sm:p-7">
+   <div className="mb-2 flex justify-end"><button data-lt-dossier-pdf type="button" disabled={!facts||exportBusy} onClick={()=>void exportPdf()} className="rounded-md border border-white/25 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-white/20 disabled:opacity-40">{exportBusy?"Preparing PDF…":"Export report PDF"}</button></div>
    <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-teal-300">LIT / ACCOUNT INTELLIGENCE DOSSIER</div>
    <h2 className="mt-3 text-[25px] font-bold tracking-tight sm:text-[30px]">{companyName}</h2>
    <p className="mt-2 text-xs text-slate-300">Verified customs intelligence · Evidence-backed analysis · {generatedAt?new Date(generatedAt).toLocaleDateString("en-US"):"Research date pending"}</p>
