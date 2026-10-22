@@ -50,6 +50,8 @@ import {
   HARVEY_COMPANY_CONTEXT_EVENT,
   HARVEY_COMPANY_CONTEXT_STORAGE_KEY,
   askHarveyCopilot,
+  isDirectoryForwarderQuestion,
+  searchHarveyHistoricalForwarders,
   type HarveyAnswer,
   type HarveyChatTurn,
   type HarveyCompanyContext,
@@ -1055,6 +1057,15 @@ function CoachComposer({
           setHistory((turns) => [...turns, { role: "user", content: trimmed }, { role: "assistant", content: pipe.md }].slice(-8));
           return;
         }
+      }
+      // Harvey 2.0 first constrained tool: real directory provider lookup.
+      // Calls a server-side read-only query instead of asking the LLM to
+      // guess which accounts work with a named forwarder.
+      if (isDirectoryForwarderQuestion(trimmed)) {
+        const resp=await searchHarveyHistoricalForwarders(trimmed);
+        setAnswer(resp);
+        setHistory(turns=>[...turns,{role:"user" as const,content:trimmed},{role:"assistant" as const,content:resp.answer_md}].slice(-8));
+        return;
       }
       const request = companyContext ? {
         company_id: companyContext.companyId,
