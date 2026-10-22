@@ -1,3 +1,4 @@
+import { isVerifiedDischargePort } from "@/lib/bols/portValidity";
 import type { BriefFacts } from "./AccountDossierV2";
 
 type Row = {route?:string|null;shipments?:number|null;teu?:number|null};
@@ -11,7 +12,7 @@ function rank(rows:BriefFacts["documents"],key:keyof BriefFacts["documents"][num
  return [...by.entries()].map(([name,count])=>({name,count})).sort((a,b)=>b.count-a.count).slice(0,9);
 }
 /** Dedicated vector PDF template. Does not screenshot the responsive HTML DOM. */
-export async function exportAccountDossierPdf(args:{companyName:string;facts:BriefFacts;topRoutes?:Row[]|null;summary?:string}){
+export async function exportAccountDossierPdf(args:{companyName:string;facts:BriefFacts;topRoutes?:Row[]|null;summary?:string;researchContext?:string;researchSignals?:string;references?:Array<{title:string;url:string;snippet:string}>}){
  const {jsPDF}=await import("jspdf");
  const doc=new jsPDF({orientation:"portrait",unit:"pt",format:"letter"});
  const W=612,H=792,L=46,R=566;let y=0,page=0;
@@ -89,23 +90,46 @@ export async function exportAccountDossierPdf(args:{companyName:string;facts:Bri
  title("01  Executive readout");
  para(args.summary||"This brief summarizes available LIT shipment history and documents. Commercial conclusions should be validated against named carriers, supplier relationships, and current public signals.");
  para(last12.length?`The latest 12 recorded monthly periods include ${f(sumShip)} shipments and ${f(sumTeu)} TEU. Detailed shipment rankings rely on ${args.facts.documents.length} sampled document records.`:"Full monthly history is not present for this account.");
- title("02  Monthly shipment intelligence");
+ if(args.researchContext){
+  title("02  Company context and developments");
+  para(args.researchContext);
+  if(args.researchSignals)para(args.researchSignals);
+ }
+ title("03  Monthly shipment intelligence");
  trend("shipments");trend("teu");
- next();title("03  Supplier, origin and commodity intelligence");
+ next();title("04  Supplier, origin and commodity intelligence");
  para(`All rankings below are calculated only from ${args.facts.documents.length} accessible shipment documents; they do not imply full-year supplier or carrier market shares.`);
  ranked("Top listed suppliers",rank(args.facts.documents,"shipper_name"),args.facts.documents.length);
  ranked("Origin countries",rank(args.facts.documents,"origin_country"),args.facts.documents.length);
  ranked("HS product classifications",rank(args.facts.documents,"hs_code"),args.facts.documents.length);
- next();title("04  Gateway and carrier activity");
- ranked("Destination ports",rank(args.facts.documents,"destination_port"),args.facts.documents.length);
+ next();title("05  Gateway and carrier activity");
+ const ports=args.facts.documents.filter(r=>isVerifiedDischargePort(r.destination_port,(r as any).ingest_source));
+ ranked("Verified ocean discharge ports",rank(ports,"destination_port"),ports.length);
+ para(`Port coverage: ${ports.length} detailed BOLs with a verified ocean discharge port. Countries and inland delivery locations are not treated as ports.`);
  ranked("Carriers named in documents",rank(args.facts.documents,"carrier_name"),args.facts.documents.length);
- title("05  Air intelligence");
+ title("06  Air intelligence");
  const air=args.facts.documents.filter(r=>/^air(?:\s|$)/i.test(String(r.transport_mode??"").trim())).length;
  para(`${air} document records explicitly marked Air among ${args.facts.documents.length} sampled shipments. Absence of air records does not prove no air activity. No inferred air volumes or airports are included.`);
- title("06  Commercial assessment");
+ title("07  Commercial assessment");
  para("Validate carrier booking control and supplier concentration before claiming any specific displacement opportunity. Compare observed lanes against current customer logistics priorities and use source-linked shipments in discovery.");
- title("07  Source & coverage notes");
+ title("08  Source & coverage notes");
  para("Monthly totals: lit_company_time_series_monthly. Document rankings: lit_unified_shipments. These datasets represent different coverage and may not share the same completeness. All metrics are sourced from records stored in Logistic Intel. Public web sources require separate verified research and have not been added to this export.");
+ if(args.references?.length){
+  title("09  Public research source links");
+  para("These source links support the public company context only; they do not verify individual customs or carrier records.");
+  for(const reference of args.references){
+   const label=clean(reference.title).slice(0,75);
+   const url=reference.url;
+   if(!/^https?:\/\//i.test(url))continue;
+   ensure(38);doc.setFont("helvetica","bold");doc.setFontSize(9);doc.setTextColor(...navy);
+   doc.text(label,L,y);y+=14;
+   doc.setFont("helvetica","normal");doc.setTextColor(...teal);doc.setFontSize(8);
+   const printable=clean(url).slice(0,120);
+   const lines=doc.splitTextToSize(printable,R-L);
+   lines.forEach((line:string)=>{ensure(12);doc.text(line,L,y);y+=12;});
+   y+=8;
+  }
+ }
  footer();
  doc.save(`LIT-Account-Intelligence-${args.companyName.toLowerCase().replace(/[^a-z0-9]+/g,"-").slice(0,50)}.pdf`);
 }
