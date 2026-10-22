@@ -100,7 +100,7 @@ export async function exportAccountDossierPdf(args:{companyName:string;facts:Bri
  ranked("Destination ports",rank(args.facts.documents,"destination_port"),args.facts.documents.length);
  ranked("Carriers named in documents",rank(args.facts.documents,"carrier_name"),args.facts.documents.length);
  title("05  Air intelligence");
- const air=args.facts.documents.filter(r=>/^air(?:\\s|$)/i.test(String(r.transport_mode??"").trim())).length;
+ const air=args.facts.documents.filter(r=>/^air(?:\s|$)/i.test(String(r.transport_mode??"").trim())).length;
  para(`${air} document records explicitly marked Air among ${args.facts.documents.length} sampled shipments. Absence of air records does not prove no air activity. No inferred air volumes or airports are included.`);
  title("06  Commercial assessment");
  para("Validate carrier booking control and supplier concentration before claiming any specific displacement opportunity. Compare observed lanes against current customer logistics priorities and use source-linked shipments in discovery.");
