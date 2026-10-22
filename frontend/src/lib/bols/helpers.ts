@@ -1,3 +1,4 @@
+import { normalizedDestination } from "./portValidity";
 // Shared BOL field helpers (Phase 6, extracted from CDPSupplyChain).
 //
 // All accept the row OR the row.raw object and return a string fallback
@@ -173,7 +174,8 @@ export function getBolDestination(bol: any): string {
   // v200: route="A → B"; if present, take right side
   if (typeof bol?.route === "string" && bol.route.includes("→")) {
     const right = bol.route.split("→")[1]?.trim();
-    if (right) return right;
+    const valid = normalizedDestination(right);
+    if (valid) return valid;
   }
   // For US destinations, "City, ST" from the parsed consignee address is the
   // most useful — surface it directly when both pieces are present.
@@ -199,7 +201,7 @@ export function getBolDestination(bol: any): string {
   const destCC = toCountryCode(destCountryRaw);
   if (fallbackCity && destCC) return `${fallbackCity}, ${destCC}`;
 
-  return (
+  const candidate = (
     // v200 raw BOL emits origin_port / destination_port directly.
     bol?.destination_port ||
     bol?.destinationPort ||
@@ -223,6 +225,7 @@ export function getBolDestination(bol: any): string {
     bol?.raw?.destination ||
     "—"
   );
+  return normalizedDestination(candidate) ?? "—";
 }
 
 export function getBolCarrierString(bol: any): string {
