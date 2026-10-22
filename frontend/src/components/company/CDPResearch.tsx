@@ -158,6 +158,7 @@ type CDPResearchProps = {
   companyKey?: string | null;
   companyMeta?: {
     ticker?: string | null;
+    domain?: string | null;
     hq?: string | null;
     teuYr?: number | null;
     vertical?: string | null;
