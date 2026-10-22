@@ -1278,7 +1278,7 @@ Freight market intelligence rules:
 - Use those numbers naturally in sales_angle, why_now, lane_insights, and company_summary. Do not paste them verbatim like a stat dump.
 - Use the per-lane market_spend_usd to anchor revenue-opportunity language. Example phrasing (do NOT copy verbatim — match the actual data):
   - "On Italy → US East Coast, they move ~1,881 TEU a year. At today's $1,100/TEU benchmark, that's roughly $2.07M of ocean spend you could compete for."
-  - "Their carrier reports ~$330K in customs value on this lane, but the actual freight market value is closer to $2.07M — a 6× gap that usually means they're under-disclosing or working with a heavy NVOCC."
+  - "Customs value and benchmark-implied freight spend measure different things. Do not interpret a difference as evidence of concealment or misreporting."
 - When total_market_spend_usd differs from est_spend_12m, identify the distinct methodologies, coverage windows, and inherent uncertainty. Do not assert that the buyer is concealing freight, under-disclosing values, or consolidating without separate evidence.
 - Keep tone like a senior account manager talking to another rep — confident, specific, never salesy.
 - Never round below the nearest $10K when the value is over $1M; never invent a number that isn't in lane_matches.
