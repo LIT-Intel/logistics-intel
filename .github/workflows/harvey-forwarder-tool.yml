@@ -1,0 +1,39 @@
+name: Harvey read-only forwarder tool
+on:
+  pull_request:
+    paths:
+      - "supabase/functions/_shared/harvey_forwarder_*"
+      - "supabase/functions/harvey-copilot/index.ts"
+      - "frontend/src/api/harveyCopilot.ts"
+      - "frontend/src/features/coach/PulseCoachWidget.tsx"
+      - "frontend/src/lib/harvey/forwarderPlan.test.ts"
+      - ".github/workflows/harvey-forwarder-tool.yml"
+  push:
+    branches: [main]
+    paths:
+      - "supabase/functions/_shared/harvey_forwarder_*"
+      - "supabase/functions/harvey-copilot/index.ts"
+      - "frontend/src/api/harveyCopilot.ts"
+      - "frontend/src/features/coach/PulseCoachWidget.tsx"
+      - "frontend/src/lib/harvey/forwarderPlan.test.ts"
+      - ".github/workflows/harvey-forwarder-tool.yml"
+permissions:
+  contents: read
+jobs:
+  planner:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --ignore-scripts --no-audit
+      - run: npx vitest run src/lib/harvey/forwarderPlan.test.ts src/lib/harvey/forwarderEvidence.test.ts
