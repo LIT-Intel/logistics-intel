@@ -1,0 +1,37 @@
+name: Company Profile regression tests
+on:
+  pull_request:
+    paths:
+      - "frontend/src/features/company-profile/**"
+      - "frontend/vitest.config.ts"
+      - "frontend/package.json"
+      - "frontend/package-lock.json"
+      - ".github/workflows/company-profile-regression.yml"
+  push:
+    branches: [main]
+    paths:
+      - "frontend/src/features/company-profile/**"
+      - "frontend/vitest.config.ts"
+      - "frontend/package.json"
+      - "frontend/package-lock.json"
+      - ".github/workflows/company-profile-regression.yml"
+permissions:
+  contents: read
+jobs:
+  archive-rollups:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --ignore-scripts --no-audit
+      - run: npx vitest run src/features/company-profile/data/rollups.test.ts
