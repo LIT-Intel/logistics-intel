@@ -1,3 +1,4 @@
+import DossierChart from "./DossierChart";
 import { isVerifiedDischargePort } from "@/lib/bols/portValidity";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -44,20 +45,6 @@ export function useBriefFacts(companyKey:string|null|undefined){
  return useQuery({queryKey:["account-dossier-v2",companyKey],enabled:!!companyKey,
   queryFn:()=>loadBriefFacts(companyKey!),staleTime:5*60*1000,gcTime:15*60*1000,retry:1});
 }
-function Chart({months,metric}:{months:MonthRow[];metric:"teu"|"shipments"}){
- if(!months.length)return <p className="py-9 text-center text-xs text-slate-500">No monthly history available from this source.</p>;
- const values=months.map(m=>n(m[metric]));const max=Math.max(1,...values);
- const step=months.length>15?Math.ceil(months.length/12):1;
- const width=720,height=185,pl=10,pr=10,top=10,bottom=25,chartW=width-pl-pr,chartH=height-top-bottom;
- const coordinates=values.map((v,i)=>({x:pl+(i/(Math.max(1,values.length-1)))*chartW,y:top+chartH-(v/max)*chartH}));
- const line=coordinates.map((p,i)=>(i?"L":"M")+p.x.toFixed(1)+" "+p.y.toFixed(1)).join(" ");
- return <svg viewBox={`0 0 ${width} ${height}`} className="w-full" role="img" aria-label={`Verified monthly ${metric} trend`}>
-  {[0,.25,.5,.75,1].map(f=><line key={f} x1={pl} x2={width-pr} y1={top+chartH*f} y2={top+chartH*f} stroke="#e8edf3" strokeWidth="1"/>)}
-  <path d={line} fill="none" stroke={metric==="teu"?"#099b9b":"#437df0"} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round"/>
-  {coordinates.map((p,i)=><circle key={i} cx={p.x} cy={p.y} r={2.4} fill={metric==="teu"?"#099b9b":"#437df0"}/>)}
-  {months.map((m,i)=>i%step===0?<text key={i} x={coordinates[i].x} y={height-4} fill="#72829a" fontSize="10" textAnchor="middle">{new Date(Date.UTC(m.year,m.month-1,1)).toLocaleDateString("en-US",{month:"short",year:"2-digit"})}</text>:null)}
- </svg>;
-}
 function Ranking({title,rows,total,empty}:{title:string;rows:Rank[];total:number;empty:string}){
  return <div className="rounded-xl border border-slate-200 p-4">
   <h4 className="text-[13px] font-semibold text-slate-900">{title}</h4>
@@ -66,7 +53,7 @@ function Ranking({title,rows,total,empty}:{title:string;rows:Rank[];total:number
    <div className="mt-4 space-y-3">{rows.map(row=>{
     const share=total?row.count/total*100:0;return <div key={row.name}>
      <div className="mb-1 flex justify-between gap-3 text-[11px]"><span className="max-w-[74%] truncate text-slate-700" title={row.name}>{row.name}</span><strong className="shrink-0 text-slate-700">{row.count} · {share.toFixed(0)}%</strong></div>
-     <div className="h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-teal-600" style={{width:`${Math.min(100,share)}%`}}/></div>
+     <div className="h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="lit-dossier-bar h-full origin-left rounded-full bg-teal-600" style={{width:`${Math.min(100,share)}%`}}/></div>
     </div>})}</div>}
  </div>;
 }
@@ -134,7 +121,7 @@ export default function AccountDossierV2({companyName,companyKey,report,tradeKpi
    alert("Could not export the dossier. Please try again.");
   } finally {setExportBusy(false);}
  };
- return <div className="space-y-3 bg-[#f3f6fa] p-3 sm:p-5">
+ return <div className="space-y-3 bg-[#f3f6fa] p-3 sm:p-5"><style>{`@keyframes litBarReveal{from{transform:scaleX(0)}to{transform:scaleX(1)}}.lit-dossier-bar{animation:litBarReveal 450ms cubic-bezier(.23,1,.32,1) both}@media(prefers-reduced-motion:reduce){.lit-dossier-bar{animation:none}}`}</style>
   <div className="rounded-xl bg-[#0d2039] p-5 text-white sm:p-7">
    <div className="mb-2 flex justify-end"><button data-lt-dossier-pdf type="button" disabled={!facts||exportBusy} onClick={()=>void exportPdf()} className="rounded-md border border-white/25 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-white/20 disabled:opacity-40">{exportBusy?"Preparing PDF…":"Export report PDF"}</button></div>
    <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-teal-300">LIT / ACCOUNT INTELLIGENCE DOSSIER</div>
@@ -157,8 +144,8 @@ export default function AccountDossierV2({companyName,companyKey,report,tradeKpi
     <NumberTile label="12M Shipments" value={recent.length?fmt(shipments):"—"}/><NumberTile label="12M TEU" value={recent.length?fmt(teu):"—"}/><NumberTile label="YoY shipments" value={rate===null?"—":`${rate.toFixed(1)}%`}/><NumberTile label="Months available" value={fmt(ts.length)}/>
    </div>
    <div className="grid gap-4 lg:grid-cols-2">
-    <div><div className="mb-1 text-xs font-semibold text-slate-700">Monthly shipments</div><Chart months={ts.slice(-24)} metric="shipments"/></div>
-    <div><div className="mb-1 text-xs font-semibold text-slate-700">Monthly TEU</div><Chart months={ts.slice(-24)} metric="teu"/></div>
+    <div><div className="mb-1 text-xs font-semibold text-slate-700">Monthly shipments</div><DossierChart months={ts.slice(-24)} metric="shipments"/></div>
+    <div><div className="mb-1 text-xs font-semibold text-slate-700">Monthly TEU</div><DossierChart months={ts.slice(-24)} metric="teu"/></div>
    </div>
    <p className="mt-2 text-[11px] text-slate-500">Source: stored monthly company trade history. Latest period is determined by the most recent reported month; YoY compares equivalent available periods only.</p>
   </Section>
