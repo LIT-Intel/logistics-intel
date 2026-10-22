@@ -219,7 +219,11 @@ export default function CDPResearch({
         onPulse={onPulse}
         onRefresh={onRefresh}
         onShareHtml={onShareHtml}
-        onExportPdf={onExportPdf}
+        onExportPdf={() => {
+          const dossierButton = document.querySelector<HTMLButtonElement>("[data-lt-dossier-pdf]");
+          if (dossierButton) dossierButton.click();
+          else onExportPdf();
+        }}
         onExportExecutivePdf={onExportExecutivePdf}
         onShareEmail={onShareEmail}
         onExpand={() => setExpanded(true)}
