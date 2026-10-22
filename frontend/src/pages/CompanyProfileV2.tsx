@@ -2999,6 +2999,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
           {tab === "research" && (
             <CDPResearch
               companyName={companyName}
+              companyKey={v2CompanyKey}
               companyMeta={{
                 ticker: companyEnrichment?.enrichment_params?.ticker ?? null,
                 hq:
