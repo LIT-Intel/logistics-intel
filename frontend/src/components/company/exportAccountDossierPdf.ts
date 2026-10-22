@@ -1,3 +1,4 @@
+import { auditMonthlyTeu, isSuspiciousTeu } from "@/features/company-profile/data/teuQuality";
 import { isVerifiedDischargePort } from "@/lib/bols/portValidity";
 import type { BriefFacts } from "./AccountDossierV2";
 
@@ -68,7 +69,7 @@ export async function exportAccountDossierPdf(args:{companyName:string;facts:Bri
   doc.setFont("helvetica","bold");doc.setFontSize(11);doc.setTextColor(...navy);
   doc.text(metric==="teu"?"Monthly TEU":"Monthly shipments",L,y);y+=15;
   if(months.length<2){para("Monthly trend requires at least two available data points.");return;}
-  const values=months.map(m=>numeric(m[metric]));const max=Math.max(1,...values);
+  const values=months.map(m=>metric==="teu"&&isSuspiciousTeu(m.shipments,m.teu)?0:numeric(m[metric]));const max=Math.max(1,...values);
   const x=L+3,yt=y+6,w=R-L-6,h=82;doc.setDrawColor(224,231,239);
   for(let i=0;i<4;i++)doc.line(x,yt+i*h/3,x+w,yt+i*h/3);
   doc.setDrawColor(...teal);doc.setLineWidth(2);
@@ -85,16 +86,19 @@ export async function exportAccountDossierPdf(args:{companyName:string;facts:Bri
  const months=[...args.facts.months].sort((a,b)=>(a.year*12+a.month)-(b.year*12+b.month));
  const last=months.length?months[months.length-1].year*12+months[months.length-1].month:null;
  const last12=last==null?[]:months.filter(m=>m.year*12+m.month>last-12);
- const sumShip=last12.reduce((s,m)=>s+numeric(m.shipments),0),sumTeu=last12.reduce((s,m)=>s+numeric(m.teu),0);
- stats([["Shipments /12m",last12.length?f(sumShip):"-"],["TEU /12m",last12.length?f(sumTeu):"-"],["BOL sample",f(args.facts.documents.length)]]);
+ const sumShip=last12.reduce((s,m)=>s+numeric(m.shipments),0);
+ const teuQuality=auditMonthlyTeu(last12);
+ const sumTeu=teuQuality.valid?last12.reduce((s,m)=>s+numeric(m.teu),0):null;
+ stats([["Shipments /12m",last12.length?f(sumShip):"-"],["TEU /12m",last12.length&&sumTeu!==null?f(sumTeu):"Under review"],["BOL sample",f(args.facts.documents.length)]]);
  title("01  Executive readout");
  para(args.summary||"This brief summarizes available LIT shipment history and documents. Commercial conclusions should be validated against named carriers, supplier relationships, and current public signals.");
- para(last12.length?`The latest 12 recorded monthly periods include ${f(sumShip)} shipments and ${f(sumTeu)} TEU. Detailed shipment rankings rely on ${args.facts.documents.length} sampled document records.`:"Full monthly history is not present for this account.");
+ para(last12.length?`The latest 12 recorded monthly periods include ${f(sumShip)} shipments and ${sumTeu===null?"unverified TEU":f(sumTeu)+" TEU"}. Detailed shipment rankings rely on ${args.facts.documents.length} sampled document records.`:"Full monthly history is not present for this account.");
  if(args.researchContext){
   title("02  Company context and developments");
   para(args.researchContext);
   if(args.researchSignals)para(args.researchSignals);
  }
+ if(!teuQuality.valid)para("DATA QUALITY WARNING: "+teuQuality.flaggedMonths+" monthly TEU values are implausible. Total TEU and derived spend are not verified. Invalid points are omitted from the trend and must be confirmed at the source.");
  title("03  Monthly shipment intelligence");
  trend("shipments");trend("teu");
  next();title("04  Supplier, origin and commodity intelligence");
