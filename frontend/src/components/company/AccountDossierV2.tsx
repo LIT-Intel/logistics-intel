@@ -76,6 +76,7 @@ export default function AccountDossierV2({companyName,companyKey,report,tradeKpi
  const facts=q.data;
  const ranked=useMemo(()=>{
   const docs=facts?.documents??[];
+ const detailCoverage=shipments>0?Math.min(100,Math.round(100*docs.length/shipments)):null;
   return {suppliers:aggregate(docs,"shipper_name"),origins:aggregate(docs,"origin_country"),ports:aggregate(docs.filter(d=>isVerifiedDischargePort(d.destination_port,d.ingest_source)),"destination_port"),carriers:aggregate(docs,"carrier_name"),commodities:aggregate(docs,"hs_code")};
  },[facts]);
  const ts=useMemo(()=>[...(facts?.months??[])].filter(m=>m.month>=1&&m.month<=12).sort((a,b)=>dateKey(a)-dateKey(b)),[facts]);
@@ -143,8 +144,9 @@ export default function AccountDossierV2({companyName,companyKey,report,tradeKpi
    <h2 className="mt-3 text-[25px] font-bold tracking-tight sm:text-[30px]">{companyName}</h2>
    <p className="mt-2 text-xs text-slate-300">Verified customs intelligence · Evidence-backed analysis · {generatedAt?new Date(generatedAt).toLocaleDateString("en-US"):"Research date pending"}</p>
    <div className="mt-5 grid grid-cols-2 gap-4 border-t border-white/20 pt-4 sm:grid-cols-4">
-    {[["SHIPMENTS / 12M",hasFacts&&recent.length?fmt(shipments):"—"],["TEU / 12M",hasFacts&&recent.length?fmt(teu):"—"],["OBSERVED DOCUMENTS",hasFacts?fmt(docs.length):"—"],["CHANGE VS PRIOR YEAR",rate===null?"—":`${rate>=0?"+":""}${rate.toFixed(1)}%`]].map(([name,value])=><div key={name}><div className="text-[9px] uppercase tracking-widest text-slate-400">{name}</div><div className="mt-1 text-[23px] font-bold">{value}</div></div>)}
+    {[["SHIPMENTS / 12M",hasFacts&&recent.length?fmt(shipments):"—"],["TEU / 12M",hasFacts&&recent.length?fmt(teu):"—"],["BOL DETAILS AVAILABLE",hasFacts?fmt(docs.length):"—"],["CHANGE VS PRIOR YEAR",rate===null?"—":`${rate>=0?"+":""}${rate.toFixed(1)}%`]].map(([name,value])=><div key={name}><div className="text-[9px] uppercase tracking-widest text-slate-400">{name}</div><div className="mt-1 text-[23px] font-bold">{value}</div></div>)}
    </div>
+   <p className="mt-3 text-[11px] leading-5 text-slate-300">Detailed shipment coverage: {detailCoverage==null?"Not measured":`${docs.length} of ${fmt(shipments)} annual shipments · approximately ${detailCoverage}%`}. Deep BOL ingestion is separate from full monthly summary coverage.</p>
   </div>
   {q.isLoading?<div role="status" className="rounded-lg bg-white p-8 text-center text-sm text-slate-600">Loading stored shipment evidence…</div>:q.error?<div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">Could not load this company’s archived intelligence. <button className="ml-2 underline" onClick={()=>void q.refetch()}>Retry</button></div>:null}
   <Section id="lit-dossier-executive" index="01" title="The short version" sub="Research synthesis with evidence limitations">
