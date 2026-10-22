@@ -1,4 +1,5 @@
 import { useCompanyForwarderEvidence } from "@/lib/harvey/companyForwarderEvidence";
+import { useCompanyForwarderEvidence } from "@/lib/harvey/companyForwarderEvidence";
 import { auditMonthlyTeu, isSuspiciousTeu } from "@/features/company-profile/data/teuQuality";
 import DossierChart from "./DossierChart";
 import { isVerifiedDischargePort } from "@/lib/bols/portValidity";
@@ -88,6 +89,7 @@ export default function AccountDossierV2({companyName,companyKey,companyMeta,rep
  generatedAt?:string|null;
 }){
  const q=useBriefFacts(companyKey);
+ const forwarderHistory=useCompanyForwarderEvidence(companyName,companyMeta?.domain);
  const forwarderQuery=useCompanyForwarderEvidence(companyName,companyMeta?.domain);
  const facts=q.data;
  const ranked=useMemo(()=>{
@@ -230,6 +232,15 @@ export default function AccountDossierV2({companyName,companyKey,companyMeta,rep
    <p className="mt-3 text-[11px] text-slate-500">Bar lengths are relative to the largest listed route, not estimated market share.</p>
   </Section>
   <Section id="lit-dossier-carriers" index="05" title="Carrier & forwarder intelligence" sub="Carrier observations; avoid unsupported incumbent claims">
+   {forwarderHistory.data?.entries?.length? <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4">
+     <h4 className="text-[13px] font-bold text-slate-900">Company-wide historical provider relationships</h4>
+     <p className="mt-1 text-[11px] leading-5 text-slate-600">Existing directory source: {forwarderHistory.data.sourceFile||"company directory"}. Data window and specific-lane attribution are not verified; reported TEU is withheld from performance ranking until its source passes validation.</p>
+     <div className="mt-3 space-y-2">{forwarderHistory.data.entries.map((provider,i)=><div key={provider.name+"-"+i} className="flex flex-wrap justify-between gap-2 border-b border-blue-100 py-2 text-[12px]">
+       <div><strong className="text-slate-800">{provider.normalizedName}</strong><p className="text-[10px] text-slate-500">{provider.role==="direct_to_carrier"?"Source labeled direct to carrier":provider.role==="freight_intermediary"?"Forwarder / NVOCC":provider.role==="ocean_carrier"?"Vessel carrier":"Role not verified"}</p></div>
+       <span className="text-slate-600">{provider.reportedPercent==null?"Share not provided":provider.reportedPercent.toFixed(1)+"% source-reported share"}</span>
+     </div>)}</div>
+   </div>:null}
+
    {forwarderQuery.data?.entries?.length ? <div className="mb-4 rounded-lg border border-teal-200 bg-teal-50 p-4">
     <h4 className="text-[13px] font-bold text-slate-900">Historical forwarder & booking relationships</h4>
     <p className="mt-1 text-[11px] leading-5 text-slate-600">Source: {forwarderQuery.data.sourceFile||"company directory"}. Provider-reported company-wide historical relationships. They do not prove the current incumbent on any specific lane or a 12-month share.</p>
