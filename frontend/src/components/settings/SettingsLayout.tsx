@@ -1,14 +1,20 @@
-// SettingsLayout.tsx — Shell lifted from design/Settings.html
-// Inline style={{ }} approach. SettingsHeader + SettingsNav (left rail) with
-// lucide-react icons. No second sidebar — LITPage already provides the app sidebar.
+// SettingsLayout.tsx — Admin Control Panel re-skin.
+//
+// Shell: top bar (logo + settings search + actions), grouped settings
+// sidebar with status badges, content area. Mobile: the sidebar becomes
+// a slide-in drawer toggled by a hamburger button (44px touch targets,
+// safe-area padding). Apple-HIG-informed: 8pt spacing grid, 10–16px radii,
+// soft layered shadows, restrained indigo/blue accent, Lucide iconography.
+//
+// PRESERVED (do not change without care):
+// - SettingsSectionId values, platformAdminOnly gating, ?tab= deep links
+// - All SettingsLayoutProps (additive-only changes)
+// - renderSection wiring + prop names passed to every section component
 import React from "react";
-// Mobile overrides applied as `!important` CSS scoped to the className hooks
-// (.lit-settings-main / .lit-settings-header / .lit-settings-nav /
-// .lit-settings-body) because inline styles win over CSS by spec. See the
-// file's own comment block for the rationale + tablet/phone breakpoints.
 import "./SettingsLayout.css";
 import {
   User,
+  Building,
   Building2,
   ShieldCheck,
   Bell,
@@ -16,15 +22,14 @@ import {
   KeyRound,
   Search,
   LifeBuoy,
-  UserCog,
   Coins,
   UserMinus,
+  Menu,
+  X,
 } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
-  SETTINGS_SECTIONS,
   type SettingsSectionId,
-  ProfileSection,
   AlertsNotificationsSection,
   WorkspaceSection,
   BillingSection,
@@ -32,23 +37,29 @@ import {
   PreferencesSection,
   IntegrationsHubSection,
 } from "./SettingsSections";
-import { SBadge, sBtnPrimary } from "./SettingsPrimitives";
+import { ProfileSection } from "./SettingsProfile";
+import { SBadge } from "./SettingsPrimitives";
 import SettingsAccountSnapshot from "./SettingsAccountSnapshot";
+import CompaniesSection from "./CompaniesSection";
 import OrgExitRulesPanel from "@/features/outbound/components/OrgExitRulesPanel";
 import OrgEnrichmentSettingsPanel from "@/features/settings/components/OrgEnrichmentSettingsPanel";
 
 // Accepts ?tab=… (case/spacing tolerant) so deep links route correctly.
-function tabParamToSectionId(value?: string | null): SettingsSectionId | null {
+// NOTE: "Companies" is a settings-section extension owned by this layout file
+// (SettingsSections.tsx itself is intentionally untouched).
+type ExtendedSectionId = SettingsSectionId | "Companies";
+function tabParamToSectionId(value?: string | null): ExtendedSectionId | null {
   if (!value) return null;
   const v = String(value).trim().toLowerCase().replace(/[-_\s]+/g, "");
   if (v === "profile") return "Profile";
   if (v === "workspace" || v === "team" || v === "members" || v === "access" || v === "roles" || v === "organization" || v === "org") return "Workspace";
   if (v === "billing" || v === "plan" || v === "subscription" || v === "invoice" || v === "invoices" || v === "payment") return "Billing";
-  if (v === "security" || v === "auth" || v === "password") return "Security";
+  if (v === "security" || v === "auth" || v === "password" || v === "securityapi") return "Security";
   if (v === "notifications" || v === "alerts") return "Notifications";
   if (v === "integrations" || v === "emailaccounts" || v === "email" || v === "inbox" || v === "integration") return "Integrations";
   if (v === "exitrules" || v === "exit" || v === "sequenceexit" || v === "outreachexit") return "ExitRules";
   if (v === "enrichmentproviders" || v === "enrichment" || v === "providers" || v === "enrich") return "EnrichmentProviders";
+  if (v === "companies" || v === "company" || v === "orgs" || v === "demoaccounts" || v === "demo") return "Companies";
   if (v === "preferences" || v === "prefs" || v === "timezone" || v === "signature") return "Preferences";
   return null;
 }
@@ -75,6 +86,7 @@ type OrgInvite = {
 type ProfileData = {
   name?: string;
   email?: string;
+  emailVerified?: boolean;
   title?: string;
   phone?: string;
   location?: string;
@@ -173,8 +185,8 @@ export type SettingsLayoutProps = {
   workspace?: WorkspaceChip;
   isAdmin?: boolean;
   /** Platform super-admin flag (NOT org owner/admin). Gates the platform-level
-   *  settings tabs — Exit Rules, Enrichment Providers — so org users and
-   *  end users don't see them. */
+   *  settings tabs — Exit Rules, Enrichment Providers, Companies — so org
+   *  users and end users don't see them. */
   isPlatformAdmin?: boolean;
   canAccess?: (minPlan: string) => boolean;
   onSaveProfile?: (data: Record<string, unknown>) => Promise<{ error?: string } | void>;
@@ -198,13 +210,15 @@ export type SettingsLayoutProps = {
   orgId?: string | null;
 };
 
-// ── Nav groups (matches the design's NAV array, curated for 6 sections) ───────
+// ── Nav groups (mirrors the Admin Control Panel design) ───────────────────────
 type NavItem = {
-  id: SettingsSectionId;
+  id: ExtendedSectionId;
   label: string;
-  Icon: React.ComponentType<{ size?: number; color?: string }>;
+  Icon: React.ComponentType<{ size?: number; color?: string; className?: string }>;
   /** Platform-super-admin-only. Hidden from org owners + regular users. */
   platformAdminOnly?: boolean;
+  /** Rendered at the right edge of the nav row (status pill / count). */
+  badge?: React.ReactNode;
 };
 
 const NAV_GROUPS: Array<{ group: string; items: NavItem[] }> = [
@@ -212,15 +226,19 @@ const NAV_GROUPS: Array<{ group: string; items: NavItem[] }> = [
     group: "Account",
     items: [
       { id: "Profile",       label: "Profile",       Icon: User },
-      { id: "Security",      label: "Security",      Icon: ShieldCheck },
+      { id: "Security",      label: "Security & API", Icon: ShieldCheck,
+        badge: <SBadge tone="amber">2FA off</SBadge> },
       { id: "Notifications", label: "Notifications", Icon: Bell },
     ],
   },
   {
     group: "Workspace",
     items: [
-      { id: "Workspace", label: "Workspace", Icon: Building2 },
-      { id: "Billing",   label: "Billing",   Icon: Coins },
+      { id: "Workspace", label: "Workspace & team", Icon: Building2 },
+      { id: "Billing",   label: "Billing",          Icon: Coins },
+      // Platform-super-admin-only — manual company + user provisioning
+      // (demo accounts). Gated server-side AND in the nav filter below.
+      { id: "Companies", label: "Companies",        Icon: Building, platformAdminOnly: true },
     ],
   },
   {
@@ -233,140 +251,112 @@ const NAV_GROUPS: Array<{ group: string; items: NavItem[] }> = [
     ],
   },
   {
-    group: "Preferences",
+    group: "Personal",
     items: [
       { id: "Preferences", label: "Preferences", Icon: KeyRound },
     ],
   },
 ];
 
-// ── SettingsHeader ─────────────────────────────────────────────────────────────
-function SettingsHeader({ plan, role }: { plan: string; role: string }) {
-  const roleLabel = ({ admin: "Admin", manager: "Manager", member: "Member", viewer: "Viewer" } as Record<string, string>)[role] || role || "Member";
-  const planLabel = ({ free: "Free", growth: "Growth", scale: "Scale", enterprise: "Enterprise", free_trial: "Free Trial", starter: "Starter" } as Record<string, string>)[plan] || plan || "Free Trial";
-  const planTone = plan === "enterprise" ? "violet" : plan === "free" || plan === "free_trial" || plan === "starter" ? "slate" : "cyan";
-
+// ── Top bar ──────────────────────────────────────────────────────────────────
+function SettingsTopBar({
+  onMenu,
+  search,
+  onSearch,
+  onGoNotifications,
+  roleLabel,
+  planLabel,
+  planTone,
+}: {
+  onMenu: () => void;
+  search: string;
+  onSearch: (q: string) => void;
+  onGoNotifications: () => void;
+  roleLabel: string;
+  planLabel: string;
+  planTone: "slate" | "blue" | "violet" | "cyan";
+}) {
   return (
-    <div
-      className="lit-settings-header"
-      style={{
-        padding: "20px 32px 18px",
-        borderBottom: "1px solid #E5E7EB",
-        background: "#FFFFFF",
-        flexShrink: 0,
-        display: "flex",
-        alignItems: "flex-start",
-        justifyContent: "space-between",
-        gap: 16,
-        flexWrap: "wrap",
-      }}
-    >
-      <div>
-        <div style={{
-          fontFamily: "Space Grotesk,sans-serif",
-          fontSize: 22,
-          fontWeight: 700,
-          color: "#0F172A",
-          letterSpacing: "-0.02em",
-        }}>Settings</div>
-        <div style={{
-          fontFamily: "DM Sans,sans-serif",
-          fontSize: 13,
-          color: "#64748b",
-          marginTop: 3,
-        }}>Control center for your profile, workspace, integrations, and outreach.</div>
+    <div className="lit-settings-topbar">
+      <button
+        type="button"
+        className="lit-settings-hamburger"
+        onClick={onMenu}
+        aria-label="Open settings navigation"
+      >
+        <Menu size={20} />
+      </button>
+      <div className="lit-settings-brand">
+        <span className="lit-settings-logo">LI</span>
+        <span className="lit-settings-wordmark">LogisticIntel</span>
       </div>
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <SBadge tone="blue" icon={<UserCog size={11} />}>{roleLabel}</SBadge>
-        <SBadge tone={planTone} dot>{planLabel} plan</SBadge>
+      <div className="lit-settings-topsearch">
+        <Search size={14} className="lit-settings-topsearch-icon" />
+        <input
+          value={search}
+          onChange={(e) => onSearch(e.target.value)}
+          placeholder="Search settings…"
+          aria-label="Search settings"
+        />
+      </div>
+      <div className="lit-settings-topbar-right">
+        <span className="lit-settings-topbar-badges">
+          <SBadge tone="blue">{roleLabel}</SBadge>
+          <SBadge tone={planTone} dot>{planLabel} plan</SBadge>
+        </span>
+        <button
+          type="button"
+          className="lit-settings-iconbtn"
+          onClick={onGoNotifications}
+          aria-label="Notifications settings"
+          title="Notifications"
+        >
+          <Bell size={17} />
+        </button>
       </div>
     </div>
   );
 }
 
-// ── SettingsNav ─────────────────────────────────────────────────────────────────
+// ── SettingsNav ──────────────────────────────────────────────────────────────
 function SettingsNav({
   active,
   onNav,
-  search,
-  onSearch,
   isPlatformAdmin,
+  workspaceBadge,
+  integrationsBadge,
+  query,
 }: {
-  active: SettingsSectionId;
-  onNav: (id: SettingsSectionId) => void;
-  search: string;
-  onSearch: (q: string) => void;
+  active: ExtendedSectionId;
+  onNav: (id: ExtendedSectionId) => void;
   isPlatformAdmin: boolean;
+  workspaceBadge?: React.ReactNode;
+  integrationsBadge?: React.ReactNode;
+  query: string;
 }) {
-  const query = search.trim().toLowerCase();
-
-  const visibleGroups = NAV_GROUPS.map((g) => ({
+  const q = query.trim().toLowerCase();
+  const groups = NAV_GROUPS.map((g) => ({
     ...g,
     items: g.items
       // Platform-admin-only items are filtered out for non-platform-admins.
       // This is a UX gate, NOT the security gate — the security gate is
-      // server-side (RLS on lit_org_exit_settings / lit_org_enrichment_settings).
+      // server-side (RLS + admin-api platform_admins check).
       .filter((it) => !it.platformAdminOnly || isPlatformAdmin)
-      .filter((it) => !query || it.label.toLowerCase().includes(query)),
+      .filter((it) => !q || it.label.toLowerCase().includes(q))
+      .map((it) => {
+        if (it.id === "Workspace" && workspaceBadge) return { ...it, badge: workspaceBadge };
+        if (it.id === "Integrations" && integrationsBadge) return { ...it, badge: integrationsBadge };
+        return it;
+      }),
   })).filter((g) => g.items.length > 0);
 
   return (
-    <aside
-      className="lit-settings-nav"
-      style={{
-        width: 252,
-        minWidth: 252,
-        borderRight: "1px solid #E5E7EB",
-        background: "#FAFBFC",
-        display: "flex",
-        flexDirection: "column",
-        flexShrink: 0,
-        overflow: "hidden",
-      }}
-    >
-      {/* Search box */}
-      <div style={{ padding: "18px 18px 12px", borderBottom: "1px solid #F1F5F9" }}>
-        <div style={{ position: "relative" }}>
-          <Search
-            size={13}
-            color="#94a3b8"
-            style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}
-          />
-          <input
-            value={search}
-            onChange={(e) => onSearch(e.target.value)}
-            placeholder="Search settings…"
-            style={{
-              width: "100%",
-              background: "#fff",
-              border: "1px solid #E5E7EB",
-              borderRadius: 8,
-              padding: "7px 12px 7px 30px",
-              fontSize: 12.5,
-              fontFamily: "DM Sans,sans-serif",
-              color: "#0F172A",
-              outline: "none",
-            }}
-            onFocus={(e) => { e.target.style.borderColor = "#3b82f6"; e.target.style.boxShadow = "0 0 0 3px rgba(59,130,246,0.1)"; }}
-            onBlur={(e) => { e.target.style.borderColor = "#E5E7EB"; e.target.style.boxShadow = "none"; }}
-          />
-        </div>
-      </div>
-
-      {/* Nav groups */}
-      <nav style={{ flex: 1, overflowY: "auto", padding: "10px 10px" }}>
-        {visibleGroups.map((g) => (
-          <div key={g.group} style={{ marginBottom: 14 }}>
-            <div style={{
-              fontFamily: "Space Grotesk,sans-serif",
-              fontSize: 10,
-              fontWeight: 600,
-              color: "#94a3b8",
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              padding: "6px 10px 4px",
-            }}>{g.group}</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+    <aside className="lit-settings-nav" aria-label="Settings navigation">
+      <nav className="lit-settings-nav-groups">
+        {groups.map((g) => (
+          <div key={g.group} className="lit-settings-nav-group">
+            <div className="lit-settings-nav-group-label">{g.group}</div>
+            <div className="lit-settings-nav-items">
               {g.items.map((it) => {
                 const isActive = active === it.id;
                 return (
@@ -374,26 +364,12 @@ function SettingsNav({
                     key={it.id}
                     type="button"
                     onClick={() => onNav(it.id)}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 10,
-                      padding: "8px 10px",
-                      borderRadius: 7,
-                      fontSize: 13,
-                      fontWeight: isActive ? 600 : 500,
-                      fontFamily: "Space Grotesk,sans-serif",
-                      background: isActive ? "#EFF6FF" : "transparent",
-                      color: isActive ? "#1d4ed8" : "#334155",
-                      border: "none",
-                      cursor: "pointer",
-                      textAlign: "left",
-                      width: "100%",
-                      transition: "all 140ms",
-                    }}
+                    className={`lit-settings-nav-item${isActive ? " is-active" : ""}`}
+                    aria-current={isActive ? "page" : undefined}
                   >
-                    <it.Icon size={14} color={isActive ? "#3b82f6" : "#64748b"} />
-                    <span>{it.label}</span>
+                    <it.Icon size={16} className="lit-settings-nav-icon" />
+                    <span className="lit-settings-nav-label">{it.label}</span>
+                    {it.badge && <span className="lit-settings-nav-badge">{it.badge}</span>}
                   </button>
                 );
               })}
@@ -402,24 +378,14 @@ function SettingsNav({
         ))}
       </nav>
 
-      {/* Help footer */}
-      <div style={{
-        padding: "14px 16px",
-        borderTop: "1px solid #F1F5F9",
-        display: "flex",
-        alignItems: "center",
-        gap: 10,
-      }}>
-        <LifeBuoy size={14} color="#64748b" />
-        <div style={{ flex: 1 }}>
-          <div style={{ fontFamily: "Space Grotesk,sans-serif", fontSize: 12, fontWeight: 600, color: "#0F172A" }}>
-            Need help?
-          </div>
+      <div className="lit-settings-nav-help">
+        <LifeBuoy size={15} className="lit-settings-nav-help-icon" />
+        <div className="lit-settings-nav-help-text">
+          <div className="lit-settings-nav-help-title">Need help?</div>
           <a
             href="https://docs.logisticintel.com"
             target="_blank"
             rel="noopener noreferrer"
-            style={{ fontFamily: "DM Sans,sans-serif", fontSize: 11.5, color: "#3b82f6", textDecoration: "none" }}
           >
             docs.logisticintel.com
           </a>
@@ -429,28 +395,14 @@ function SettingsNav({
   );
 }
 
-// ── ForbiddenSection — fallback when a non-platform-admin tries to access
-//    a super-admin-only tab via direct URL (?tab=exitrules or ?tab=enrichmentproviders).
-//    The nav already hides these for non-admins, but a stale bookmark or pasted
-//    link could land here, so we render a polite explanation instead of crashing.
+// ── ForbiddenSection — fallback when a non-platform-admin reaches a
+//    super-admin-only tab via direct URL (?tab=…). The nav already hides
+//    these, but a stale bookmark could land here.
 function ForbiddenSection({ sectionName }: { sectionName: string }) {
   return (
-    <div
-      style={{
-        padding: "32px 24px",
-        textAlign: "center",
-        color: "#475569",
-        background: "#fff",
-        border: "1px solid #e2e8f0",
-        borderRadius: 12,
-        maxWidth: 560,
-        margin: "40px auto",
-      }}
-    >
-      <h2 style={{ margin: "0 0 8px", fontSize: 18, color: "#0f172a" }}>
-        {sectionName} is restricted
-      </h2>
-      <p style={{ margin: 0, fontSize: 13 }}>
+    <div className="lit-settings-forbidden">
+      <h2>{sectionName} is restricted</h2>
+      <p>
         This page is only available to platform administrators. Contact your
         Logistic Intel account team if you believe you should have access.
       </p>
@@ -458,11 +410,12 @@ function ForbiddenSection({ sectionName }: { sectionName: string }) {
   );
 }
 
-// ── renderSection ──────────────────────────────────────────────────────────────
+// ── renderSection ────────────────────────────────────────────────────────────
 function renderSection(
-  section: SettingsSectionId,
+  section: ExtendedSectionId,
   props: SettingsLayoutProps,
   navigate: (to: string) => void,
+  onOpenSecurity: () => void,
 ) {
   const messagingPrefs = props.preferences?.preferences?.messaging_preferences;
   const profileTimezone =
@@ -476,6 +429,7 @@ function renderSection(
           messagingPrefs={messagingPrefs}
           onSave={props.onSaveProfile}
           onUploadAvatar={props.onUploadAvatar}
+          onOpenSecurity={onOpenSecurity}
           onSaveMessagingPreferences={async (data) => {
             if (!props.onSavePreferences) return;
             return props.onSavePreferences("messaging_preferences", data);
@@ -541,6 +495,11 @@ function renderSection(
           isPartner={props.isPartner}
         />
       );
+    case "Companies":
+      // Platform-super-admin gate. Defense-in-depth alongside the nav filter
+      // and the server-side platform_admins check in admin-api.
+      if (!props.isPlatformAdmin) return <ForbiddenSection sectionName="Companies" />;
+      return <CompaniesSection />;
     case "ExitRules":
       // Platform-super-admin gate. Defense-in-depth alongside the nav filter
       // and the server-side RLS on lit_org_exit_settings.
@@ -579,6 +538,7 @@ function renderSection(
           messagingPrefs={messagingPrefs}
           onSave={props.onSaveProfile}
           onUploadAvatar={props.onUploadAvatar}
+          onOpenSecurity={onOpenSecurity}
           onSaveMessagingPreferences={async (data) => {
             if (!props.onSavePreferences) return;
             return props.onSavePreferences("messaging_preferences", data);
@@ -589,18 +549,17 @@ function renderSection(
   }
 }
 
-// ── SettingsLayout (default export) ───────────────────────────────────────────
+// ── SettingsLayout (default export) ──────────────────────────────────────────
 export default function SettingsLayout(props: SettingsLayoutProps) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const initialTab = tabParamToSectionId(searchParams.get("tab")) ?? "Profile";
-  const [activeSection, setActiveSection] = React.useState<SettingsSectionId>(initialTab);
+  const [activeSection, setActiveSection] = React.useState<ExtendedSectionId>(initialTab);
   const [search, setSearch] = React.useState("");
+  const [drawerOpen, setDrawerOpen] = React.useState(false);
   // useTransition lets the nav button visually commit immediately while
-  // the heavy section subtree (WorkspaceSection's members list,
-  // BillingSection's plan grid, etc.) renders at low priority. Pairs with
-  // the React.memo on SettingsAccountSnapshot to keep INP under 100ms on
-  // section switches. Sentry flagged Workspace at 232ms before this.
+  // the heavy section subtree renders at low priority (keeps INP low on
+  // section switches).
   const [, startNav] = React.useTransition();
 
   // Keep state in sync if the URL changes.
@@ -613,7 +572,7 @@ export default function SettingsLayout(props: SettingsLayoutProps) {
   }, [searchParams]);
 
   const handleSelectSection = React.useCallback(
-    (id: SettingsSectionId) => {
+    (id: ExtendedSectionId) => {
       // URL update + state set are both deferred via startNav so the
       // pressed/active visual feedback paints first.
       startNav(() => {
@@ -626,52 +585,73 @@ export default function SettingsLayout(props: SettingsLayoutProps) {
         }
         setSearchParams(next, { replace: true });
       });
+      setDrawerOpen(false);
     },
     [searchParams, setSearchParams],
   );
 
+  const handleOpenSecurity = React.useCallback(() => {
+    handleSelectSection("Security");
+  }, [handleSelectSection]);
+
   const roleLabel = props.workspace?.roleLabel || (props.isAdmin ? "admin" : "member");
+  const plan = props.subscription?.plan_code || props.profile?.plan || props.workspace?.planLabel || "free_trial";
   const planLabel =
-    props.subscription?.plan_code ||
-    props.profile?.plan ||
-    props.workspace?.planLabel ||
-    "free_trial";
+    ({ free: "Free", growth: "Growth", scale: "Scale", enterprise: "Enterprise", free_trial: "Free Trial", starter: "Starter" } as Record<string, string>)[plan] || plan || "Free Trial";
+  const planTone = (plan === "enterprise" ? "violet" : plan === "free" || plan === "free_trial" || plan === "starter" ? "slate" : "cyan") as "slate" | "blue" | "violet" | "cyan";
+  const roleBadgeLabel = ({ admin: "Admin", manager: "Manager", member: "Member", viewer: "Viewer", owner: "Owner" } as Record<string, string>)[roleLabel] || roleLabel || "Member";
+
+  const memberCount = props.members?.length ?? 0;
+  const integrationsCount = props.integrations?.length ?? 0;
 
   return (
-    <div style={{ display: "flex", minHeight: "100%", background: "#020617" }}>
-      <main
-        className="lit-settings-main"
-        style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "#F8FAFC", minWidth: 0 }}
-      >
-        <SettingsHeader plan={planLabel} role={roleLabel} />
-        <div style={{ flex: 1, display: "flex", overflow: "hidden", minHeight: 0 }}>
+    <div className={`lit-settings-shell${drawerOpen ? " drawer-open" : ""}`}>
+      <SettingsTopBar
+        onMenu={() => setDrawerOpen(true)}
+        search={search}
+        onSearch={setSearch}
+        onGoNotifications={() => handleSelectSection("Notifications")}
+        roleLabel={roleBadgeLabel}
+        planLabel={planLabel}
+        planTone={planTone}
+      />
+      <div className="lit-settings-body-row">
+        <div
+          className="lit-settings-drawer-backdrop"
+          onClick={() => setDrawerOpen(false)}
+          aria-hidden={!drawerOpen}
+        />
+        <div className="lit-settings-nav-wrap">
+          <div className="lit-settings-drawer-head">
+            <span className="lit-settings-drawer-title">Settings</span>
+            <button
+              type="button"
+              className="lit-settings-iconbtn"
+              onClick={() => setDrawerOpen(false)}
+              aria-label="Close settings navigation"
+            >
+              <X size={18} />
+            </button>
+          </div>
           <SettingsNav
             active={activeSection}
             onNav={handleSelectSection}
-            search={search}
-            onSearch={setSearch}
             isPlatformAdmin={Boolean(props.isPlatformAdmin)}
+            workspaceBadge={memberCount > 0 ? <SBadge tone="slate">{memberCount}</SBadge> : undefined}
+            integrationsBadge={integrationsCount > 0 ? <SBadge tone="slate">{integrationsCount}</SBadge> : undefined}
+            query={search}
           />
-          <div
-            className="lit-settings-body"
-            style={{
-              flex: 1,
-              overflowY: "auto",
-              padding: "24px 32px 40px",
-              position: "relative",
-              minWidth: 0,
-            }}
-          >
-            <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", flexDirection: "column", gap: 20 }}>
-              <SettingsAccountSnapshot
-                seatsUsed={props.members?.length}
-                seatsLimit={props.subscription?.seat_limit ?? null}
-              />
-              {renderSection(activeSection, props, navigate)}
-            </div>
+        </div>
+        <div className="lit-settings-body" role="main">
+          <div className="lit-settings-content">
+            <SettingsAccountSnapshot
+              seatsUsed={props.members?.length}
+              seatsLimit={props.subscription?.seat_limit ?? null}
+            />
+            {renderSection(activeSection, props, navigate, handleOpenSecurity)}
           </div>
         </div>
-      </main>
+      </div>
     </div>
   );
 }

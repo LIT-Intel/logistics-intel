@@ -772,6 +772,7 @@ export default function SettingsPage() {
     ...profile,
     timezone: profileTimezone,
     planStatus: subscription?.status,
+    emailVerified: Boolean((user as any)?.email_confirmed_at),
   };
 
   const joinedIso =

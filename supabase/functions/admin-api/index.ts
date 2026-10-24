@@ -280,6 +280,239 @@ serve(async (req) => {
       return json({ ok: resp.ok, ...result });
     }
 
+    // ── CREATE ORG (manual provisioning) ────────────────────────────────────
+    // Platform-admin manual company creation for demo accounts. Mirrors the
+    // handle_new_user_org_bootstrap() trigger: organizations row + an active
+    // subscriptions row. Users are added separately via create_user.
+    if (action === "create_org") {
+      const { name, plan } = params as { name?: string; plan?: string };
+      const orgName = String(name || "").trim();
+      if (!orgName) return json({ error: "Organization name required" }, 400);
+
+      const requestedPlan = String(plan || "free_trial").trim() || "free_trial";
+      const { data: planRow } = await adminClient
+        .from("plans")
+        .select("code")
+        .eq("code", requestedPlan)
+        .maybeSingle();
+      const planCode = planRow?.code || "free_trial";
+
+      const { data: org, error: orgError } = await adminClient
+        .from("organizations")
+        .insert({ name: orgName, created_by: user.id })
+        .select("id, name, created_at")
+        .single();
+
+      if (orgError || !org) {
+        log.warn("create_org_failed", { user_id: user.id, detail: orgError?.message });
+        return json({ error: orgError?.message || "Failed to create organization" }, 500);
+      }
+
+      const { error: subError } = await adminClient
+        .from("subscriptions")
+        .insert({
+          org_id: org.id,
+          user_id: user.id,
+          plan_code: planCode,
+          status: "active",
+          started_at: new Date().toISOString(),
+        });
+
+      if (subError) {
+        log.warn("create_org_sub_failed", { user_id: user.id, org_id: org.id, detail: subError.message });
+        await adminClient.from("organizations").delete().eq("id", org.id);
+        return json({ error: subError.message || "Failed creating subscription" }, 500);
+      }
+
+      log.info("create_org", { user_id: user.id, org_id: org.id, plan: planCode });
+      return json({ ok: true, org: { id: org.id, name: org.name } });
+    }
+
+    // ── CREATE USER (manual provisioning, no invite) ─────────────────────────
+    // Creates the auth user (email pre-confirmed, no confirmation email) and
+    // adds them to the target org. The caller sets the password and shares it
+    // with the demo user directly — no invite email is sent.
+    // Mirrors signup-with-invite's createUser + org_members insert. The signup
+    // bootstrap trigger is suppressed via a short-lived pending org_invites
+    // row (the trigger's own skip path), removed again below in all paths.
+    if (action === "create_user") {
+      const { email, full_name, password, org_id, role, title } = params as {
+        email?: string; full_name?: string; password?: string;
+        org_id?: string; role?: string; title?: string;
+      };
+      const cleanEmail = String(email || "").trim().toLowerCase();
+      const cleanName = String(full_name || "").trim();
+      const cleanPassword = String(password || "");
+      const orgId = String(org_id || "");
+      const cleanRole = ["owner", "admin", "member"].includes(String(role)) ? String(role) : "member";
+
+      if (!cleanEmail || !cleanEmail.includes("@")) return json({ error: "Valid email required" }, 400);
+      if (!cleanName) return json({ error: "Full name required" }, 400);
+      if (!cleanPassword || cleanPassword.length < 8) return json({ error: "Password must be at least 8 characters" }, 400);
+      if (!orgId) return json({ error: "org_id required" }, 400);
+
+      const { data: org } = await adminClient
+        .from("organizations")
+        .select("id")
+        .eq("id", orgId)
+        .maybeSingle();
+      if (!org) return json({ error: "Organization not found" }, 404);
+
+      const suppressToken = `manual-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      const { error: suppressError } = await adminClient.from("org_invites").insert({
+        org_id: orgId,
+        email: cleanEmail,
+        role: cleanRole,
+        title: String(title || "").trim() || null,
+        token: suppressToken,
+        status: "pending",
+        expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        invited_by_user_id: user.id,
+      });
+      if (suppressError) {
+        log.warn("create_user_suppress_failed", { user_id: user.id, detail: suppressError.message });
+        return json({ error: "Failed preparing user creation" }, 500);
+      }
+      const clearSuppress = () =>
+        adminClient.from("org_invites").delete().eq("token", suppressToken);
+
+      const { data: newUserData, error: createErr } = await adminClient.auth.admin.createUser({
+        email: cleanEmail,
+        password: cleanPassword,
+        email_confirm: true,
+        user_metadata: {
+          full_name: cleanName,
+          display_name: cleanName,
+          onboarding_completed: true,
+        },
+      });
+
+      if (createErr || !newUserData?.user) {
+        await clearSuppress();
+        const msg = createErr?.message || "Failed to create account";
+        const code = /already|exists|registered/i.test(msg) ? "USER_EXISTS" : "SIGNUP_FAILED";
+        log.warn("create_user_failed", { user_id: user.id, detail: msg });
+        return json({ error: msg, code }, code === "USER_EXISTS" ? 409 : 500);
+      }
+
+      const newUser = newUserData.user;
+
+      const { error: memberErr } = await adminClient.from("org_members").insert({
+        org_id: orgId,
+        user_id: newUser.id,
+        role: cleanRole,
+        title: String(title || "").trim() || null,
+        status: "active",
+        email: cleanEmail,
+        full_name: cleanName,
+      });
+
+      await clearSuppress();
+
+      if (memberErr) {
+        log.warn("create_user_member_failed", { user_id: user.id, detail: memberErr.message });
+        await adminClient.auth.admin.deleteUser(newUser.id).catch(() => {});
+        return json({ error: memberErr.message || "Failed adding user to organization" }, 500);
+      }
+
+      log.info("create_user", { user_id: user.id, new_user_id: newUser.id, org_id: orgId, role: cleanRole });
+      return json({ ok: true, user: { id: newUser.id, email: cleanEmail }, org_id: orgId });
+    }
+
+
+    // ── DELETE ORG (manual provisioning) ─────────────────────────────────────
+    // Permanently deletes a company account: the organizations row plus its
+    // membership data. org_members / org_invites / subscriptions all declare
+    // ON DELETE CASCADE on org_id, so removing the organizations row cleans
+    // them up; they are deleted explicitly first for clarity and better
+    // error attribution.
+    //
+    // DEPENDENT-DATA DECISION (deliberate, safe default): org-owned business
+    // data (campaigns, leads, saved companies, quotes, etc.) is NOT
+    // cascade-deleted here. Those tables reference organizations(id) WITHOUT
+    // ON DELETE CASCADE, so Postgres blocks the delete with a foreign-key
+    // violation if any such rows exist — the admin gets a clear 409 and the
+    // company survives untouched. Silently wiping a company's campaigns and
+    // leads would be irreversible and is never the safe default; demo data
+    // should be cleaned up explicitly if deletion must proceed.
+    // Auth users are NOT deleted: a user may belong to other orgs — they
+    // simply lose membership in the deleted company. Stripe-side
+    // subscriptions are untouched (only the local mirror row is removed);
+    // cancel in Stripe directly if a live subscription exists.
+    if (action === "delete_org") {
+      const { org_id } = params as { org_id?: string };
+      const orgId = String(org_id || "");
+      if (!orgId) return json({ error: "org_id required" }, 400);
+
+      const { data: org } = await adminClient
+        .from("organizations")
+        .select("id, name")
+        .eq("id", orgId)
+        .maybeSingle();
+      if (!org) return json({ error: "Organization not found", code: "ORG_NOT_FOUND" }, 404);
+
+      // Guard: never delete the company the calling admin belongs to —
+      // that would orphan their own workspace with no recovery path here.
+      const { data: callerMembership } = await adminClient
+        .from("org_members")
+        .select("org_id")
+        .eq("org_id", orgId)
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (callerMembership) {
+        return json({ error: "You cannot delete the company you belong to" }, 409);
+      }
+
+      const { error: membersErr } = await adminClient
+        .from("org_members")
+        .delete()
+        .eq("org_id", orgId);
+      if (membersErr) {
+        log.warn("delete_org_members_failed", { user_id: user.id, org_id: orgId, detail: membersErr.message });
+        return json({ error: membersErr.message || "Failed removing members" }, 500);
+      }
+
+      const { error: invitesErr } = await adminClient
+        .from("org_invites")
+        .delete()
+        .eq("org_id", orgId);
+      if (invitesErr) {
+        log.warn("delete_org_invites_failed", { user_id: user.id, org_id: orgId, detail: invitesErr.message });
+        return json({ error: invitesErr.message || "Failed removing invites" }, 500);
+      }
+
+      const { error: subErr } = await adminClient
+        .from("subscriptions")
+        .delete()
+        .eq("org_id", orgId);
+      if (subErr) {
+        log.warn("delete_org_sub_failed", { user_id: user.id, org_id: orgId, detail: subErr.message });
+        return json({ error: subErr.message || "Failed removing subscription" }, 500);
+      }
+
+      const { error: orgErr } = await adminClient
+        .from("organizations")
+        .delete()
+        .eq("id", orgId);
+      if (orgErr) {
+        const msg = orgErr.message || "Failed deleting organization";
+        const blocked = /foreign key|violates|still referenced/i.test(msg);
+        log.warn("delete_org_failed", { user_id: user.id, org_id: orgId, detail: msg });
+        return json(
+          {
+            error: blocked
+              ? "Cannot delete company: it still has associated data (campaigns, leads, saved companies, etc.). Remove that data first."
+              : msg,
+            code: blocked ? "ORG_HAS_DATA" : undefined,
+          },
+          blocked ? 409 : 500
+        );
+      }
+
+      log.info("delete_org", { user_id: user.id, org_id: orgId, name: org.name });
+      return json({ ok: true, org: { id: orgId, name: org.name } });
+    }
+
     return json({ error: `Unknown action: ${action}` }, 400);
   } catch (err) {
     console.error("[admin-api] fatal error", err);
