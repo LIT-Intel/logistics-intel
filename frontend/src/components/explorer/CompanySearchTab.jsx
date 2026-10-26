@@ -1872,9 +1872,9 @@ export default function CompanySearchTab() {
               <X size={16} />
             </button>
             <InsightsPanel
-              rows={filteredResults}
+              rows={researchSelection.length ? researchSelectedRows : filteredResults}
               insights={{}}
-              filters={searchMode === 'market' ? marketFilters : { name: submitted }}
+              filters={{ ...(searchMode === 'market' ? marketFilters : { name: submitted }), research_scope: researchSelection.length ? 'selected_loaded_rows' : 'filtered_loaded_rows', result_count: researchSelection.length ? researchSelectedRows.length : filteredResults.length }}
               requireCoach={() => true}
               requirePdf={() => true}
             />
