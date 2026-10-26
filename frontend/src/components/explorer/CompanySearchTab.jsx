@@ -453,6 +453,9 @@ export default function CompanySearchTab() {
     // Do not present ocean BOL or directory estimates as verified air waybills.
     if (isAirFreightResearchQuery(q)) {
       setSubmitted(q);
+      setSearchMode('companies');
+      setNaRouted(false);
+      setMarketFilters({});
       setResults([]);
       setMapPoints([]);
       setAnalytics(null);
