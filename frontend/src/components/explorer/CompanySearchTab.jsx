@@ -325,7 +325,13 @@ export default function CompanySearchTab() {
       const { data, error } = await supabase.functions.invoke('harvey-copilot', {
         body: { action: 'research_search', question },
       });
-      if (error) throw new Error(data?.clarification || data?.error || error.message);
+      if (error) {
+        let details = data;
+        // FunctionsHttpError contains the server's structured 4xx/5xx JSON.
+        // Preserve user-safe clarification instead of the generic SDK message.
+        try { details = details || await error.context?.json(); } catch { /* transport failure */ }
+        throw new Error(details?.clarification || details?.error || error.message);
+      }
       setResearchResponse(data ?? { ok: false, clarification: 'No research response returned.' });
     } catch (err) {
       setResearchResponse({ ok: false, clarification: err?.message || 'Harvey research is unavailable.' });
