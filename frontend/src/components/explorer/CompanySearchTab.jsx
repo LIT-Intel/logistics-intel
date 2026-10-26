@@ -1335,7 +1335,7 @@ export default function CompanySearchTab() {
   const exportVisibleResearchCsv = useCallback(() => {
     // CSV exports exactly the filtered rows in this client result window.
     // It does NOT claim a full-universe, lane-specific or air-waybill ranking.
-    const quoted = (v) => '\"' + String(v ?? '').replace(/^s*[=+@-]/, (x) => "'" + x).replace(/\"/g, '\"\"') + '\"';
+    const quoted = (v) => '\"' + String(v ?? '').replace(/^\s*[=+@-]/, (x) => "'" + x).replace(/\"/g, '\"\"') + '\"';
     const fields = ['Company','City','State','Country','Industry','Shipments (source unspecified)','TEU (source unspecified)','Opportunity score','Source key'];
     const lines = [fields.map(quoted).join(','), ...researchRows.map((r) => [r.company_name,r.city,r.state,r.country,r.industry,r.shipments ?? '',r.teu ?? '',r.opportunity_composite_score ?? '',r.source_company_key].map(quoted).join(','))];
     const blob = new Blob([lines.join('\\r\\n')], {type:'text/csv;charset=utf-8'});
@@ -1387,7 +1387,7 @@ export default function CompanySearchTab() {
   // Show the results panel once a search is active — so a 0-result or
   // couldn't-parse-the-query state renders real feedback instead of a blank
   // map (the "no results returning" report). Prev gate was hasResults only.
-  const showPanel = (hasResults || searchActive) && (panelOpen || !isMobile);
+  const showPanel = !researchListOpen && (hasResults || searchActive) && (panelOpen || !isMobile);
   // Market query that produced no usable filters → no fetch ever ran. Distinct
   // empty copy nudges the user toward a location/industry.
   const marketNoFilters = searchMode === 'market' && !naMarket && searchActive && !marketEnabled && !busy;
