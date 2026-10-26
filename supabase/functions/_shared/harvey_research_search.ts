@@ -1,4 +1,5 @@
 import { executeForwarderDirectorySearch } from "./harvey_forwarder_search.ts";
+import { planGeneralResearch } from "./harvey_intent_planner.ts";
 
 /**
  * First evidence-backed Harvey research result contract.
@@ -29,6 +30,34 @@ export async function executeHarveyResearchSearch(userClient: any, question: unk
     return { ok: false, error: "invalid_question", clarification: "Enter a research question of up to 1,500 characters." };
   }
   const directory = await executeForwarderDirectorySearch(userClient, question);
+  if (!directory.ok && directory.error === "unsupported_forwarder_query") {
+    const plan = await planGeneralResearch(question);
+    if (plan) {
+      return {
+        ok: true,
+        version: "harvey_research_search_v2",
+        mode: "intent_planning_only",
+        plan,
+        result_set_id: null,
+        result_count: null,
+        result_count_status: "not_queried",
+        returned: 0,
+        rows: [],
+        summary: {
+          title: "Harvey understood your research request",
+          explanation: plan.explanation,
+          caveats: [
+            "This request was classified, not executed: a verified data tool for this operation is not yet connected.",
+            "No company list, shipment metrics, or freight volume has been inferred.",
+          ],
+        },
+        evidence: { dataset: null, quality_status: "not_queried" },
+        suggestions: [plan.next_question],
+        read_only: true,
+        crm_actions_executed: false,
+      };
+    }
+  }
   if (!directory.ok) {
     return {
       ok: false,
