@@ -89,6 +89,19 @@ serve(async (req) => {
     return json({ ok: false, error: "Password must be at least 8 characters", code: "VALIDATION_FAILED" }, 400);
   }
 
+  // Friendly, server-side check before any account creation. The auth.users
+  // BEFORE INSERT trigger remains authoritative across all signup channels.
+  const { data: workEmailAllowed, error: policyError } = await admin.rpc(
+    "lit_signup_email_allowed", { p_email: email },
+  );
+  if (policyError) {
+    console.error("[signup-with-invite] work email policy unavailable", { code: policyError.code });
+    return json({ ok: false, error: "Email eligibility could not be verified. Please try again.", code: "EMAIL_POLICY_UNAVAILABLE" }, 503);
+  }
+  if (workEmailAllowed !== true) {
+    return json({ ok: false, error: "Please use your company email address. Personal email providers are not accepted.", code: "COMPANY_EMAIL_REQUIRED" }, 400);
+  }
+
   // ---- 2. Look up the invite (service-role bypasses RLS) -------------------
   const { data: invite, error: inviteErr } = await admin
     .from("org_invites")
