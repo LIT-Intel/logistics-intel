@@ -1748,10 +1748,9 @@ export default function CompanySearchTab() {
                 {researchResponse.ok ? <>
                   <p className="font-bold text-slate-900">{researchResponse.summary?.title || 'Historical provider research'}</p>
                   <p className="mt-1">{researchResponse.summary?.explanation}</p>
-                  <p className="mt-1">Matched: {researchResponse.result_count ?? 'unknown'} · Returned: {researchResponse.returned ?? 0} · {researchResponse.evidence?.quality_status || 'Source coverage unknown'}</p>
+                  <p className="mt-2 text-slate-500">{researchResponse.returned ?? 0} records shown · Historical provider directory · Total matching universe not verified</p>
                   <p className="mt-1 text-amber-700">{researchResponse.summary?.caveats?.join(' ')}</p>
-                  <p className="mt-2">These records describe historical provider associations. Review the matching companies in the single table below, then open an account to inspect its available evidence. They do not establish a current incumbent or a verified lane.</p>
-                  <p className="mt-1 text-blue-700">Suggested next step: open a company profile before planning outreach.</p>
+                  <p className="mt-2 text-blue-700">You can open any company below to review its supporting profile. For a different state or provider, refine your question above.</p>
                 </> : <p className="text-amber-800">{researchResponse.clarification || researchResponse.error || 'Research unavailable.'}</p>}
               </div> : null}
             </div>
