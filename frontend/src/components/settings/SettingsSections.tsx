@@ -155,6 +155,11 @@ type ProfileSectionProps = {
     bio?: string;
     timezone?: string;
     avatar_url?: string;
+    company_name?: string;
+    company_type?: string;
+    company_website?: string;
+    onboarding_services?: string[];
+    onboarding_geographies?: string[];
     plan?: string;
     planStatus?: string;
     isAdmin?: boolean;
