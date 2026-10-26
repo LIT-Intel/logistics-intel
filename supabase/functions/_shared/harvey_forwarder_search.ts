@@ -15,7 +15,7 @@ export async function executeForwarderDirectorySearch(userClient:any,question:un
  if(!plan)return {ok:false,error:"invalid_query_plan"};
  let query=userClient.from("lit_company_directory")
     .select("id,company_name,city,state,vertical,top_forwarders,updated_at",{count:"exact"})
-    .contains("top_forwarders",[{name:plan.providerName}])
+    .contains("top_forwarders", JSON.stringify([{ name: plan.providerName }]))
     .order("company_name",{ascending:true});
  if(plan.state)query=query.eq("state",plan.state);
  // Exact company-role exclusion must be server-side, not a filter on a
