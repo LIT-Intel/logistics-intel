@@ -62,6 +62,7 @@ serve(async (req) => {
   }
 
   const admin = createClient(supabaseUrl, serviceKey);
+  const publicClient = createClient(supabaseUrl, anonKey);
 
   // ---- 1. Parse + validate body --------------------------------------------
   const body = await req.json().catch(() => ({})) as {
@@ -91,7 +92,7 @@ serve(async (req) => {
 
   // Friendly, server-side check before any account creation. The auth.users
   // BEFORE INSERT trigger remains authoritative across all signup channels.
-  const { data: workEmailAllowed, error: policyError } = await admin.rpc(
+  const { data: workEmailAllowed, error: policyError } = await publicClient.rpc(
     "lit_signup_email_allowed", { p_email: email },
   );
   if (policyError) {
