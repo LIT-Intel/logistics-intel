@@ -30,7 +30,16 @@ export async function executeForwarderDirectorySearch(userClient:any,question:un
      .not("vertical","ilike","%trucking%")
      .not("vertical","ilike","%broker%");
  const {data,error,count}=await query.limit(plan.limit);
- if(error)return {ok:false,error:"directory_query_failed"};
+ if(error){
+  // Safe diagnostic fields only. Never log auth tokens, query data, or customer PII.
+  console.error("[harvey_forwarder_search] directory_query_failed",{
+    code:error.code ?? null, message:error.message ?? null,
+    details:error.details ?? null, hint:error.hint ?? null,
+    state_filter:plan.state, has_competitor_exclusion:plan.excludeLogisticsCompanies,
+  });
+  return {ok:false,error:"directory_query_failed",error_code:error.code ?? null,
+    clarification:"Harvey could not query the historical provider directory. Please retry or contact support with the request ID."};
+ }
  const rows=(data||[]) as Row[];
  const matches=rows.filter(row=>Array.isArray(row.top_forwarders)&&
    row.top_forwarders.some(item=>item?.name===plan.providerName));
