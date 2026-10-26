@@ -77,6 +77,7 @@ import { lookupCoords } from '@/features/pulse/explore/coordLookup';
 // first-load bundle for this default landing route.
 const ExploreMap = lazy(() => import('@/features/pulse/explore/ExploreMapMaplibre'));
 import { normalizeCompanySearchResults, extractStateCode } from '@/lib/explorer/normalizeCompanySearch';
+import { isAirFreightResearchQuery, AIR_COVERAGE_EXPLANATION } from '@/lib/explorer/airCoverageGuard';
 import { normalizeName } from '@/lib/companyResolver';
 import { stashProfileSeed } from '@/lib/profileSeed';
 import { useUpgradeModal } from '@/components/billing/UpgradeModal';
@@ -449,6 +450,18 @@ export default function CompanySearchTab() {
   const runSearch = useCallback(async (rawQ, opts) => {
     const q = (rawQ ?? query).trim();
     if (!q) return;
+    // Do not present ocean BOL or directory estimates as verified air waybills.
+    if (isAirFreightResearchQuery(q)) {
+      setSubmitted(q);
+      setResults([]);
+      setMapPoints([]);
+      setAnalytics(null);
+      setError(AIR_COVERAGE_EXPLANATION);
+      setSearching(false);
+      setResearchListOpen(false);
+      setDetailRow(null);
+      return;
+    }
     // Decide the search TYPE. Respect an explicit toggle; otherwise auto-detect:
     // a company name → 'companies'; a location/industry query ("companies in
     // georgia") → 'market'.
