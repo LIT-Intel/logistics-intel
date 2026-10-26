@@ -14,6 +14,16 @@ One natural-language Search experience. User asks multi-filter freight question;
 - supabase/functions/_shared/harvey_forwarder_plan.ts and harvey_forwarder_search.ts are narrowly scoped to historical provider directory data.
 - docs/harvey/HARVEY_INTELLIGENCE_V2_EXECUTION_PLAN.md is the approved upstream plan; dependencies #175, #178, #182, #183, #184, #185, #186, #187 still govern release.
 
+## Owner directive: preserve existing Map (2026-10-26)
+- The current Explorer implementation, frontend/src/components/explorer/CompanySearchTab.jsx, **already keeps the map always visible** and overlays a collapsible result panel. The result panel already has LIST and CARDS controls.
+- **Do not remove, replace, or hide the map by default.** Map remains the primary interactive visualization, with List as an optional expanded/full-width research view. Cards remain supported.
+- Reuse CompanySearchTab's existing result rows, mapPoints, selected-company actions, and CompanyDetailPanel; do not create parallel independent result data.
+- Full-width List mode is an enhancement to existing LIST, not a new search route. Switching list/map preserves selected companies, filters, search session, map camera when possible, and Company Profile link.
+- Distinguish current existing *inline/collapsible list* from new research-focused *full-width list*, which must be built and tested before it can be claimed delivered.
+
+## Deferred research: CBP air waybill source investigation (NOT started)
+After all pending implementation, authenticated end-to-end tests, data quality gates and release verification are completed, conduct a separate public-source investigation of US CBP air manifest/air-waybill reporting, lawful access, geographical granularity (ZIP/city/state/airport), identities, dates, mode, and limitations. Inspect actual legally obtainable source records before hypothesizing how Revenue Vessel creates its outputs. User reports RV air estimates as accurate, but their method and underlying licensed sources are unverified. Do not begin this research or spend provider credits until the preceding work is complete.
+
 ## Screenshot-inspired behavior
 - Chat question and follow-up refinement on left; research summary with exact interpreted filters, data-through timestamp, caveats, suggested refinements.
 - On right, named saved result set with configurable columns, sortable/searchable rows, selection, CSV, Save to Command Center, and per-company drawer.
