@@ -77,6 +77,7 @@ import { lookupCoords } from '@/features/pulse/explore/coordLookup';
 // first-load bundle for this default landing route.
 const ExploreMap = lazy(() => import('@/features/pulse/explore/ExploreMapMaplibre'));
 import { normalizeCompanySearchResults, extractStateCode } from '@/lib/explorer/normalizeCompanySearch';
+import { isAirFreightResearchQuery, AIR_COVERAGE_EXPLANATION } from '@/lib/explorer/airCoverageGuard';
 import { normalizeName } from '@/lib/companyResolver';
 import { stashProfileSeed } from '@/lib/profileSeed';
 import { useUpgradeModal } from '@/components/billing/UpgradeModal';
@@ -306,6 +307,13 @@ export default function CompanySearchTab() {
   // Save-search-to-Library modal (saves the whole search + assigns to teammates).
   const [saveSearchOpen, setSaveSearchOpen] = useState(false);
   // Ask Harvey — AI analyst panel over the current results (Q&A + report + email).
+  // Research-focused List is an opt-in overlay. The existing map stays mounted
+  // underneath, and both modes consume the same filtered result collection.
+  const [researchListOpen, setResearchListOpen] = useState(false);
+  const [researchSort, setResearchSort] = useState('shipments');
+  const [researchDescending, setResearchDescending] = useState(true);
+  const [researchSelection, setResearchSelection] = useState([]);
+
   const [harveyOpen, setHarveyOpen] = useState(false);
   // In-search Library — saved + assigned lists; opening one runs it in place.
   const [libraryOpen, setLibraryOpen] = useState(false);
@@ -442,6 +450,21 @@ export default function CompanySearchTab() {
   const runSearch = useCallback(async (rawQ, opts) => {
     const q = (rawQ ?? query).trim();
     if (!q) return;
+    // Do not present ocean BOL or directory estimates as verified air waybills.
+    if (isAirFreightResearchQuery(q)) {
+      setSubmitted(q);
+      setSearchMode('companies');
+      setNaRouted(false);
+      setMarketFilters({});
+      setResults([]);
+      setMapPoints([]);
+      setAnalytics(null);
+      setError(AIR_COVERAGE_EXPLANATION);
+      setSearching(false);
+      setResearchListOpen(false);
+      setDetailRow(null);
+      return;
+    }
     // Decide the search TYPE. Respect an explicit toggle; otherwise auto-detect:
     // a company name → 'companies'; a location/industry query ("companies in
     // georgia") → 'market'.
@@ -1299,6 +1322,44 @@ export default function CompanySearchTab() {
     }
     return true;
   }), [displayResults, filters]);
+  const researchRows = useMemo(() => {
+    const rows = [...filteredResults];
+    const asNumber = (r, field) => {
+      const val = field === 'shipments'
+        ? (r.shipments ?? r.raw?.totalShipments ?? r.raw?.shipments)
+        : field === 'teu' ? r.teu : r.opportunity_composite_score;
+      return val == null || val === '' || !Number.isFinite(Number(val)) ? null : Number(val);
+    };
+    rows.sort((a, b) => {
+      if (researchSort === 'company') {
+        const cmp = String(a.company_name || '').localeCompare(String(b.company_name || ''));
+        return researchDescending ? -cmp : cmp;
+      }
+      const va = asNumber(a, researchSort);
+      const vb = asNumber(b, researchSort);
+      if (va == null && vb == null) return String(a.company_name || '').localeCompare(String(b.company_name || ''));
+      if (va == null) return 1;
+      if (vb == null) return -1;
+      return (researchDescending ? vb - va : va - vb) || String(a.company_name || '').localeCompare(String(b.company_name || ''));
+    });
+    return rows;
+  }, [filteredResults, researchSort, researchDescending]);
+  const researchSelectedRows = useMemo(() => {
+    const ids = new Set(researchSelection);
+    return researchRows.filter((r) => ids.has(String(r.id)));
+  }, [researchRows, researchSelection]);
+  const exportVisibleResearchCsv = useCallback(() => {
+    // CSV exports exactly the filtered rows in this client result window.
+    // It does NOT claim a full-universe, lane-specific or air-waybill ranking.
+    const quoted = (v) => '\"' + String(v ?? '').replace(/^\s*[=+@-]/, (x) => "'" + x).replace(/\"/g, '\"\"') + '\"';
+    const fields = ['Company','City','State','Country','Industry','Shipments (source unspecified)','TEU (source unspecified)','Opportunity score','Source key'];
+    const lines = [fields.map(quoted).join(','), ...researchRows.map((r) => [r.company_name,r.city,r.state,r.country,r.industry,r.shipments ?? '',r.teu ?? '',r.opportunity_composite_score ?? '',r.source_company_key].map(quoted).join(','))];
+    const blob = new Blob([lines.join('\\r\\n')], {type:'text/csv;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'lit-search-visible-results.csv'; a.click();
+    URL.revokeObjectURL(url);
+  }, [researchRows]);
+
   const anyFilter = Boolean(
     filters.country || filters.industry || filters.state || filters.savedOnly ||
     filters.minShipments > 0 || filters.minScore > 0 ||
@@ -1342,7 +1403,7 @@ export default function CompanySearchTab() {
   // Show the results panel once a search is active — so a 0-result or
   // couldn't-parse-the-query state renders real feedback instead of a blank
   // map (the "no results returning" report). Prev gate was hasResults only.
-  const showPanel = (hasResults || searchActive) && (panelOpen || !isMobile);
+  const showPanel = !researchListOpen && (hasResults || searchActive) && (panelOpen || !isMobile);
   // Market query that produced no usable filters → no fetch ever ran. Distinct
   // empty copy nudges the user toward a location/industry.
   const marketNoFilters = searchMode === 'market' && !naMarket && searchActive && !marketEnabled && !busy;
@@ -1610,6 +1671,50 @@ export default function CompanySearchTab() {
           ) : null}
         </div>
 
+        {/* Optional Dockhand-inspired research list. No additional query, no fake
+            shipment-mode claims, and the existing map remains mounted. */}
+        {hasResults && !researchListOpen ? (
+          <button type="button" onClick={() => { setResearchListOpen(true); setPanelOpen(true); }}
+            className="absolute right-3 top-3 z-20 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 shadow-lg hover:bg-slate-50"
+            aria-label="Open expanded list results"><ListIcon size={14} className="mr-1 inline" /> List view</button>
+        ) : null}
+        {researchListOpen && hasResults ? (
+          <div className="absolute inset-2 z-20 flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl sm:inset-3" role="region" aria-label="Expanded search results list">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-3">
+              <div>
+                <h2 className="font-display text-sm font-bold text-slate-900">Research results · {researchRows.length.toLocaleString()} loaded accounts</h2>
+                <p className="mt-1 text-xs text-slate-500">Showing the loaded, filtered search result set. Counts are source-reported and not verified air-waybill activity or a complete market ranking.</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="text-xs text-slate-600">Sort by <select aria-label="Sort research list" value={researchSort} onChange={(e) => setResearchSort(e.target.value)} className="rounded border border-slate-200 p-1.5"><option value="shipments">Shipments</option><option value="teu">TEU</option><option value="opportunity">Opportunity</option><option value="company">Company</option></select></label>
+                <button type="button" onClick={() => setResearchDescending((v) => !v)} className="rounded border border-slate-200 px-2 py-1.5 text-xs" aria-label="Reverse sort order">{researchDescending ? 'Descending' : 'Ascending'}</button>
+                <button type="button" onClick={exportVisibleResearchCsv} className="rounded border border-slate-200 px-2 py-1.5 text-xs">Download visible CSV</button>
+                <button type="button" onClick={() => { setResearchListOpen(false); setResearchSelection([]); }} className="rounded bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white">Back to Map</button>
+              </div>
+            </div>
+            <div className="border-b border-slate-100 px-4 py-2 text-xs text-slate-600">
+              <span className="font-semibold">Harvey research guidance:</span> Open a company to examine its verified source evidence, then use Ask Harvey for account analysis. Source dates, transport mode and air-waybill counts are not validated by this list alone.
+            </div>
+            <ResultFilters filters={filters} options={filterOptions} onChange={setFilters} total={displayResults.length} shown={researchRows.length} />
+            <div className="flex-1 overflow-auto">
+              <table className="min-w-[900px] w-full text-left text-xs">
+                <thead className="sticky top-0 bg-slate-100 text-slate-600"><tr><th className="p-3"><input type="checkbox" aria-label="Select all visible rows" checked={researchRows.length > 0 && researchRows.every((r) => researchSelection.includes(String(r.id)))} onChange={(e) => setResearchSelection(e.target.checked ? researchRows.map((r) => String(r.id)) : [])}/></th><th className="p-3">Company</th><th className="p-3">Location</th><th className="p-3">Industry</th><th className="p-3 text-right">Shipments</th><th className="p-3 text-right">TEU</th><th className="p-3 text-right">Score</th><th className="p-3">Actions</th></tr></thead>
+                <tbody>{researchRows.map((row) => <tr key={row.id} className="border-b border-slate-100 hover:bg-slate-50">
+                  <td className="p-3"><input type="checkbox" aria-label={`Select ${row.company_name}`} checked={researchSelection.includes(String(row.id))} onChange={(e) => setResearchSelection((prev) => e.target.checked ? [...prev, String(row.id)] : prev.filter((id) => id !== String(row.id)))}/></td>
+                  <td className="p-3 font-semibold text-blue-700"><button type="button" onClick={() => onRowClick(row)} className="text-left hover:underline">{row.company_name}</button></td>
+                  <td className="p-3">{[row.city,row.state].filter(Boolean).join(', ') || 'Unverified'}</td>
+                  <td className="p-3">{row.industry || '—'}</td>
+                  <td className="p-3 text-right tabular-nums">{row.shipments == null ? '—' : Number(row.shipments).toLocaleString()}</td>
+                  <td className="p-3 text-right tabular-nums">{row.teu == null ? '—' : Number(row.teu).toLocaleString()}</td>
+                  <td className="p-3 text-right tabular-nums">{row.opportunity_composite_score == null ? '—' : Math.round(Number(row.opportunity_composite_score))}</td>
+                  <td className="p-3"><button type="button" onClick={(e) => onSave(row,e)} className="text-blue-700 hover:underline">Save CRM</button></td>
+                </tr>)}</tbody>
+              </table>
+            </div>
+            <div className="flex items-center justify-between border-t border-slate-200 px-4 py-2 text-xs text-slate-500"><span>{researchSelectedRows.length} selected · selection stays local until a verified bulk action is available</span><button type="button" onClick={() => {setResearchListOpen(false);setHarveyOpen(true);}} className="font-semibold text-blue-700">Ask Harvey about these results</button></div>
+          </div>
+        ) : null}
+
         {/* Results panel — slides up from bottom. Header always present,
             body only rendered when open. */}
         {showPanel ? (
@@ -1783,9 +1888,9 @@ export default function CompanySearchTab() {
               <X size={16} />
             </button>
             <InsightsPanel
-              rows={filteredResults}
+              rows={researchSelection.length ? researchSelectedRows : filteredResults}
               insights={{}}
-              filters={searchMode === 'market' ? marketFilters : { name: submitted }}
+              filters={{ ...(searchMode === 'market' ? marketFilters : { name: submitted }), research_scope: researchSelection.length ? 'selected_loaded_rows' : 'filtered_loaded_rows', result_count: researchSelection.length ? researchSelectedRows.length : filteredResults.length }}
               requireCoach={() => true}
               requirePdf={() => true}
             />
