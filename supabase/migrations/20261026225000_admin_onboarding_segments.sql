@@ -27,7 +27,7 @@ language sql stable security definer set search_path = '' as $$
  ) grouped
  where exists (select 1 from public.platform_admins a where a.user_id=auth.uid())
  group by grouped.segment_type,grouped.segment_value
- order by grouped.segment_type,users desc;
+ order by grouped.segment_type,count(*) desc;
 $$;
 revoke all on function public.lit_admin_onboarding_segments() from public,anon;
 grant execute on function public.lit_admin_onboarding_segments() to authenticated;
