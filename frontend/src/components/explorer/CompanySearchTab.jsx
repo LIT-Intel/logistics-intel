@@ -1370,21 +1370,32 @@ export default function CompanySearchTab() {
     });
     return rows;
   }, [filteredResults, researchSort, researchDescending]);
+  const structuredRows = useMemo(() => {
+    if (!researchResponse?.ok) return null;
+    return (researchResponse.rows || []).map((r) => ({
+      id: r.id, company_id: r.id, company_name: r.company_name,
+      city: r.city, state: r.state, industry: r.vertical,
+      source: 'historical_provider_directory', source_company_key: null,
+      shipments: null, teu: null, opportunity_composite_score: null,
+      raw: r, is_saved: false,
+    }));
+  }, [researchResponse]);
+  const visibleResearchRows = structuredRows ?? researchRows;
   const researchSelectedRows = useMemo(() => {
     const ids = new Set(researchSelection);
-    return researchRows.filter((r) => ids.has(String(r.id)));
-  }, [researchRows, researchSelection]);
+    return visibleResearchRows.filter((r) => ids.has(String(r.id)));
+  }, [visibleResearchRows, researchSelection]);
   const exportVisibleResearchCsv = useCallback(() => {
     // CSV exports exactly the filtered rows in this client result window.
     // It does NOT claim a full-universe, lane-specific or air-waybill ranking.
     const quoted = (v) => '\"' + String(v ?? '').replace(/^\s*[=+@-]/, (x) => "'" + x).replace(/\"/g, '\"\"') + '\"';
     const fields = ['Company','City','State','Country','Industry','Shipments (source unspecified)','TEU (source unspecified)','Opportunity score','Source key'];
-    const lines = [fields.map(quoted).join(','), ...researchRows.map((r) => [r.company_name,r.city,r.state,r.country,r.industry,r.shipments ?? '',r.teu ?? '',r.opportunity_composite_score ?? '',r.source_company_key].map(quoted).join(','))];
+    const lines = [fields.map(quoted).join(','), ...visibleResearchRows.map((r) => [r.company_name,r.city,r.state,r.country,r.industry,r.shipments ?? '',r.teu ?? '',r.opportunity_composite_score ?? '',r.source_company_key].map(quoted).join(','))];
     const blob = new Blob([lines.join('\\r\\n')], {type:'text/csv;charset=utf-8'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = 'lit-search-visible-results.csv'; a.click();
     URL.revokeObjectURL(url);
-  }, [researchRows]);
+  }, [visibleResearchRows]);
 
   const anyFilter = Boolean(
     filters.country || filters.industry || filters.state || filters.savedOnly ||
@@ -1708,7 +1719,7 @@ export default function CompanySearchTab() {
           <div className="absolute inset-2 z-20 flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl sm:inset-3" role="region" aria-label="Expanded search results list">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-3">
               <div>
-                <h2 className="font-display text-sm font-bold text-slate-900">Research results · {researchRows.length.toLocaleString()} loaded accounts</h2>
+                <h2 className="font-display text-sm font-bold text-slate-900">Research results · {visibleResearchRows.length.toLocaleString()} loaded accounts</h2>
                 <p className="mt-1 text-xs text-slate-500">Showing the loaded, filtered search result set. Counts are source-reported and not verified air-waybill activity or a complete market ranking.</p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -1739,28 +1750,24 @@ export default function CompanySearchTab() {
                   <p className="mt-1">{researchResponse.summary?.explanation}</p>
                   <p className="mt-1">Matched: {researchResponse.result_count ?? 'unknown'} · Returned: {researchResponse.returned ?? 0} · {researchResponse.evidence?.quality_status || 'Source coverage unknown'}</p>
                   <p className="mt-1 text-amber-700">{researchResponse.summary?.caveats?.join(' ')}</p>
-                  <div className="mt-2 max-h-44 overflow-auto">
-                    {(researchResponse.rows || []).map((r) => <div key={r.id} className="border-t border-slate-100 py-1">
-                      <span className="font-semibold">{r.company_name}</span> · {[r.city, r.state].filter(Boolean).join(', ')}
-                    </div>)}
-                  </div>
-                  <p className="mt-1 text-slate-500">These historical provider matches are separate from the current map/list search results. No verified lane, current incumbent, or TEU ranking is implied.</p>
+                  <p className="mt-2">These records describe historical provider associations. Review the matching companies in the single table below, then open an account to inspect its available evidence. They do not establish a current incumbent or a verified lane.</p>
+                  <p className="mt-1 text-blue-700">Suggested next step: open a company profile before planning outreach.</p>
                 </> : <p className="text-amber-800">{researchResponse.clarification || researchResponse.error || 'Research unavailable.'}</p>}
               </div> : null}
             </div>
-            <ResultFilters filters={filters} options={filterOptions} onChange={setFilters} total={displayResults.length} shown={researchRows.length} />
+            <ResultFilters filters={filters} options={filterOptions} onChange={setFilters} total={displayResults.length} shown={visibleResearchRows.length} />
             <div className="flex-1 overflow-auto">
               <table className="min-w-[900px] w-full text-left text-xs">
-                <thead className="sticky top-0 bg-slate-100 text-slate-600"><tr><th className="p-3"><input type="checkbox" aria-label="Select all visible rows" checked={researchRows.length > 0 && researchRows.every((r) => researchSelection.includes(String(r.id)))} onChange={(e) => setResearchSelection(e.target.checked ? researchRows.map((r) => String(r.id)) : [])}/></th><th className="p-3">Company</th><th className="p-3">Location</th><th className="p-3">Industry</th><th className="p-3 text-right">Shipments</th><th className="p-3 text-right">TEU</th><th className="p-3 text-right">Score</th><th className="p-3">Actions</th></tr></thead>
-                <tbody>{researchRows.map((row) => <tr key={row.id} className="border-b border-slate-100 hover:bg-slate-50">
+                <thead className="sticky top-0 bg-slate-100 text-slate-600"><tr><th className="p-3"><input type="checkbox" aria-label="Select all visible rows" checked={researchRows.length > 0 && visibleResearchRows.every((r) => researchSelection.includes(String(r.id)))} onChange={(e) => setResearchSelection(e.target.checked ? visibleResearchRows.map((r) => String(r.id)) : [])}/></th><th className="p-3">Company</th><th className="p-3">Location</th><th className="p-3">Industry</th><th className="p-3 text-right">Shipments</th><th className="p-3 text-right">TEU</th><th className="p-3 text-right">Score</th><th className="p-3">Actions</th></tr></thead>
+                <tbody>{visibleResearchRows.map((row) => <tr key={row.id} className="border-b border-slate-100 hover:bg-slate-50">
                   <td className="p-3"><input type="checkbox" aria-label={`Select ${row.company_name}`} checked={researchSelection.includes(String(row.id))} onChange={(e) => setResearchSelection((prev) => e.target.checked ? [...prev, String(row.id)] : prev.filter((id) => id !== String(row.id)))}/></td>
-                  <td className="p-3 font-semibold text-blue-700"><button type="button" onClick={() => onRowClick(row)} className="text-left hover:underline">{row.company_name}</button></td>
+                  <td className="p-3 font-semibold text-blue-700"><button type="button" onClick={() => { setResearchListOpen(false); onRowClick(row); }} className="text-left hover:underline">{row.company_name}</button></td>
                   <td className="p-3">{[row.city,row.state].filter(Boolean).join(', ') || 'Unverified'}</td>
                   <td className="p-3">{row.industry || '—'}</td>
                   <td className="p-3 text-right tabular-nums">{row.shipments == null ? '—' : Number(row.shipments).toLocaleString()}</td>
                   <td className="p-3 text-right tabular-nums">{row.teu == null ? '—' : Number(row.teu).toLocaleString()}</td>
                   <td className="p-3 text-right tabular-nums">{row.opportunity_composite_score == null ? '—' : Math.round(Number(row.opportunity_composite_score))}</td>
-                  <td className="p-3"><button type="button" onClick={(e) => onSave(row,e)} className="text-blue-700 hover:underline">Save CRM</button></td>
+                  <td className="p-3">{structuredRows ? <button type="button" onClick={() => { setResearchListOpen(false); onRowClick(row); }} className="text-blue-700 hover:underline">View details</button> : <button type="button" onClick={(e) => onSave(row,e)} className="text-blue-700 hover:underline">Save CRM</button>}</td>
                 </tr>)}</tbody>
               </table>
             </div>
