@@ -14,7 +14,7 @@ export async function executeForwarderDirectorySearch(userClient:any,question:un
  const plan=validateForwarderSearchPlan(result.plan);
  if(!plan)return {ok:false,error:"invalid_query_plan"};
  let query=userClient.from("lit_company_directory")
-    .select("id,company_name,city,state,vertical,top_forwarders,updated_at",{count:"exact"})
+    .select("id,company_name,city,state,vertical,top_forwarders,updated_at")
     .contains("top_forwarders", JSON.stringify([{ name: plan.providerName }]))
     .order("company_name",{ascending:true});
  if(plan.state)query=query.eq("state",plan.state);
@@ -29,7 +29,7 @@ export async function executeForwarderDirectorySearch(userClient:any,question:un
      .not("vertical","ilike","%forward%")
      .not("vertical","ilike","%trucking%")
      .not("vertical","ilike","%broker%");
- const {data,error,count}=await query.limit(plan.limit);
+ const {data,error}=await query.limit(plan.limit + 1);
  if(error){
   // Safe diagnostic fields only. Never log auth tokens, query data, or customer PII.
   console.error("[harvey_forwarder_search] directory_query_failed",{
@@ -40,7 +40,9 @@ export async function executeForwarderDirectorySearch(userClient:any,question:un
   return {ok:false,error:"directory_query_failed",error_code:error.code ?? null,
     clarification:"Harvey could not query the historical provider directory. Please retry or contact support with the request ID."};
  }
- const rows=(data||[]) as Row[];
+ const rawRows=(data||[]) as Row[];
+ const hasMore=rawRows.length>plan.limit;
+ const rows=rawRows.slice(0,plan.limit);
  const matches=rows.filter(row=>Array.isArray(row.top_forwarders)&&
    row.top_forwarders.some(item=>item?.name===plan.providerName));
  return {ok:true,
@@ -57,12 +59,12 @@ export async function executeForwarderDirectorySearch(userClient:any,question:un
       teu_verified:false,
     },
   })),
-  count:count??null,
+  count:null, // Exact universe counts require a separate indexed aggregate.
   returned:matches.length,
-  truncated:count!==null&&count>matches.length,
+  truncated:hasMore,
   source:"lit_company_directory.top_forwarders",
   provenance:"Historical V6 CSV company-wide provider summary; not current or lane-specific BOL evidence",
-  quality_notice:"Reported TEU is withheld pending source verification (#178). Company role exclusions use listed verticals; unknown categories are omitted when competitor exclusion is requested.",
+  quality_notice:"Total match count was not computed; only the first bounded page is returned. Reported TEU is withheld pending source verification (#178). Company role exclusions use listed verticals; unknown categories are omitted when competitor exclusion is requested.",
   next_steps:["Review selected company profiles and provider source coverage","Refine location and provider filters","Use verified BOL source tools for lane-specific incumbent or TEU questions"],
  };
 }
