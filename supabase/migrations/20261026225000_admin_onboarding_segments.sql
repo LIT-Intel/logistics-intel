@@ -8,6 +8,9 @@ language sql stable security definer set search_path = '' as $$
    select 'company_type'::text segment_type,coalesce(nullif(p.company_type,''),'Unspecified')::text segment_value
      from public.profiles p where p.onboarding_completed_at is not null
    union all
+   select 'signup_goal'::text,coalesce(nullif(p.onboarding_preferences->>'signup_goal',''),'Unspecified')
+     from public.profiles p where p.onboarding_completed_at is not null
+   union all
    select 'team'::text,coalesce(nullif(p.onboarding_preferences->>'team',''),'Unspecified')
      from public.profiles p where p.onboarding_completed_at is not null
    union all
