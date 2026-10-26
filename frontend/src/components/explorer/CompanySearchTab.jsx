@@ -1371,7 +1371,7 @@ export default function CompanySearchTab() {
     return rows;
   }, [filteredResults, researchSort, researchDescending]);
   const structuredRows = useMemo(() => {
-    if (!researchResponse?.ok) return null;
+    if (!researchResponse?.ok || researchResponse.mode === 'intent_planning_only') return null;
     return (researchResponse.rows || []).map((r) => ({
       id: r.id, company_id: r.id, company_name: r.company_name,
       city: r.city, state: r.state, industry: r.vertical,
@@ -1750,6 +1750,7 @@ export default function CompanySearchTab() {
                   <p className="mt-1">{researchResponse.summary?.explanation}</p>
                   <p className="mt-2 text-slate-500">{researchResponse.returned ?? 0} records shown · Historical provider directory · Total matching universe not verified</p>
                   <p className="mt-1 text-amber-700">{researchResponse.summary?.caveats?.join(' ')}</p>
+                  {researchResponse.mode === 'intent_planning_only' ? <p className="mt-2 text-blue-700">{researchResponse.suggestions?.[0]}</p> : null}
                   <p className="mt-2 text-blue-700">You can open any company below to review its supporting profile. For a different state or provider, refine your question above.</p>
                 </> : <p className="text-amber-800">{researchResponse.clarification || researchResponse.error || 'Research unavailable.'}</p>}
               </div> : null}
