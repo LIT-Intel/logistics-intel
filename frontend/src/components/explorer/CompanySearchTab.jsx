@@ -1927,7 +1927,7 @@ export default function CompanySearchTab() {
 
         {/* Ask Harvey — floating trigger + right-side AI analyst panel over the
             current results (Q&A · generate report · email/share to a teammate). */}
-        {hasResults && !harveyOpen ? (
+        {hasResults && !harveyOpen && !researchListOpen ? (
           <button
             type="button"
             onClick={() => setHarveyOpen(true)}
