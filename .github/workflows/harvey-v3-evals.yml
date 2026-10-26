@@ -1,0 +1,39 @@
+name: Harvey V3 Evaluation Foundation
+
+on:
+  push:
+    branches:
+      - feat/harvey-v3-evaluation-foundation-20261026
+  pull_request:
+    paths:
+      - 'scripts/harvey/**'
+      - 'frontend/src/lib/harvey/evals/**'
+      - '.github/workflows/harvey-v3-evals.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fixture-and-scorer-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020f2
+        with:
+          node-version: '22'
+      - name: Run offline scorer regression tests
+        run: node --test scripts/harvey/score-evals.test.mjs
+      - name: Verify scenario JSON counts and unique questions
+        run: |
+          node --input-type=module -e '
+            import fs from "node:fs";
+            const s=JSON.parse(fs.readFileSync("frontend/src/lib/harvey/evals/harvey_v3_scenarios.json","utf8"));
+            if(s.scenario_count!==1000 || s.scenarios.length!==1000) process.exit(1);
+            if(new Set(s.scenarios.map(x=>x.id)).size!==1000) process.exit(1);
+            if(new Set(s.scenarios.map(x=>x.question.toLowerCase().trim())).size!==1000) process.exit(1);
+            console.log("Validated 1000 unique scenarios");
+          '
