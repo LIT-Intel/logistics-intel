@@ -313,6 +313,26 @@ export default function CompanySearchTab() {
   const [researchSort, setResearchSort] = useState('shipments');
   const [researchDescending, setResearchDescending] = useState(true);
   const [researchSelection, setResearchSelection] = useState([]);
+  const [researchQuestion, setResearchQuestion] = useState('');
+  const [researchResponse, setResearchResponse] = useState(null);
+  const [researchBusy, setResearchBusy] = useState(false);
+  const runStructuredResearch = useCallback(async () => {
+    const question = researchQuestion.trim();
+    if (!question || researchBusy) return;
+    setResearchBusy(true);
+    setResearchResponse(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('harvey-copilot', {
+        body: { action: 'research_search', question },
+      });
+      if (error) throw new Error(data?.clarification || data?.error || error.message);
+      setResearchResponse(data ?? { ok: false, clarification: 'No research response returned.' });
+    } catch (err) {
+      setResearchResponse({ ok: false, clarification: err?.message || 'Harvey research is unavailable.' });
+    } finally {
+      setResearchBusy(false);
+    }
+  }, [researchQuestion, researchBusy]);
 
   const [harveyOpen, setHarveyOpen] = useState(false);
   // In-search Library — saved + assigned lists; opening one runs it in place.
@@ -1694,6 +1714,33 @@ export default function CompanySearchTab() {
             </div>
             <div className="border-b border-slate-100 px-4 py-2 text-xs text-slate-600">
               <span className="font-semibold">Harvey research guidance:</span> Open a company to examine its verified source evidence, then use Ask Harvey for account analysis. Source dates, transport mode and air-waybill counts are not validated by this list alone.
+            </div>
+            <div className="border-b border-slate-200 bg-blue-50/50 px-4 py-3">
+              <form onSubmit={(e) => { e.preventDefault(); runStructuredResearch(); }} className="flex flex-wrap items-center gap-2">
+                <SparklesIcon size={15} className="text-blue-700" />
+                <label htmlFor="harvey-structured-question" className="text-xs font-semibold text-slate-800">Harvey structured research</label>
+                <input id="harvey-structured-question" value={researchQuestion} onChange={(e) => setResearchQuestion(e.target.value)}
+                  placeholder="Find 25 Georgia companies using DSV" maxLength={1500}
+                  className="min-w-[220px] flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900" />
+                <button type="submit" disabled={researchBusy || !researchQuestion.trim()}
+                  className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">
+                  {researchBusy ? 'Researching…' : 'Research'}
+                </button>
+              </form>
+              {researchResponse ? <div aria-live="polite" className="mt-2 rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-700">
+                {researchResponse.ok ? <>
+                  <p className="font-bold text-slate-900">{researchResponse.summary?.title || 'Historical provider research'}</p>
+                  <p className="mt-1">{researchResponse.summary?.explanation}</p>
+                  <p className="mt-1">Matched: {researchResponse.result_count ?? 'unknown'} · Returned: {researchResponse.returned ?? 0} · {researchResponse.evidence?.quality_status || 'Source coverage unknown'}</p>
+                  <p className="mt-1 text-amber-700">{researchResponse.summary?.caveats?.join(' ')}</p>
+                  <div className="mt-2 max-h-44 overflow-auto">
+                    {(researchResponse.rows || []).map((r) => <div key={r.id} className="border-t border-slate-100 py-1">
+                      <span className="font-semibold">{r.company_name}</span> · {[r.city, r.state].filter(Boolean).join(', ')}
+                    </div>)}
+                  </div>
+                  <p className="mt-1 text-slate-500">These historical provider matches are separate from the current map/list search results. No verified lane, current incumbent, or TEU ranking is implied.</p>
+                </> : <p className="text-amber-800">{researchResponse.clarification || researchResponse.error || 'Research unavailable.'}</p>}
+              </div> : null}
             </div>
             <ResultFilters filters={filters} options={filterOptions} onChange={setFilters} total={displayResults.length} shown={researchRows.length} />
             <div className="flex-1 overflow-auto">
