@@ -76,7 +76,7 @@ export default function OnboardingPage() {
    </div>
   </section>
   <aside className="relative hidden min-h-screen overflow-hidden bg-[#0b1c31] text-white lg:flex lg:flex-col lg:justify-between" aria-label="Logistics Intel branded freight terminal">
-    <div className="absolute inset-0 bg-cover bg-center" style={{backgroundImage:"url('https://images.unsplash.com/photo-1741792696266-4c4d57d88729?auto=format&fit=crop&w=1300&q=85')"}} aria-hidden="true" />
+    <div className="absolute inset-0 bg-cover bg-center" style={{backgroundImage:"url('https://images.unsplash.com/photo-1606964212858-c215029db704?auto=format&fit=crop&w=1300&q=85')"}} aria-hidden="true" />
     <div className="absolute inset-0 bg-gradient-to-b from-[#06172b]/70 via-[#0b2342]/25 to-[#061225]/95" aria-hidden="true" />
     <div className="relative z-10 px-10 pt-12 xl:px-14">
       <img src="/lit-logo-horizontal.svg" alt="Logistics Intel" className="h-10 w-auto max-w-[245px] object-contain object-left" />
