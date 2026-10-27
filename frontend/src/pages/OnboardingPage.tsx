@@ -75,18 +75,16 @@ export default function OnboardingPage() {
     {step===4&&<button type="button" disabled={saving} className="mt-4 w-full text-sm text-slate-500" onClick={()=>{setGeographies([]);setStep(5)}}>Skip countries</button>}
    </div>
   </section>
-  <aside className="relative hidden min-h-screen overflow-hidden bg-[#0c1424] text-white lg:flex lg:flex-col lg:justify-end" aria-label="Logistics Intel branding">
-    <div className="absolute inset-0 bg-gradient-to-br from-[#164d6a] via-[#122941] to-[#090f1d]" />
-    <div className="absolute -right-40 top-[-11%] h-[80%] w-[90%] rotate-[-20deg] rounded-[8rem] border border-cyan-400/20 bg-cyan-400/5 blur-3xl" />
-    <div className="absolute left-[9%] right-[-15%] top-[17%] rotate-[-10deg] space-y-3" aria-hidden="true">
-      {["SHIPMENT INTELLIGENCE","GLOBAL TRADE SIGNALS","YOUR NEXT OPPORTUNITY"].map((label,i)=><div key={label} className={`relative flex h-28 items-center overflow-hidden rounded-lg border-l-[9px] border-cyan-300/40 px-9 shadow-2xl ${i===1?"bg-[#173d57]":"bg-[#243749]"}`} style={{backgroundImage:"repeating-linear-gradient(90deg,transparent 0px,transparent 17px,rgba(0,0,0,.20) 18px,rgba(255,255,255,.04) 21px,transparent 24px)"}}>
-       <span className="text-[13px] font-black tracking-[.2em] text-white/80">{label}</span>
-      </div>)}
+  <aside className="relative hidden min-h-screen overflow-hidden bg-[#0b1c31] text-white lg:flex lg:flex-col lg:justify-between" aria-label="Logistics Intel branded freight terminal">
+    <div className="absolute inset-0 bg-cover bg-center" style={{backgroundImage:"url('https://images.unsplash.com/photo-1741792696266-4c4d57d88729?auto=format&fit=crop&w=1300&q=85')"}} aria-hidden="true" />
+    <div className="absolute inset-0 bg-gradient-to-b from-[#06172b]/70 via-[#0b2342]/25 to-[#061225]/95" aria-hidden="true" />
+    <div className="relative z-10 px-10 pt-12 xl:px-14">
+      <img src="/lit-logo-horizontal.svg" alt="Logistics Intel" className="h-10 w-auto max-w-[245px] object-contain object-left" />
     </div>
-    <div className="relative z-10 bg-gradient-to-t from-[#090f1d] via-[#090f1d]/95 to-transparent px-12 pb-14 pt-32">
-      <img src="/lit-logo-horizontal.svg" alt="Logistics Intel" className="mb-7 h-9 w-auto max-w-[220px]" />
-      <h2 className="max-w-md text-4xl font-bold leading-tight">From shipment signal to sales action.</h2>
-      <p className="mt-5 max-w-sm text-sm leading-6 text-slate-300">Your next account is hiding in the data. Let's find it together.</p>
+    <div className="relative z-10 px-10 pb-16 xl:px-14">
+      <div className="mb-6 h-[2px] w-10 bg-cyan-300/85" />
+      <h2 className="max-w-md text-4xl font-bold leading-tight tracking-tight xl:text-5xl">From shipment signal to sales action.</h2>
+      <p className="mt-6 max-w-sm text-base leading-7 text-slate-200">Your next account is hiding in the data. Let’s find it together.</p>
     </div>
   </aside>
  </main>;
