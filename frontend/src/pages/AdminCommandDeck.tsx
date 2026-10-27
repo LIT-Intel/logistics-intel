@@ -31,6 +31,7 @@ import {
  * door that replaces eight sidebar entries.
  */
 
+type OnboardingSegment = {segment_type:string;segment_value:string;users:number};
 type User360 = {
   user_id: string;
   email: string;
@@ -391,6 +392,7 @@ export default function AdminCommandDeck() {
   const [params, setParams] = useSearchParams();
   const section = (params.get("section") as SectionId) || "overview";
   const [users, setUsers] = useState<User360[]>([]);
+  const [onboardingSegments,setOnboardingSegments] = useState<OnboardingSegment[]>([]);
   const [invites, setInvites] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
@@ -703,6 +705,7 @@ export default function AdminCommandDeck() {
         supabase.rpc("lit_admin_users_360"),
         supabase.from("lit_demo_invites").select("status, opened_at, signed_up_at, upgraded_at").limit(1000),
       ]);
+      supabase.rpc("lit_admin_onboarding_segments").then(({data,error})=>{ if(!error) setOnboardingSegments((data as OnboardingSegment[]) || []); }).catch(()=>{});
       setUsers(((u.data as User360[]) || []).map((r) => ({
         ...r,
         activity_30d: Number(r.activity_30d) || 0,
@@ -1450,6 +1453,20 @@ export default function AdminCommandDeck() {
             </div>
           )}
 
+          {section === "marketing" && (
+            <DeckCard title="Signup qualification" subtitle="Aggregated onboarding insights for platform administrators. No individual user data shown.">
+              {onboardingSegments.length === 0 ? <p className="py-4 text-sm text-slate-500">No completed onboarding data available.</p> :
+                <div className="grid gap-4 md:grid-cols-3">{["signup_stage","signup_goal","company_type","team","service"].map(group=>
+                  <div key={group} className="rounded-xl border border-slate-200 bg-white p-4">
+                    <h3 className="mb-3 text-sm font-semibold capitalize">{group.replaceAll("_"," ")}</h3>
+                    {onboardingSegments.filter(x=>x.segment_type===group).slice(0,12).map(x=>
+                      <div key={x.segment_value} className="flex justify-between gap-3 border-b border-slate-100 py-2 text-xs">
+                        <span>{x.segment_value}</span><strong>{x.users}</strong>
+                      </div>)}
+                  </div>
+                )}</div>}
+            </DeckCard>
+          )}
           {section === "marketing" && (
             <div className="space-y-4">
               <DeckCard title="Campaign funnel" subtitle="Invited → delivered → opened → clicked → signed up → trial → converted, with attributed MRR">

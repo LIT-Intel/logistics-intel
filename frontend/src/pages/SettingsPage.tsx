@@ -136,7 +136,7 @@ export default function SettingsPage() {
     // profiles > auth.users.user_metadata > email-derived fallback.
     const { data: baseProfileData, error: baseProfileError } = await supabase
       .from("profiles")
-      .select("id, full_name, company_name, organization_name")
+      .select("id, full_name, company_name, company_type, organization_name, onboarding_preferences")
       .eq("id", uid)
       .maybeSingle();
     requireNoError(baseProfileError, "Failed loading base profile");
@@ -159,7 +159,7 @@ export default function SettingsPage() {
     // metadata when the table value is empty.
     const profileName =
       baseProfileData?.full_name || userProfileData?.full_name || authFullName;
-    const profileTitle = userProfileData?.title || meta.role || "";
+    const profileTitle = userProfileData?.title || baseProfileData?.onboarding_preferences?.title || meta.role || "";
     const profilePhone = userProfileData?.phone || meta.phone || "";
     const profileLocation = userProfileData?.location || meta.location || "";
     const profileBio = userProfileData?.bio || meta.bio || "";
@@ -176,6 +176,11 @@ export default function SettingsPage() {
       setProfile({
         name: profileName,
         title: profileTitle,
+        company_name: baseProfileData?.company_name || "",
+        company_type: baseProfileData?.company_type || "",
+        company_website: baseProfileData?.onboarding_preferences?.company_website || "",
+        onboarding_services: baseProfileData?.onboarding_preferences?.services || [],
+        onboarding_geographies: baseProfileData?.onboarding_preferences?.sales_geographies || [],
         phone: profilePhone,
         location: profileLocation,
         bio: profileBio,

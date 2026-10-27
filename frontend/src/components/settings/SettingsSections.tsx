@@ -155,6 +155,11 @@ type ProfileSectionProps = {
     bio?: string;
     timezone?: string;
     avatar_url?: string;
+    company_name?: string;
+    company_type?: string;
+    company_website?: string;
+    onboarding_services?: string[];
+    onboarding_geographies?: string[];
     plan?: string;
     planStatus?: string;
     isAdmin?: boolean;
@@ -366,6 +371,16 @@ export function ProfileSection({
           <button onClick={handleSave} disabled={!dirty || saving} style={{ ...sBtnDark, opacity: !dirty ? 0.5 : 1 }}>
             {saving ? "Saving…" : "Save changes"}
           </button>
+        </div>
+      </SCard>
+
+      <SCard title="Company & sales profile" subtitle="Captured during first-login setup. Contact your workspace administrator to update company details.">
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(210px,1fr))",gap:14}}>
+          <SField label="Company name"><SInput readOnly value={initialData?.company_name || ""} /></SField>
+          <SField label="Business type"><SInput readOnly value={initialData?.company_type || ""} /></SField>
+          <SField label="Company website"><SInput readOnly value={initialData?.company_website || ""} /></SField>
+          <SField label="Services offered"><SInput readOnly value={(initialData?.onboarding_services || []).join(", ")} /></SField>
+          <SField label="Target countries"><SInput readOnly value={(initialData?.onboarding_geographies || []).join(", ")} /></SField>
         </div>
       </SCard>
 
