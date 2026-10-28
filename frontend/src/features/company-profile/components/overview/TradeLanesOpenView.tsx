@@ -528,11 +528,11 @@ export function TradeLanesOpenView(props: {
           <div className="flex gap-3 border-t border-[rgba(255,255,255,0.08)] px-4 py-2.5 text-[11px] text-[#94a3b8]">
             <span className="flex items-center gap-1.5">
               <span className="h-[3px] w-[18px] rounded-[2px] bg-[#94a3b8]" />
-              Line weight = share
+              Line weight = observed BOL share
             </span>
             <span className="flex items-center gap-1.5">
               <span className="h-2 w-2 rounded-full border-2 border-white" />
-              Origin port
+              Origin country (illustrative)
             </span>
           </div>
         </div>
@@ -610,7 +610,7 @@ export function TradeLanesOpenView(props: {
                 className="mt-1.5 tabular-nums"
                 style={{ fontFamily: FONT_MONO, fontWeight: 500, fontSize: 11, color: "#64748b" }}
               >
-                {card.slv.sub} · {card.slv.share} of {view.unitM} ·{" "}
+                {card.slv.sub} · {card.slv.share} of observed BOLs (not total reported volume) ·{" "}
                 <span style={{ color: card.slv.deltaFg }}>{card.slv.delta} YoY</span>
               </div>
             </div>
