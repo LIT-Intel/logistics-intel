@@ -181,7 +181,7 @@ export function CompanyProfileWorkspace({
       {workspace.dataError && <p role="alert" className="mt-3 text-xs text-amber-700">Stored history could not be loaded completely. Any displayed BOLs are a snapshot sample. Refresh to retry.</p>}
       <p className="mt-3 text-xs text-slate-500" role="status">
         {view.provenance}.
-        {lanesView && <> Lane breakdown: {lanesView.coverage.observedShipments.toLocaleString()} observed / {lanesView.coverage.reportedShipments.toLocaleString()} total shipments. {Math.max(0,lanesView.coverage.reportedShipments-lanesView.coverage.observedShipments).toLocaleString()} have no verified lane breakdown. Lane counts are not extrapolated.</>}
+        {lanesView && <> Lane breakdown: {lanesView.coverage.observedShipments.toLocaleString()} observed / {lanesView.coverage.reportedShipments.toLocaleString()} total shipments. {Math.max(0,lanesView.coverage.reportedShipments-lanesView.coverage.observedShipments).toLocaleString()} have no verified lane breakdown. Lane shares are calculated only from observed BOLs, not the reported company-wide total. Full origin-country volumes are unavailable without lane-level monthly records.</>}
       </p>
       {view.sourceConflict && <p className="mt-2 text-xs text-amber-700" role="status">Some BOL or estimated TEU counts exceed the source monthly totals. Source totals are retained; document coverage needs review.</p>}
 
