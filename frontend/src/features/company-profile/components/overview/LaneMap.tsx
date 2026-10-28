@@ -76,22 +76,39 @@ export function LaneMap({
     [view.lanes],
   );
 
-  if (!hasGeo) return (
-    <section aria-label="Trade lane coverage" className="rounded-2xl border border-slate-200 bg-white px-6 py-5 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-[.12em] text-slate-500">Trade lane intelligence</p>
-          <h3 className="mt-1 text-base font-semibold text-slate-900">Shipment activity recorded</h3>
-          <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">Origin and destination routes are not available for this selected period. Historical activity is retained in the monthly shipment trend.</p>
+  if (!hasGeo) {
+    const months = view.cadence;
+    const max = Math.max(1, ...months.map(m => Math.max(m.v, m.pv ?? 0)));
+    return (
+      <section aria-label="Historical shipment activity" className="rounded-2xl border border-slate-200 bg-white px-6 py-5 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[.12em] text-slate-500">Historical freight intelligence</p>
+            <h3 className="mt-1 text-lg font-semibold text-slate-900">Shipment activity by month</h3>
+            <p className="mt-1 text-sm text-slate-600">Reported company-wide shipment history · {view.periodLabel}</p>
+          </div>
+          <div className="rounded-xl bg-blue-50 px-5 py-3 text-right">
+            <div className="text-2xl font-bold tabular-nums text-slate-900">{reportedInPeriod}</div>
+            <div className="text-xs text-slate-600">Reported shipments</div>
+          </div>
         </div>
-        <div className="rounded-xl bg-slate-50 px-5 py-3 text-right">
-          <div className="text-2xl font-bold tabular-nums text-slate-900">{reportedInPeriod}</div>
-          <div className="text-xs text-slate-500">Reported shipments</div>
+        <div className="mt-6 flex h-44 items-end gap-1.5 border-b border-slate-200" role="img" aria-label="Monthly reported shipments versus the same months in the previous year">
+          {months.map(month => (
+            <div key={month.mi} className="group flex h-full min-w-0 flex-1 items-end gap-px" title={`${month.fullLabel}: ${month.v} shipments; ${month.priorLabel}: ${month.pv ?? 0} shipments`}>
+              {view.hasPrior && <div className="min-w-0 flex-1 rounded-t bg-slate-200" style={{height:`${Math.max(1, (month.pv ?? 0)/max*100)}%`}} />}
+              <div className="min-w-0 flex-1 rounded-t bg-blue-500" style={{height:`${Math.max(1,month.v/max*100)}%`}} />
+            </div>
+          ))}
         </div>
-      </div>
-      {onOpenLanesTab && <button type="button" className="mt-3 text-xs font-semibold text-blue-600 hover:text-blue-700" onClick={onOpenLanesTab}>View trade-lane data coverage</button>}
-    </section>
-  );
+        <div className="mt-2 flex gap-1.5 text-center text-[10px] text-slate-500">{months.map(month=><span key={month.mi} className="min-w-0 flex-1 truncate">{month.label}</span>)}</div>
+        <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-600">
+          <span><span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-blue-500" />Reported shipments</span>
+          {view.hasPrior && <span><span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-slate-200" />Same month, prior year</span>}
+        </div>
+        <p className="mt-4 border-t border-slate-100 pt-3 text-xs leading-5 text-slate-500">Port and origin-country breakdowns cannot be established for this period from the dated records available. The chart reflects source-reported monthly totals, not estimated trade lanes.</p>
+      </section>
+    );
+  }
 
   return (
     <section
