@@ -253,6 +253,7 @@ export function TradeLanesOpenView(props: {
     return { reported, observed: attributed.length, unattributed: Math.max(0, reported - attributed.length), laneMonthlyAvailable };
   }, [ds, m0, m1]);
 
+  const periodHasLanes = view.lanes.length > 0;
   const lanesShown = React.useMemo(
     () => view.lanes.filter((l) => l.shipmentsN >= minShip),
     [view.lanes, minShip],
@@ -360,6 +361,8 @@ export function TradeLanesOpenView(props: {
           fitPadding={fitPadding}
         />
       </div>
+
+      {!periodHasLanes && <div className="absolute inset-0 z-[450] flex items-center justify-center bg-[#081626]/90 px-5 text-center text-white"><div className="max-w-lg rounded-2xl border border-white/20 bg-[#13243a] p-8"><h2 className="text-xl font-semibold">No dated trade-lane records for this period</h2><p className="mt-3 text-sm leading-6 text-slate-300">Company-wide shipment history can be available even when origin and destination records are missing. This does not mean the company had no shipments. Choose a different period to inspect observed routes.</p></div></div>}
 
       {/* OVERLAY 1 — Toolbar */}
       <div
