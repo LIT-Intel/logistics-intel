@@ -239,6 +239,20 @@ export function TradeLanesOpenView(props: {
     [ds, m0, m1, effMetric, inertActions],
   );
 
+  const laneCoverage = React.useMemo(() => {
+    const docs = ds.rows.filter(r => r.mi >= m0 && r.mi <= m1);
+    const attributed = docs.filter(r => r.oc !== "XX" && r.dc !== "XX");
+    const aggregate = ds.rollup?.byMi ?? {};
+    let reported = 0;
+    for (let mi = m0; mi <= m1; mi++) {
+      reported += aggregate[mi]?.shipments ?? docs.filter(r => r.mi === mi).length;
+    }
+    const laneMonthlyAvailable = Object.values(ds.rollup?.laneByKey ?? {}).some(months =>
+      Object.keys(months).some(index => Number(index) >= m0 && Number(index) <= m1),
+    );
+    return { reported, observed: attributed.length, unattributed: Math.max(0, reported - attributed.length), laneMonthlyAvailable };
+  }, [ds, m0, m1]);
+
   const lanesShown = React.useMemo(
     () => view.lanes.filter((l) => l.shipmentsN >= minShip),
     [view.lanes, minShip],
@@ -537,6 +551,12 @@ export function TradeLanesOpenView(props: {
           </div>
         </div>
       )}
+
+      {/* Company-wide monthly totals and attributed BOLs are distinct evidence levels. */}
+      <div className="absolute bottom-5 left-1/2 z-[550] max-w-[min(560px,88vw)] -translate-x-1/2 rounded-xl border border-white/20 bg-[#0b192d]/95 px-4 py-2 text-center text-[11px] text-white shadow-lg" role="status">
+        {laneCoverage.reported.toLocaleString()} reported shipments · {laneCoverage.observed.toLocaleString()} BOLs with identified origin/destination · {laneCoverage.unattributed.toLocaleString()} not lane-attributed
+        {!laneCoverage.laneMonthlyAvailable && <span className="block text-amber-200">Full lane-level monthly volumes unavailable — map proportions are based on observed BOLs.</span>}
+      </div>
 
       {/* OVERLAY 3 — Lane detail card (white glass, slides in from the right;
           becomes a bottom sheet under 900px) */}
