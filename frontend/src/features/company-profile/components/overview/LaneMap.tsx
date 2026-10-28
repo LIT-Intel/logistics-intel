@@ -76,6 +76,23 @@ export function LaneMap({
     [view.lanes],
   );
 
+  if (!hasGeo) return (
+    <section aria-label="Trade lane coverage" className="rounded-2xl border border-slate-200 bg-white px-6 py-5 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-[.12em] text-slate-500">Trade lane intelligence</p>
+          <h3 className="mt-1 text-base font-semibold text-slate-900">Shipment activity recorded</h3>
+          <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">Origin and destination routes are not available for this selected period. Historical activity is retained in the monthly shipment trend.</p>
+        </div>
+        <div className="rounded-xl bg-slate-50 px-5 py-3 text-right">
+          <div className="text-2xl font-bold tabular-nums text-slate-900">{reportedInPeriod}</div>
+          <div className="text-xs text-slate-500">Reported shipments</div>
+        </div>
+      </div>
+      {onOpenLanesTab && <button type="button" className="mt-3 text-xs font-semibold text-blue-600 hover:text-blue-700" onClick={onOpenLanesTab}>View trade-lane data coverage</button>}
+    </section>
+  );
+
   return (
     <section
       className="relative h-[500px] overflow-hidden rounded-[14px] border border-[#1F2937] bg-[#0b1220]"
