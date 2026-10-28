@@ -64,6 +64,7 @@ export function LaneMap({
 }) {
   const globeLanes = React.useMemo(() => toGlobeLanes(view.lanes), [view.lanes]);
   const hasGeo = globeLanes.length > 0;
+  const reportedInPeriod = view.story?.shipments ?? "0";
   // A single selected lane drives the map highlight; multi-select keeps the
   // page filters but the map shows the first selected lane.
   const selected = view.lanes.find((l) => l.active)?.key ?? null;
@@ -117,10 +118,11 @@ export function LaneMap({
             className="mt-1.5 text-[18px] font-semibold leading-[1.3] text-[#0F172A]"
             style={{ fontFamily: FONT_DISPLAY }}
           >
-            {view.story.topLane} carries {view.story.topShare} of volume
+            {hasGeo ? `${view.story.topLane} accounts for ${view.story.topShare} of observed BOL activity` : "Trade-lane breakdown unavailable for this period"}
           </div>
         </div>
         <div className="flex-1 overflow-auto p-1.5">
+          {!hasGeo && <div className="rounded-xl bg-slate-50 p-5 text-sm leading-6 text-slate-700" role="status"><strong>{reportedInPeriod} reported shipments</strong> in the selected period. No dated, lane-attributed shipment records are available to plot. This does not mean there were zero trade lanes. Choose another date range or review historical source aggregates, which are not period-specific.</div>}
           {view.lanes.map((l) => (
             <div
               key={l.key}
@@ -183,7 +185,7 @@ export function LaneMap({
             }}
           >
             <span className="h-2 w-2 rounded-full bg-[#00c8d4]" style={{ boxShadow: "0 0 8px rgba(0,240,255,0.6)" }} />
-            line weight = share
+            line weight = share of observed BOLs
           </div>
           {onExpand && (
             <button
