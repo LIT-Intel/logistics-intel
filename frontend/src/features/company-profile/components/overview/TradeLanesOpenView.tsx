@@ -362,7 +362,7 @@ export function TradeLanesOpenView(props: {
         />
       </div>
 
-      {!periodHasLanes && <div className="absolute inset-0 z-[450] flex items-center justify-center bg-[#081626]/90 px-5 text-center text-white"><div className="max-w-lg rounded-2xl border border-white/20 bg-[#13243a] p-8"><h2 className="text-xl font-semibold">No dated trade-lane records for this period</h2><p className="mt-3 text-sm leading-6 text-slate-300">Company-wide shipment history can be available even when origin and destination records are missing. This does not mean the company had no shipments. Choose a different period to inspect observed routes.</p></div></div>}
+      {!periodHasLanes && <div className="absolute inset-0 z-[450] flex items-center justify-center bg-[#0b192d] px-5 text-center text-white"><div className="max-w-lg rounded-2xl border border-white/20 bg-[#13243a] p-8"><h2 className="text-xl font-semibold">Historical route detail unavailable</h2><p className="mt-3 text-sm leading-6 text-slate-300">This period has reported shipment activity, but no verified origin-to-destination breakdown. Select another period to view available routes.</p></div></div>}
 
       {/* OVERLAY 1 — Toolbar */}
       <div
